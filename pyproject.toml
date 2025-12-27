@@ -38,9 +38,9 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/<owner>/pyCityVisitorParking"
-Repository = "https://github.com/<owner>/pyCityVisitorParking"
-Issues = "https://github.com/<owner>/pyCityVisitorParking/issues"
+Homepage = "https://github.com/sir-Unknown/pyCityVisitorParking"
+Repository = "https://github.com/sir-Unknown/pyCityVisitorParking"
+Issues = "https://github.com/sir-Unknown/pyCityVisitorParking/issues"
 
 # ----------------------------
 # Hatch build configuration

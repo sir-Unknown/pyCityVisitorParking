@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: ["main"]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+          cache: "pip"
+
+      - name: Install Hatch
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install hatch
+
+      - name: Lint (ruff)
+        run: |
+          hatch run lint:check
+          hatch run lint:format-check
+
+      - name: Tests
+        run: |
+          hatch run test:run
+
+      - name: Build (sdist + wheel)
+        run: |
+          hatch build
+
+      - name: Verify dist metadata
+        run: |
+          python -m pip install --upgrade twine
+          python -m twine check dist/*

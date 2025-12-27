@@ -1,0 +1,118 @@
+[build-system]
+requires = ["hatchling>=1.28"]
+build-backend = "hatchling.build"
+
+[project]
+name = "pycityvisitorparking"
+version = "0.1.0"
+description = "Async integration layer between Home Assistant and Dutch municipal visitor parking APIs."
+readme = "README.md"
+requires-python = ">=3.13"
+license = { text = "MIT" }
+authors = [{ name = "pyCityVisitorParking contributors" }]
+keywords = ["home-assistant", "async", "aiohttp", "parking", "municipality"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: Implementation :: CPython",
+  "Framework :: AsyncIO",
+  "Topic :: Home Automation",
+]
+dependencies = [
+  "aiohttp>=3.9",
+]
+
+[project.optional-dependencies]
+dev = [
+  "hatch",
+  "ruff",
+  "pytest",
+  "pytest-asyncio",
+  "pre-commit",
+  "build",
+  "twine",
+  "jsonschema",
+]
+
+[project.urls]
+Homepage = "https://github.com/<owner>/pyCityVisitorParking"
+Repository = "https://github.com/<owner>/pyCityVisitorParking"
+Issues = "https://github.com/<owner>/pyCityVisitorParking/issues"
+
+# ----------------------------
+# Hatch build configuration
+# ----------------------------
+[tool.hatch.build]
+sources = ["src"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/pycityvisitorparking"]
+include = [
+  # Provider manifests + schema
+  "src/pycityvisitorparking/provider/manifest.schema.json",
+  "src/pycityvisitorparking/provider/**/manifest.json",
+  # Per-provider docs (kept inside the package)
+  "src/pycityvisitorparking/provider/**/README.md",
+  "src/pycityvisitorparking/provider/**/CHANGELOG.md",
+]
+
+[tool.hatch.build.targets.sdist]
+include = [
+  # Root docs
+  "README.md",
+  "CHANGELOG.md",
+  "AGENT.md",
+  "AGENTS.md",
+  "docs/RELEASING.md",
+  # Source
+  "src/**",
+  # CI / dev tooling (useful in sdist)
+  ".github/workflows/*.yml",
+  ".devcontainer/devcontainer.json",
+  ".vscode/extensions.json",
+  ".vscode/settings.json",
+]
+
+# ----------------------------
+# Hatch environments
+# ----------------------------
+[tool.hatch.envs.lint]
+dependencies = ["ruff"]
+[tool.hatch.envs.lint.scripts]
+check = "ruff check ."
+format-check = "ruff format --check ."
+fix = "ruff check --fix ."
+fmt = "ruff format ."
+
+[tool.hatch.envs.test]
+dependencies = ["pytest", "pytest-asyncio", "jsonschema"]
+[tool.hatch.envs.test.scripts]
+run = "pytest"
+
+# ----------------------------
+# Ruff configuration
+# ----------------------------
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+src = ["src"]
+
+[tool.ruff.format]
+quote-style = "double"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "RUF"]
+ignore = [
+  "E501", # let ruff format handle line length
+]
+
+# ----------------------------
+# Pytest configuration
+# ----------------------------
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+addopts = "-q"

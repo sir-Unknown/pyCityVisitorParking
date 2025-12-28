@@ -4,9 +4,18 @@ Async integration layer between Home Assistant and Dutch municipal visitor parki
 
 ## Status
 
-This package currently ships the core client, provider interface, and discovery tooling.
-No providers are included yet, so `list_providers()` returns an empty list until
-provider folders are added under `src/pycityvisitorparking/provider/`.
+This package ships the core client, provider interface, and discovery tooling,
+plus the following providers:
+
+- DVS Portal
+- The Hague
+
+`list_providers()` reads provider manifests under `src/pycityvisitorparking/provider/`.
+
+Provider documentation:
+
+- DVS Portal: [src/pycityvisitorparking/provider/dvsportal/README.md](src/pycityvisitorparking/provider/dvsportal/README.md)
+- The Hague: [src/pycityvisitorparking/provider/the_hague/README.md](src/pycityvisitorparking/provider/the_hague/README.md)
 
 ## Installation
 

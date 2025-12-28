@@ -8,3 +8,5 @@
 - Add fallback behavior for favorite updates and zero-provider tests.
 - Add documentation updates and pre-commit config for Ruff.
 - Add base_url and api_uri support for provider requests using relative paths.
+- Add The Hague provider implementation.
+- Document DVS Portal municipality endpoints.

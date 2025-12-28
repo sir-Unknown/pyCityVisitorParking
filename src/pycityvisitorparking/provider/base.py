@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from collections.abc import Mapping
-from typing import Any
+from typing import Any, Literal, overload
 
 import aiohttp
 
@@ -82,6 +82,24 @@ class BaseProvider(ABC):
         normalized_path = path if path.startswith("/") else f"/{path}"
         return f"{self._base_url}{self._api_uri}{normalized_path}"
 
+    @overload
+    def _validate_reservation_times(
+        self,
+        start_time: str,
+        end_time: str,
+        *,
+        require_both: Literal[True],
+    ) -> tuple[str, str]: ...
+
+    @overload
+    def _validate_reservation_times(
+        self,
+        start_time: str | None,
+        end_time: str | None,
+        *,
+        require_both: Literal[False],
+    ) -> tuple[str | None, str | None]: ...
+
     def _validate_reservation_times(
         self,
         start_time: str | None,
@@ -89,7 +107,11 @@ class BaseProvider(ABC):
         *,
         require_both: bool,
     ) -> tuple[str | None, str | None]:
-        return validate_reservation_times(start_time, end_time, require_both=require_both)
+        if require_both:
+            if start_time is None or end_time is None:
+                raise ValidationError("start_time and end_time are required.")
+            return validate_reservation_times(start_time, end_time, require_both=True)
+        return validate_reservation_times(start_time, end_time, require_both=False)
 
     def _filter_chargeable_zone_validity(
         self,

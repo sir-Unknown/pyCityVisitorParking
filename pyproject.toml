@@ -29,6 +29,7 @@ dependencies = [
 dev = [
   "hatch",
   "ruff",
+  "pyright==1.1.407",
   "pytest",
   "pytest-asyncio",
   "pre-commit",
@@ -92,9 +93,14 @@ dependencies = ["pytest", "pytest-asyncio", "jsonschema"]
 run = "pytest"
 
 [tool.hatch.envs.schema]
-dependencies = ["jsonschema", "pytest"]
+dependencies = ["jsonschema", "pytest", "pytest-asyncio"]
 [tool.hatch.envs.schema.scripts]
 validate = "python -m pytest tests/test_manifest_schema.py"
+
+[tool.hatch.envs.typecheck]
+dependencies = ["pyright==1.1.407", "pytest"]
+[tool.hatch.envs.typecheck.scripts]
+run = "pyright"
 
 # ----------------------------
 # Ruff configuration
@@ -112,6 +118,15 @@ select = ["E", "F", "I", "UP", "B", "RUF"]
 ignore = [
   "E501", # let ruff format handle line length
 ]
+
+# ----------------------------
+# Pyright configuration
+# ----------------------------
+[tool.pyright]
+include = ["src"]
+extraPaths = ["src"]
+pythonVersion = "3.13"
+typeCheckingMode = "basic"
 
 # ----------------------------
 # Pytest configuration

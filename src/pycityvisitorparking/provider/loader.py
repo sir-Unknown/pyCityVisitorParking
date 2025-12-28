@@ -6,6 +6,7 @@ import json
 from collections.abc import Iterable
 from dataclasses import dataclass
 from importlib import resources
+from importlib.resources.abc import Traversable
 
 from ..exceptions import ProviderError
 from ..models import ProviderInfo
@@ -21,7 +22,7 @@ class ProviderManifest:
     favorite_update_possible: bool
 
 
-def _provider_root():
+def _provider_root() -> Traversable:
     return resources.files("pycityvisitorparking.provider")
 
 
@@ -54,7 +55,7 @@ def _build_manifest(data: dict, folder_name: str) -> ProviderManifest:
     )
 
 
-def iter_manifest_files() -> Iterable[tuple[str, object]]:
+def iter_manifest_files() -> Iterable[tuple[str, Traversable]]:
     root = _provider_root()
     for entry in root.iterdir():
         if not entry.is_dir():

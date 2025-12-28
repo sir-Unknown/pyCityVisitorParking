@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from collections.abc import Iterable
 from datetime import UTC, datetime
+from typing import Literal, overload
 
 from .exceptions import ValidationError
 from .models import ZoneValidityBlock
@@ -59,6 +60,24 @@ def format_utc_timestamp(value: datetime) -> str:
 
 def ensure_utc_timestamp(value: str) -> str:
     return format_utc_timestamp(parse_timestamp(value))
+
+
+@overload
+def validate_reservation_times(
+    start_time: str,
+    end_time: str,
+    *,
+    require_both: Literal[True],
+) -> tuple[str, str]: ...
+
+
+@overload
+def validate_reservation_times(
+    start_time: str | None,
+    end_time: str | None,
+    *,
+    require_both: Literal[False],
+) -> tuple[str | None, str | None]: ...
 
 
 def validate_reservation_times(

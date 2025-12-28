@@ -32,6 +32,10 @@ jobs:
           hatch run lint:check
           hatch run lint:format-check
 
+      - name: Type check (pyright)
+        run: |
+          hatch run typecheck:run
+
       - name: Tests
         run: |
           hatch run test:run

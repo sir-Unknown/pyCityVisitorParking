@@ -5,10 +5,11 @@ from pycityvisitorparking.exceptions import ProviderError
 
 
 @pytest.mark.asyncio
-async def test_list_providers_empty() -> None:
+async def test_list_providers_includes_manifest() -> None:
     async with Client() as client:
         providers = await client.list_providers()
-    assert providers == []
+    provider_ids = {provider.id for provider in providers}
+    assert "dvsportal" in provider_ids
 
 
 @pytest.mark.asyncio

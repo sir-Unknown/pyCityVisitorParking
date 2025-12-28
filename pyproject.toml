@@ -64,7 +64,6 @@ include = [
   # Root docs
   "README.md",
   "CHANGELOG.md",
-  "AGENT.md",
   "AGENTS.md",
   "docs/RELEASING.md",
   # Source
@@ -91,6 +90,11 @@ fmt = "ruff format ."
 dependencies = ["pytest", "pytest-asyncio", "jsonschema"]
 [tool.hatch.envs.test.scripts]
 run = "pytest"
+
+[tool.hatch.envs.schema]
+dependencies = ["jsonschema", "pytest"]
+[tool.hatch.envs.schema.scripts]
+validate = "python -m pytest tests/test_manifest_schema.py"
 
 # ----------------------------
 # Ruff configuration

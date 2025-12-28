@@ -5,6 +5,10 @@
   `src/pycityvisitorparking/provider/<provider_id>/...`
 - ❌ Avoid modifying core code, models, loader, or shared tests for a provider PR.
 
+✅ **Use English as the primary project language**
+- Write all documentation, comments, docstrings, commit messages, and changelogs in English.
+- Use Dutch only when quoting provider UI text or official municipality wording, and label it clearly.
+
 ✅ **Create the required provider structure**
 - Create `src/pycityvisitorparking/provider/<provider_id>/`.
 - Add these required files:
@@ -27,6 +31,17 @@
 - Keep an “Unreleased” section in the provider changelog.
 - Update provider `CHANGELOG.md` whenever endpoints, auth flow, mapping behavior, or limitations change.
 
+✅ **Verify documentation and pinned versions and correct assumptions**
+- Check the current project documentation and the versions pinned in our lockfiles and CI.
+- Update any assumptions immediately when documentation, lockfiles, and CI disagree.
+- Align any provider docs, examples, and test expectations with the pinned versions.
+- Avoid “latest” installs in CI and keep dev tooling versions pinned.
+
+✅ **Require docstrings and clear comments**
+- Add docstrings for all public modules, classes, and methods.
+- Add clear inline comments for non-obvious logic (e.g., time/UTC conversion, normalization, fallback behavior).
+- Keep comments/docstrings free of credentials, tokens, or other PII.
+
 ✅ **Create a valid provider manifest**
 - Create `manifest.json` and include:
   - `id` and match it exactly to the folder name
@@ -35,6 +50,8 @@
 - Validate `manifest.json` against:
   `src/pycityvisitorparking/provider/manifest.schema.json`
 - ❌ Avoid imports or side effects when defining the manifest.
+* Use integration-provided `base_url` and `api_uri` to build request URLs.
+* ❌ Do not embed municipality base URLs in provider code or manifests.
 
 ✅ **Export the Provider class without side effects**
 - Export a class named `Provider` from `<provider_id>/__init__.py`.
@@ -76,6 +93,7 @@
 - Enforce timeouts and keep TLS verification enabled.
 - Translate errors into library exceptions.
 - ❌ Avoid leaking raw `aiohttp` exceptions.
+- Use relative paths and build requests from `base_url + api_uri`.
 
 ✅ **Respect favorite update behavior**
 - Set `favorite_update_possible` to `true` only when native update is supported.

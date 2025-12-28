@@ -4,11 +4,20 @@
 - Build an async Python library that standardizes Dutch municipal “visitor parking” operations for Home Assistant.
 - Target Python 3.13 and set `requires-python = ">=3.13"`.
 
+✅ **Use English as the primary project language**
+- Write all documentation, comments, docstrings, commit messages, and changelogs in English.
+- Use Dutch only when quoting provider UI text or official municipality wording, and label it clearly.
+
 ✅ **Maintain root documentation and changelog**
 - Maintain root `README.md`.
 - Maintain root `CHANGELOG.md`.
 - Keep an “Unreleased” section and move entries into a versioned section on release.
 - Update root `CHANGELOG.md` on every release.
+
+✅ **Require docstrings and clear comments**
+- Add docstrings for all public modules, classes, and methods.
+- Add clear inline comments for non-obvious logic (e.g., time/UTC conversion, normalization, fallback behavior).
+- Keep comments/docstrings free of credentials, tokens, or other PII.
 
 ✅ **Enforce project rules without exceptions**
 - Use an async-only public API.
@@ -36,6 +45,8 @@
 - ❌ Avoid closing an injected session.
 - Create an internal session only when not injected.
 - Provide `async with Client(...)` and/or `await client.aclose()` for internal cleanup.
+* Take `base_url` and `api_uri` as config inputs and pass them into providers.
+* ❌ Avoid hardcoded endpoints; keep only relative paths/constants.
 
 ✅ **Define and enforce the provider interface**
 - Define `BaseProvider` in `provider/base.py`.
@@ -99,6 +110,13 @@
 - Run tests using Hatch environments.
 - Build artifacts using `hatch build`.
 - Validate artifacts using `python -m twine check dist/*`.
+
+✅ **Verify documentation and pinned versions and correct assumptions**
+- Check the current project documentation and the versions pinned in our lockfiles and CI.
+- Update any assumptions immediately when documentation, lockfiles, and CI disagree.
+- Align `requires-python`, Hatch environments, and CI matrices to the pinned versions.
+- Prefer the repository as the source of truth for supported versions and tooling.
+- Avoid “latest” installs in CI and keep dev tooling versions pinned.
 
 ✅ **Publish releases to PyPI in a controlled way (Hatch)**
 - Bump versions using `hatch version <new>` or `hatch version <major|minor|patch>`.

@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "pycityvisitorparking"
-version = "0.1.0"
+dynamic = ["version"]
 description = "Async integration layer between Home Assistant and Dutch municipal visitor parking APIs."
 readme = "README.md"
 requires-python = ">=3.13"
@@ -75,6 +75,9 @@ include = [
   ".vscode/extensions.json",
   ".vscode/settings.json",
 ]
+
+[tool.hatch.version]
+path = "src/pycityvisitorparking/_version.py"
 
 # ----------------------------
 # Hatch environments

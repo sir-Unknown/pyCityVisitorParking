@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.2.0
+
 - Add async client facade, provider interface, and provider discovery without imports.
 - Add strict public models, normalization utilities, and validation helpers.
 - Add manifest schema, loader utilities, and schema validation test.

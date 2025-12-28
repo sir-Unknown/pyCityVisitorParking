@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.2.1
+
+- Add a dedicated PyPI publishing environment to the release workflow.
+
 ## 0.2.0
 
 - Add async client facade, provider interface, and provider discovery without imports.

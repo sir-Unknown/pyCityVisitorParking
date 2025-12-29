@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Rename `Permit.remaining_time` to `Permit.remaining_balance`.
+
 ## 0.2.1
 
 - Add a dedicated PyPI publishing environment to the release workflow.

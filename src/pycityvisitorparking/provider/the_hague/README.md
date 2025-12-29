@@ -47,7 +47,7 @@ Recommended endpoints:
 ## Mapping notes
 
 - `Permit.id` uses `Account.id`.
-- `Permit.remaining_time` uses `Account.debit_minutes`.
+- `Permit.remaining_balance` uses `Account.debit_minutes`.
 - `Permit.zone_validity` is empty because the public API does not expose
   chargeable windows. If an undocumented `zone_validity` list is present,
   entries with `is_free` set to `true` are filtered out.

@@ -54,7 +54,7 @@ async def test_map_permit_filters_free_blocks_and_converts_utc():
 
     assert isinstance(permit, Permit)
     assert permit.id == "42"
-    assert permit.remaining_time == 90
+    assert permit.remaining_balance == 90
     assert permit.zone_validity == [
         ZoneValidityBlock(
             start_time="2024-01-02T08:00:00Z",

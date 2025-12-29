@@ -329,11 +329,11 @@ class Provider(BaseProvider):
         permit_id = self._coerce_id(media.get("Code")) or self._coerce_id(permit.get("ZoneCode"))
         if not permit_id:
             permit_id = "permit"
-        remaining_time = self._parse_int(media.get("Balance"))
+        remaining_balance = self._parse_int(media.get("Balance"))
         zone_validity = self._map_zone_validity(permit.get("BlockTimes"))
         return Permit(
             id=permit_id,
-            remaining_time=remaining_time,
+            remaining_balance=remaining_balance,
             zone_validity=zone_validity,
         )
 

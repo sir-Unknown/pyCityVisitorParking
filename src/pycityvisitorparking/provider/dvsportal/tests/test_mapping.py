@@ -88,7 +88,7 @@ async def test_map_permit_filters_free_blocks_and_converts_utc():
         permit = provider._map_permit(PERMIT_SAMPLE)
 
     assert permit.id == "CARD-1"
-    assert permit.remaining_time == 120
+    assert permit.remaining_balance == 120
     assert permit.zone_validity == [
         ZoneValidityBlock(
             start_time="2024-01-02T08:00:00Z",

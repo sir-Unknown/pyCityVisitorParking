@@ -224,11 +224,11 @@ class Provider(BaseProvider):
         if not isinstance(account, dict):
             raise ProviderError("Provider response included invalid account data.")
         account_id = self._coerce_response_id(account.get("id"), "account id")
-        remaining_time = self._parse_int(account.get("debit_minutes"))
+        remaining_balance = self._parse_int(account.get("debit_minutes"))
         zone_validity = self._map_zone_validity(account.get("zone_validity"))
         return Permit(
             id=account_id,
-            remaining_time=remaining_time,
+            remaining_balance=remaining_balance,
             zone_validity=zone_validity,
         )
 

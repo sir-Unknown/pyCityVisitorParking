@@ -20,7 +20,7 @@ class ZoneValidityBlock:
 @dataclass(frozen=True, slots=True)
 class Permit:
     id: str
-    remaining_time: int
+    remaining_balance: int
     zone_validity: list[ZoneValidityBlock]
 
 

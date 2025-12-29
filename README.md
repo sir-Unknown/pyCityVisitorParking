@@ -51,6 +51,21 @@ async def main() -> None:
 asyncio.run(main())
 ```
 
+## Available data
+
+The public API exposes a small, provider-agnostic set of models and operations.
+Provider READMEs list credential requirements and any unsupported operations.
+
+- Providers: `list_providers()` returns `ProviderInfo` with `id` and `favorite_update_possible`.
+- Permit: `get_permit()` returns `Permit` with `id`, `remaining_balance` (minutes), and `zone_validity`.
+- Zone validity: each `ZoneValidityBlock` includes `start_time` and `end_time` (UTC ISO 8601).
+- Reservations: `list_reservations()`, `start_reservation()`, `update_reservation()`, and
+  `end_reservation()` return `Reservation` with `id`, `name`, `license_plate`,
+  `start_time`, and `end_time`.
+- Favorites: `list_favorites()` and `add_favorite()` return `Favorite` with `id`, `name`,
+  and `license_plate`. `update_favorite()` returns `Favorite`, while
+  `remove_favorite()` removes the entry without returning data.
+
 ## Provider framework
 
 Providers are discovered via `manifest.json` files without importing provider

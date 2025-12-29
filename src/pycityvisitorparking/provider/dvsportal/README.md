@@ -91,7 +91,7 @@ Unsupported:
 
 - Permit selection uses the first `Permit`/`Permits[0]` and `PermitMedias[0]`.
 - `Permit.id` uses `PermitMedias[0].Code` (fallback to `ZoneCode`).
-- `Permit.remaining_time` uses `PermitMedias[0].Balance`.
+- `Permit.remaining_balance` uses `PermitMedias[0].Balance`.
 - `Permit.zone_validity` includes only chargeable `BlockTimes` where
   `IsFree` is not `true`.
 - Reservations come from `PermitMedias[0].ActiveReservations`.

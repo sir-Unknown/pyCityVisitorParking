@@ -14,8 +14,19 @@ plus the following providers:
 
 Provider documentation:
 
-- DVS Portal: [src/pycityvisitorparking/provider/dvsportal/README.md](src/pycityvisitorparking/provider/dvsportal/README.md)
-- The Hague: [src/pycityvisitorparking/provider/the_hague/README.md](src/pycityvisitorparking/provider/the_hague/README.md)
+- DVS Portal: https://github.com/sir-Unknown/pyCityVisitorParking/blob/main/src/pycityvisitorparking/provider/dvsportal/README.md
+- The Hague: https://github.com/sir-Unknown/pyCityVisitorParking/blob/main/src/pycityvisitorparking/provider/the_hague/README.md
+
+## Supported municipalities
+
+For exact `base_url` and `api_uri` values, see the provider READMEs.
+
+- DVS Portal: Apeldoorn, Bloemendaal, Delft, Den Bosch, Doetinchem (via Buha), Groningen,
+  Haarlem, Harlingen, Heemstede, Heerenveen, Heerlen, Hengelo, Katwijk, Leiden,
+  Leidschendam-Voorburg, Middelburg, Nissewaard, Oldenzaal, Rijswijk, Roermond,
+  Schouwen-Duiveland, Sittard-Geleen, Smallingerland, Sudwest-Fryslan, Veere, Venlo,
+  Vlissingen, Waadhoeke, Waalwijk, Weert, Zaanstad, Zevenaar, Zutphen, Zwolle
+- The Hague: The Hague
 
 ## Installation
 

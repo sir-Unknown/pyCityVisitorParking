@@ -44,6 +44,11 @@ Recommended endpoints:
 - `update_favorite`
 - `remove_favorite`
 
+## Migration notes
+
+- Since v0.3.0, `Permit.remaining_time` is renamed to `Permit.remaining_balance`
+  (minutes). Update integrations that read the permit balance.
+
 ## Mapping notes
 
 - `Permit.id` uses `Account.id`.

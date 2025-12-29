@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.3.0
+
 - Rename `Permit.remaining_time` to `Permit.remaining_balance`.
 
 ## 0.2.1

@@ -1,9 +1,12 @@
+from datetime import UTC
+
 import aiohttp
 import pytest
 
 from pycityvisitorparking.models import Favorite, Permit, Reservation, ZoneValidityBlock
 from pycityvisitorparking.provider.loader import ProviderManifest
 from pycityvisitorparking.provider.the_hague.api import Provider
+from pycityvisitorparking.util import format_utc_timestamp, parse_timestamp
 
 ACCOUNT_SAMPLE = {
     "id": 42,
@@ -38,6 +41,12 @@ FAVORITE_SAMPLE = {
 }
 
 
+def assert_utc_timestamp(value: str) -> None:
+    parsed = parse_timestamp(value)
+    assert parsed.tzinfo == UTC
+    assert format_utc_timestamp(parsed) == value
+
+
 @pytest.mark.asyncio
 async def test_map_permit_filters_free_blocks_and_converts_utc():
     async with aiohttp.ClientSession() as session:
@@ -61,6 +70,9 @@ async def test_map_permit_filters_free_blocks_and_converts_utc():
             end_time="2024-01-02T17:00:00Z",
         )
     ]
+    for block in permit.zone_validity:
+        assert_utc_timestamp(block.start_time)
+        assert_utc_timestamp(block.end_time)
 
 
 @pytest.mark.asyncio
@@ -83,6 +95,8 @@ async def test_map_reservation_normalizes_plate_and_utc():
     assert reservation.license_plate == "AB12CD"
     assert reservation.start_time == "2024-01-01T08:00:00Z"
     assert reservation.end_time == "2024-01-01T09:00:00Z"
+    assert_utc_timestamp(reservation.start_time)
+    assert_utc_timestamp(reservation.end_time)
 
 
 @pytest.mark.asyncio

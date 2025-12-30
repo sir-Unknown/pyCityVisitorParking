@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Run provider discovery/import in background threads to avoid blocking the event loop.
+- Cache provider manifests to avoid repeated filesystem scans.
+- Add UTC normalization assertions for provider timestamp mappings.
+- Publish `py.typed` for improved type checking in integrations.
+- Document async-safe provider discovery behavior.
+
 ## 0.3.0
 
 - Rename `Permit.remaining_time` to `Permit.remaining_balance`.

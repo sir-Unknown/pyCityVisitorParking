@@ -52,6 +52,8 @@ sources = ["src"]
 [tool.hatch.build.targets.wheel]
 packages = ["src/pycityvisitorparking"]
 include = [
+  # Typing marker
+  "src/pycityvisitorparking/py.typed",
   # Provider manifests + schema
   "src/pycityvisitorparking/provider/manifest.schema.json",
   "src/pycityvisitorparking/provider/**/manifest.json",

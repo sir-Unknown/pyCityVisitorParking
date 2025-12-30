@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import importlib
 
 import aiohttp
@@ -9,9 +10,26 @@ import aiohttp
 from .exceptions import ProviderError
 from .models import ProviderInfo
 from .provider.base import BaseProvider
-from .provider.loader import get_manifest, list_providers
+from .provider.loader import ProviderManifest, get_manifest, list_providers
 
 _DEFAULT_TIMEOUT = aiohttp.ClientTimeout(total=30)
+
+
+def _load_provider_data(provider_id: str) -> tuple[ProviderManifest, type[BaseProvider]]:
+    if not provider_id:
+        raise ProviderError("Provider id is required.")
+    manifest = get_manifest(provider_id)
+    module_name = f"pycityvisitorparking.provider.{provider_id}"
+    try:
+        module = importlib.import_module(module_name)
+    except ModuleNotFoundError as exc:
+        raise ProviderError("Provider module could not be imported.") from exc
+    provider_cls = getattr(module, "Provider", None)
+    if provider_cls is None:
+        raise ProviderError("Provider module does not export Provider.")
+    if not isinstance(provider_cls, type) or not issubclass(provider_cls, BaseProvider):
+        raise ProviderError("Provider must inherit from BaseProvider.")
+    return manifest, provider_cls
 
 
 class Client:
@@ -45,7 +63,7 @@ class Client:
             self._session = None
 
     async def list_providers(self) -> list[ProviderInfo]:
-        return list_providers()
+        return await asyncio.to_thread(list_providers)
 
     async def get_provider(
         self,
@@ -54,19 +72,7 @@ class Client:
         base_url: str | None = None,
         api_uri: str | None = None,
     ) -> BaseProvider:
-        if not provider_id:
-            raise ProviderError("Provider id is required.")
-        manifest = get_manifest(provider_id)
-        module_name = f"pycityvisitorparking.provider.{provider_id}"
-        try:
-            module = importlib.import_module(module_name)
-        except ModuleNotFoundError as exc:
-            raise ProviderError("Provider module could not be imported.") from exc
-        provider_cls = getattr(module, "Provider", None)
-        if provider_cls is None:
-            raise ProviderError("Provider module does not export Provider.")
-        if not isinstance(provider_cls, type) or not issubclass(provider_cls, BaseProvider):
-            raise ProviderError("Provider must inherit from BaseProvider.")
+        manifest, provider_cls = await asyncio.to_thread(_load_provider_data, provider_id)
         session = self._ensure_session()
         return provider_cls(
             session,

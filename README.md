@@ -51,6 +51,11 @@ async def main() -> None:
 asyncio.run(main())
 ```
 
+## Async behavior
+
+Provider discovery (`list_providers()`, `get_provider()`) runs in background
+threads so async callers avoid blocking the event loop.
+
 ## Available data
 
 The public API exposes a small, provider-agnostic set of models and operations.
@@ -69,7 +74,8 @@ Provider READMEs list credential requirements and any unsupported operations.
 ## Provider framework
 
 Providers are discovered via `manifest.json` files without importing provider
-modules. To add a provider later, create:
+modules. Discovery runs in a background thread to avoid blocking the event loop.
+To add a provider later, create:
 
 ```
 src/pycityvisitorparking/provider/<provider_id>/

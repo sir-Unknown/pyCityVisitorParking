@@ -6,6 +6,7 @@ import json
 from collections.abc import Iterable
 from dataclasses import dataclass
 from importlib import resources
+from importlib.metadata import PackageNotFoundError
 from importlib.resources.abc import Traversable
 
 from ..exceptions import ProviderError
@@ -13,6 +14,7 @@ from ..models import ProviderInfo
 
 MANIFEST_FILENAME = "manifest.json"
 SCHEMA_FILENAME = "manifest.schema.json"
+_MANIFEST_CACHE: tuple[ProviderManifest, ...] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -66,14 +68,28 @@ def iter_manifest_files() -> Iterable[tuple[str, Traversable]]:
 
 
 def load_manifests() -> list[ProviderManifest]:
+    global _MANIFEST_CACHE
+    if _MANIFEST_CACHE is not None:
+        return list(_MANIFEST_CACHE)
     manifests: list[ProviderManifest] = []
-    for folder_name, manifest_path in iter_manifest_files():
-        try:
-            data = json.loads(manifest_path.read_text(encoding="utf-8"))
-        except json.JSONDecodeError as exc:
-            raise ProviderError("Provider manifest is not valid JSON.") from exc
-        manifests.append(_build_manifest(data, folder_name))
-    return manifests
+    try:
+        for folder_name, manifest_path in iter_manifest_files():
+            try:
+                data = json.loads(manifest_path.read_text(encoding="utf-8"))
+            except json.JSONDecodeError as exc:
+                raise ProviderError("Provider manifest is not valid JSON.") from exc
+            manifests.append(_build_manifest(data, folder_name))
+    except (ModuleNotFoundError, PackageNotFoundError) as exc:
+        _MANIFEST_CACHE = None
+        raise ProviderError("Provider package was not found.") from exc
+    _MANIFEST_CACHE = tuple(manifests)
+    return list(_MANIFEST_CACHE)
+
+
+def clear_manifest_cache() -> None:
+    """Clear cached provider manifests (used in tests)."""
+    global _MANIFEST_CACHE
+    _MANIFEST_CACHE = None
 
 
 def list_providers() -> list[ProviderInfo]:

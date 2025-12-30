@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.3.1
+
 - Run provider discovery/import in background threads to avoid blocking the event loop.
 - Cache provider manifests to avoid repeated filesystem scans.
 - Add UTC normalization assertions for provider timestamp mappings.

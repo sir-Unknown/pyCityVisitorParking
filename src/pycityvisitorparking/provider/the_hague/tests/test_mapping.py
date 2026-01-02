@@ -7,6 +7,7 @@ from pycityvisitorparking.exceptions import ValidationError
 from pycityvisitorparking.models import Favorite, Permit, Reservation, ZoneValidityBlock
 from pycityvisitorparking.provider.loader import ProviderManifest
 from pycityvisitorparking.provider.the_hague.api import Provider
+from pycityvisitorparking.provider.the_hague.const import DEFAULT_API_URI, SESSION_ENDPOINT
 from pycityvisitorparking.util import format_utc_timestamp, parse_timestamp
 
 ACCOUNT_SAMPLE = {
@@ -173,3 +174,20 @@ async def test_login_requires_username():
 
         with pytest.raises(ValidationError):
             await provider.login(credentials={"password": "secret"})
+
+
+@pytest.mark.asyncio
+async def test_default_api_uri_is_applied():
+    async with aiohttp.ClientSession() as session:
+        provider = Provider(
+            session,
+            ProviderManifest(
+                id="the_hague",
+                name="The Hague",
+                favorite_update_possible=True,
+            ),
+            base_url="https://example",
+        )
+
+        expected = f"https://example{DEFAULT_API_URI}{SESSION_ENDPOINT}"
+        assert provider._build_url(SESSION_ENDPOINT) == expected

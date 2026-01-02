@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.4.1
+
+- Default `api_uri` to `/api` when omitted.
+
 ## 0.4.0
 
 - Require `username` for login (no legacy identifier alias).

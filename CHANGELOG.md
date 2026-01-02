@@ -2,13 +2,17 @@
 
 ## Unreleased
 
+## 0.4.1
+
+- Default The Hague `api_uri` to `/api` when omitted.
+
 ## 0.4.0
 
 - Add async loader helpers for non-blocking manifest access.
 - Add a TTL to the manifest cache with refresh controls.
 - Document manifest cache behavior and async loader helpers.
 - Require `username`/`password` credentials across providers.
-- Default DVS Portal `api_uri` to `/DVSWebAPI/api/login` when omitted.
+- Default DVS Portal `api_uri` to `/DVSWebAPI/api` when omitted.
 - Use `zone.start_time`/`zone.end_time` for The Hague when `zone_validity` is empty.
 
 ## 0.3.1

@@ -1,5 +1,7 @@
 """Constants for The Hague provider."""
 
+DEFAULT_API_URI = "/api"
+
 SESSION_ENDPOINT = "/session/0"
 ACCOUNT_ENDPOINT = "/account/0"
 RESERVATION_ENDPOINT = "/reservation"

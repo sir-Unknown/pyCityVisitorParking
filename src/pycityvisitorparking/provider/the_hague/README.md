@@ -29,7 +29,7 @@ Example credential shape:
 Recommended endpoints:
 
 - `base_url`: `https://parkerendenhaag.denhaag.nl`
-- `api_uri`: `api`
+- `api_uri`: `api` (defaults to `/api` when omitted)
 
 ## Supported operations
 

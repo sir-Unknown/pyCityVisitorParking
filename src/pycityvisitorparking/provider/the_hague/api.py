@@ -13,6 +13,7 @@ from ..base import BaseProvider
 from ..loader import ProviderManifest
 from .const import (
     ACCOUNT_ENDPOINT,
+    DEFAULT_API_URI,
     DEFAULT_HEADERS,
     FAVORITE_ENDPOINT,
     PERMIT_MEDIA_TYPE_HEADER,
@@ -35,6 +36,8 @@ class Provider(BaseProvider):
         retry_count: int = 0,
     ) -> None:
         """Initialize the provider."""
+        if api_uri is None:
+            api_uri = DEFAULT_API_URI
         super().__init__(
             session,
             manifest,

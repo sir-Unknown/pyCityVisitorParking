@@ -225,22 +225,30 @@ class Provider(BaseProvider):
             raise ProviderError("Provider response included invalid account data.")
         account_id = self._coerce_response_id(account.get("id"), "account id")
         remaining_balance = self._parse_int(account.get("debit_minutes"))
-        zone_validity = self._map_zone_validity(account.get("zone_validity"))
+        zone_validity = self._map_zone_validity(
+            account.get("zone_validity"),
+            fallback_zone=account.get("zone"),
+        )
         return Permit(
             id=account_id,
             remaining_balance=remaining_balance,
             zone_validity=zone_validity,
         )
 
-    def _map_zone_validity(self, raw: Any) -> list[ZoneValidityBlock]:
+    def _map_zone_validity(
+        self,
+        raw: Any,
+        *,
+        fallback_zone: Any | None = None,
+    ) -> list[ZoneValidityBlock]:
         if raw is None:
-            return []
-        if not isinstance(raw, list):
+            raw_list: list[dict[str, Any]] = []
+        elif not isinstance(raw, list):
             raise ProviderError("Provider response included invalid zone validity.")
+        else:
+            raw_list = [item for item in raw if isinstance(item, dict)]
         entries: list[tuple[ZoneValidityBlock, bool]] = []
-        for item in raw:
-            if not isinstance(item, dict):
-                continue
+        for item in raw_list:
             start_raw = item.get("start_time")
             end_raw = item.get("end_time")
             if not start_raw or not end_raw:
@@ -253,7 +261,24 @@ class Provider(BaseProvider):
                 raise ProviderError("Provider returned invalid zone validity data.") from exc
             entries.append((ZoneValidityBlock(start_time=start, end_time=end), not is_free))
         # Only include chargeable windows (is_free is not true).
-        return self._filter_chargeable_zone_validity(entries)
+        zone_validity = self._filter_chargeable_zone_validity(entries)
+        if zone_validity or fallback_zone is None:
+            return zone_validity
+        if not isinstance(fallback_zone, dict):
+            return []
+        start_raw = fallback_zone.get("start_time")
+        end_raw = fallback_zone.get("end_time")
+        if not start_raw or not end_raw:
+            return []
+        if fallback_zone.get("is_free") is True:
+            return []
+        try:
+            start = self._ensure_utc_timestamp(start_raw)
+            end = self._ensure_utc_timestamp(end_raw)
+        except ValidationError as exc:
+            raise ProviderError("Provider returned invalid zone validity data.") from exc
+        # Fall back to the single-zone window when no list entries are available.
+        return [ZoneValidityBlock(start_time=start, end_time=end)]
 
     def _map_reservation_list(self, data: Any) -> list[Reservation]:
         if data is None:

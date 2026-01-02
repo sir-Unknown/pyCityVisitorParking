@@ -19,6 +19,7 @@ from ..loader import ProviderManifest
 from .const import (
     AUTH_HEADER,
     AUTH_PREFIX,
+    DEFAULT_API_URI,
     DEFAULT_HEADERS,
     FAVORITE_REMOVE_ENDPOINT,
     FAVORITE_UPSERT_ENDPOINT,
@@ -45,6 +46,8 @@ class Provider(BaseProvider):
         retry_count: int = 0,
     ) -> None:
         """Initialize the provider."""
+        if api_uri is None:
+            api_uri = DEFAULT_API_URI
         super().__init__(
             session,
             manifest,
@@ -62,11 +65,11 @@ class Provider(BaseProvider):
     async def login(self, credentials: Mapping[str, str] | None = None, **kwargs: str) -> None:
         """Authenticate against the provider."""
         merged = self._merge_credentials(credentials, **kwargs)
-        identifier = merged.get("identifier")
+        username = merged.get("username")
         password = merged.get("password")
         permit_media_type_id = merged.get("permit_media_type_id") or merged.get("permitMediaTypeID")
-        if not identifier:
-            raise ValidationError("identifier is required.")
+        if not username:
+            raise ValidationError("username is required.")
         if not password:
             raise ValidationError("password is required.")
         if permit_media_type_id is None:
@@ -76,7 +79,7 @@ class Provider(BaseProvider):
         self._validate_media_type_id(permit_media_type_id)
 
         payload = {
-            "identifier": identifier,
+            "identifier": username,
             "loginMethod": LOGIN_METHOD_PAS,
             "password": password,
             "permitMediaTypeID": permit_media_type_id,
@@ -99,7 +102,7 @@ class Provider(BaseProvider):
         self._auth_header_value = self._build_auth_header(self._token)
         self._permit_media_type_id = permit_media_type_id
         self._credentials = {
-            "identifier": identifier,
+            "username": username,
             "password": password,
             "permit_media_type_id": str(permit_media_type_id),
         }

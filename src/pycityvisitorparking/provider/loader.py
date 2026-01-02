@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
+import time
 from collections.abc import Iterable
 from dataclasses import dataclass
 from importlib import resources
@@ -14,7 +16,9 @@ from ..models import ProviderInfo
 
 MANIFEST_FILENAME = "manifest.json"
 SCHEMA_FILENAME = "manifest.schema.json"
+_DEFAULT_CACHE_TTL_SECONDS = 300.0
 _MANIFEST_CACHE: tuple[ProviderManifest, ...] | None = None
+_MANIFEST_CACHE_EXPIRES_AT: float | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -67,10 +71,25 @@ def iter_manifest_files() -> Iterable[tuple[str, Traversable]]:
             yield entry.name, manifest_path
 
 
-def load_manifests() -> list[ProviderManifest]:
+def load_manifests(
+    *,
+    refresh: bool = False,
+    cache_ttl: float | None = _DEFAULT_CACHE_TTL_SECONDS,
+) -> list[ProviderManifest]:
+    """Load provider manifests using a cache with an optional TTL."""
     global _MANIFEST_CACHE
-    if _MANIFEST_CACHE is not None:
-        return list(_MANIFEST_CACHE)
+    global _MANIFEST_CACHE_EXPIRES_AT
+    if cache_ttl is not None and cache_ttl < 0:
+        raise ProviderError("cache_ttl must be non-negative.")
+    if not refresh and _MANIFEST_CACHE is not None:
+        if cache_ttl is None:
+            return list(_MANIFEST_CACHE)
+        now = time.monotonic()
+        if _MANIFEST_CACHE_EXPIRES_AT is not None and now < _MANIFEST_CACHE_EXPIRES_AT:
+            return list(_MANIFEST_CACHE)
+    if cache_ttl is None:
+        _MANIFEST_CACHE = None
+        _MANIFEST_CACHE_EXPIRES_AT = None
     manifests: list[ProviderManifest] = []
     try:
         for folder_name, manifest_path in iter_manifest_files():
@@ -81,26 +100,77 @@ def load_manifests() -> list[ProviderManifest]:
             manifests.append(_build_manifest(data, folder_name))
     except (ModuleNotFoundError, PackageNotFoundError) as exc:
         _MANIFEST_CACHE = None
+        _MANIFEST_CACHE_EXPIRES_AT = None
         raise ProviderError("Provider package was not found.") from exc
+    if cache_ttl is None:
+        return manifests
+    now = time.monotonic()
     _MANIFEST_CACHE = tuple(manifests)
+    _MANIFEST_CACHE_EXPIRES_AT = now + cache_ttl
     return list(_MANIFEST_CACHE)
+
+
+async def async_load_manifests(
+    *,
+    refresh: bool = False,
+    cache_ttl: float | None = _DEFAULT_CACHE_TTL_SECONDS,
+) -> list[ProviderManifest]:
+    """Async wrapper for load_manifests to avoid blocking the event loop."""
+    return await asyncio.to_thread(load_manifests, refresh=refresh, cache_ttl=cache_ttl)
 
 
 def clear_manifest_cache() -> None:
     """Clear cached provider manifests (used in tests)."""
     global _MANIFEST_CACHE
+    global _MANIFEST_CACHE_EXPIRES_AT
     _MANIFEST_CACHE = None
+    _MANIFEST_CACHE_EXPIRES_AT = None
 
 
-def list_providers() -> list[ProviderInfo]:
+def list_providers(
+    *,
+    refresh: bool = False,
+    cache_ttl: float | None = _DEFAULT_CACHE_TTL_SECONDS,
+) -> list[ProviderInfo]:
+    """Return provider info entries from cached manifests."""
     return [
         ProviderInfo(id=manifest.id, favorite_update_possible=manifest.favorite_update_possible)
-        for manifest in load_manifests()
+        for manifest in load_manifests(refresh=refresh, cache_ttl=cache_ttl)
     ]
 
 
-def get_manifest(provider_id: str) -> ProviderManifest:
-    for manifest in load_manifests():
+async def async_list_providers(
+    *,
+    refresh: bool = False,
+    cache_ttl: float | None = _DEFAULT_CACHE_TTL_SECONDS,
+) -> list[ProviderInfo]:
+    """Async wrapper for list_providers to avoid blocking the event loop."""
+    return await asyncio.to_thread(list_providers, refresh=refresh, cache_ttl=cache_ttl)
+
+
+def get_manifest(
+    provider_id: str,
+    *,
+    refresh: bool = False,
+    cache_ttl: float | None = _DEFAULT_CACHE_TTL_SECONDS,
+) -> ProviderManifest:
+    """Return the manifest for a provider id."""
+    for manifest in load_manifests(refresh=refresh, cache_ttl=cache_ttl):
         if manifest.id == provider_id:
             return manifest
     raise ProviderError("Provider not found.")
+
+
+async def async_get_manifest(
+    provider_id: str,
+    *,
+    refresh: bool = False,
+    cache_ttl: float | None = _DEFAULT_CACHE_TTL_SECONDS,
+) -> ProviderManifest:
+    """Async wrapper for get_manifest to avoid blocking the event loop."""
+    return await asyncio.to_thread(
+        get_manifest,
+        provider_id,
+        refresh=refresh,
+        cache_ttl=cache_ttl,
+    )

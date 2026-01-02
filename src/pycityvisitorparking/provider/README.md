@@ -69,9 +69,10 @@ Do not hardcode `base_url` or `api_uri` in provider code.
 
 ## Authentication
 
-`login()` must accept `Mapping[str, str]` or `**kwargs`. Validate required keys
-and raise `ValidationError` for missing values. Raise `AuthError` for invalid
-credentials or expired sessions.
+`login()` must accept `Mapping[str, str]` or `**kwargs`. Require `username` and
+`password` as the public credential keys and translate them to provider-specific
+fields when needed. Validate required keys and raise `ValidationError` for
+missing values. Raise `AuthError` for invalid credentials or expired sessions.
 
 Do not log credentials or tokens.
 

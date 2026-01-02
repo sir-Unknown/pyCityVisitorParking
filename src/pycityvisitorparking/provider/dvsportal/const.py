@@ -1,5 +1,7 @@
 """Constants for the DVS Portal provider."""
 
+DEFAULT_API_URI = "/DVSWebAPI/api"
+
 LOGIN_ENDPOINT = "/login"
 LOGIN_GETBASE_ENDPOINT = "/login/getbase"
 RESERVATION_CREATE_ENDPOINT = "/reservation/create"

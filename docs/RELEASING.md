@@ -30,8 +30,8 @@
   - `hatch run lint:check`
 - Run tests:
   - `hatch run test:run`
-- Build artifacts:
-  - `hatch build`
+- Build artifacts (clean):
+  - `hatch build -c`
 - Validate artifacts:
   - `python -m twine check dist/*`
 
@@ -42,6 +42,18 @@
   - `hatch version major`
 - Or set an explicit version:
   - `hatch version X.Y.Z`
+
+✅ **Recommended local release order**
+1) Update docs and changelogs.
+2) `hatch run lint:format-check`
+3) `hatch run lint:check`
+4) `hatch run test:run`
+5) `hatch build -c`
+6) `python -m twine check dist/*`
+7) `hatch version X.Y.Z`
+8) `git commit -am "Release X.Y.Z"`
+9) `git tag vX.Y.Z`
+10) `git push --follow-tags`
 
 ✅ **Commit and tag the release**
 - Commit release changes:

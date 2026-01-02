@@ -3,8 +3,10 @@ from datetime import UTC
 import aiohttp
 import pytest
 
+from pycityvisitorparking.exceptions import ValidationError
 from pycityvisitorparking.models import ZoneValidityBlock
 from pycityvisitorparking.provider.dvsportal.api import Provider
+from pycityvisitorparking.provider.dvsportal.const import DEFAULT_API_URI, LOGIN_ENDPOINT
 from pycityvisitorparking.provider.loader import ProviderManifest
 from pycityvisitorparking.util import format_utc_timestamp, parse_timestamp
 
@@ -203,3 +205,37 @@ async def test_map_favorites_normalizes_plate():
     assert favorite.id == "XY99ZZ"
     assert favorite.license_plate == "XY99ZZ"
     assert favorite.name == "Family"
+
+
+@pytest.mark.asyncio
+async def test_login_requires_username():
+    async with aiohttp.ClientSession() as session:
+        provider = Provider(
+            session,
+            ProviderManifest(
+                id="dvsportal",
+                name="DVS Portal",
+                favorite_update_possible=False,
+            ),
+            base_url="https://example",
+        )
+
+        with pytest.raises(ValidationError):
+            await provider.login(credentials={"password": "secret"})
+
+
+@pytest.mark.asyncio
+async def test_default_api_uri_is_applied():
+    async with aiohttp.ClientSession() as session:
+        provider = Provider(
+            session,
+            ProviderManifest(
+                id="dvsportal",
+                name="DVS Portal",
+                favorite_update_possible=False,
+            ),
+            base_url="https://example",
+        )
+
+        expected = f"https://example{DEFAULT_API_URI}{LOGIN_ENDPOINT}"
+        assert provider._build_url(LOGIN_ENDPOINT) == expected

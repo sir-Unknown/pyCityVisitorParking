@@ -50,10 +50,13 @@
 4) `hatch run test:run`
 5) `hatch build -c`
 6) `python -m twine check dist/*`
-7) `hatch version X.Y.Z`
-8) `git commit -am "Release X.Y.Z"`
-9) `git tag vX.Y.Z`
-10) `git push --follow-tags`
+7) `rm -rf dist` (optional cleanup after checks)
+8) `hatch version X.Y.Z`
+9) `git commit -am "Release X.Y.Z"`
+10) `git tag vX.Y.Z`
+11) `git push --follow-tags`
+
+Do not push tags before running build + twine checks locally.
 
 ✅ **Commit and tag the release**
 - Commit release changes:

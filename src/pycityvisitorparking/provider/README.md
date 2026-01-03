@@ -79,15 +79,23 @@ Do not log credentials or tokens.
 ## Time handling (UTC required)
 
 All public timestamps must be UTC ISO 8601 with a trailing `Z` and no
-microseconds. Convert provider-local or offset timestamps to UTC internally.
+microseconds. Public APIs accept only timezone-aware `datetime` values and must
+reject naive timestamps with `ValidationError`. Convert provider-local or
+offset timestamps to UTC internally.
+Normalize inputs to UTC `datetime` values and serialize to strings only when
+building payloads or public models.
+Use `normalize_datetime()` for API inputs and `parse_timestamp()` for provider
+timestamp strings.
 
 Use utilities from `pycityvisitorparking.util`:
 
 - `ensure_utc_timestamp()`
 - `format_utc_timestamp()`
+- `normalize_datetime()`
 - `parse_timestamp()`
 
-All timestamps must be timezone-aware and parseable.
+All timestamps must be timezone-aware and parseable and are truncated to second
+precision.
 
 ## License plate normalization
 
@@ -104,7 +112,9 @@ Filter out free or non-chargeable windows. Use
 
 ## Reservation validation
 
-`start_reservation()` requires both `start_time` and `end_time`.
+`start_reservation()` requires both `start_time` and `end_time` as timezone-aware
+`datetime` values. `update_reservation()` and `end_reservation()` accept only
+timezone-aware `datetime` values for any provided times.
 Enforce `end_time > start_time` and raise `ValidationError` when violated.
 
 Use `validate_reservation_times()` for shared validation and normalization.
@@ -146,7 +156,7 @@ or disabled.
 ## Logging and PII
 
 Do not log credentials, tokens, or full license plates. If logging is necessary,
-mask plates using `mask_license_plate()`.
+mask plates when logging (avoid full values in logs).
 
 ## Documentation and changelog
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from datetime import datetime
 
 from pycityvisitorparking.exceptions import ProviderError, ValidationError
 from pycityvisitorparking.models import Favorite, Permit, Reservation, ZoneValidityBlock
@@ -27,8 +28,8 @@ class Provider(BaseProvider):
     async def start_reservation(
         self,
         license_plate: str,
-        start_time: str,
-        end_time: str,
+        start_time: datetime,
+        end_time: datetime,
         name: str | None = None,
     ) -> Reservation:
         self._normalize_license_plate(license_plate)
@@ -38,15 +39,15 @@ class Provider(BaseProvider):
     async def update_reservation(
         self,
         reservation_id: str,
-        start_time: str | None = None,
-        end_time: str | None = None,
+        start_time: datetime | None = None,
+        end_time: datetime | None = None,
         name: str | None = None,
     ) -> Reservation:
         self._validate_reservation_times(start_time, end_time, require_both=False)
         raise ProviderError("Template provider does not implement update_reservation.")
 
-    async def end_reservation(self, reservation_id: str, end_time: str) -> Reservation:
-        self._ensure_utc_timestamp(end_time)
+    async def end_reservation(self, reservation_id: str, end_time: datetime) -> Reservation:
+        self._normalize_datetime(end_time)
         raise ProviderError("Template provider does not implement end_reservation.")
 
     async def list_favorites(self) -> list[Favorite]:

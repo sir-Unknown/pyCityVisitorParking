@@ -107,7 +107,23 @@ Unsupported:
 
 Provider timestamps are converted to UTC and returned as ISO 8601 with `Z` and
 no microseconds. When the API omits timezone offsets, timestamps are interpreted
-as Europe/Amsterdam local time before conversion.
+as Europe/Amsterdam local time before conversion. DST transitions are resolved
+deterministically using fold=0 for ambiguous or non-existent local times.
+Reservation creation payloads must use Europe/Amsterdam local time with
+milliseconds and an explicit offset (for example,
+`2026-01-02T23:57:00.000+01:00`); the public API accepts timezone-aware
+`datetime` values and returns UTC strings.
+
+Outbound format contract (`reservation/create`):
+- `DateFrom` and `DateUntil` must be strings in `YYYY-MM-DDTHH:mm:ss.SSS±HH:MM`.
+- The offset must reflect Europe/Amsterdam (`+01:00` or `+02:00` in DST).
+- Other required fields in the same payload: `LicensePlate`, `permitMediaTypeID`,
+  and `permitMediaCode`.
+
+Inbound parsing contract (base model):
+- `ActiveReservations.ValidFrom`/`ValidUntil` and `BlockTimes.ValidFrom`/`ValidUntil`
+  may include offsets; if present, respect them.
+- If no offset is present, interpret the timestamp as Europe/Amsterdam local time.
 
 ## License plate normalization
 

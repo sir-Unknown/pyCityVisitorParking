@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from collections.abc import Mapping
+from datetime import datetime
 from typing import Any, Literal, overload
 
 import aiohttp
@@ -13,7 +14,8 @@ from ..models import Favorite, Permit, ProviderInfo, Reservation, ZoneValidityBl
 from ..util import (
     ensure_utc_timestamp,
     filter_chargeable_zone_validity,
-    mask_license_plate,
+    format_utc_timestamp,
+    normalize_datetime,
     normalize_license_plate,
     validate_reservation_times,
 )
@@ -66,11 +68,14 @@ class BaseProvider(ABC):
     def _normalize_license_plate(self, plate: str) -> str:
         return normalize_license_plate(plate)
 
-    def _mask_license_plate(self, plate: str) -> str:
-        return mask_license_plate(plate)
-
     def _ensure_utc_timestamp(self, value: str) -> str:
         return ensure_utc_timestamp(value)
+
+    def _normalize_datetime(self, value: datetime) -> datetime:
+        return normalize_datetime(value)
+
+    def _format_utc_timestamp(self, value: datetime) -> str:
+        return format_utc_timestamp(value)
 
     def _build_url(self, path: str) -> str:
         if not isinstance(path, str) or not path:
@@ -85,28 +90,28 @@ class BaseProvider(ABC):
     @overload
     def _validate_reservation_times(
         self,
-        start_time: str,
-        end_time: str,
+        start_time: datetime,
+        end_time: datetime,
         *,
         require_both: Literal[True],
-    ) -> tuple[str, str]: ...
+    ) -> tuple[datetime, datetime]: ...
 
     @overload
     def _validate_reservation_times(
         self,
-        start_time: str | None,
-        end_time: str | None,
+        start_time: datetime | None,
+        end_time: datetime | None,
         *,
         require_both: Literal[False],
-    ) -> tuple[str | None, str | None]: ...
+    ) -> tuple[datetime | None, datetime | None]: ...
 
     def _validate_reservation_times(
         self,
-        start_time: str | None,
-        end_time: str | None,
+        start_time: datetime | None,
+        end_time: datetime | None,
         *,
         require_both: bool,
-    ) -> tuple[str | None, str | None]:
+    ) -> tuple[datetime | None, datetime | None]:
         if require_both:
             if start_time is None or end_time is None:
                 raise ValidationError("start_time and end_time are required.")
@@ -219,8 +224,8 @@ class BaseProvider(ABC):
     async def start_reservation(
         self,
         license_plate: str,
-        start_time: str,
-        end_time: str,
+        start_time: datetime,
+        end_time: datetime,
         name: str | None = None,
     ) -> Reservation:
         """Start a reservation for a license plate."""
@@ -229,14 +234,18 @@ class BaseProvider(ABC):
     async def update_reservation(
         self,
         reservation_id: str,
-        start_time: str | None = None,
-        end_time: str | None = None,
+        start_time: datetime | None = None,
+        end_time: datetime | None = None,
         name: str | None = None,
     ) -> Reservation:
         """Update a reservation."""
 
     @abstractmethod
-    async def end_reservation(self, reservation_id: str, end_time: str) -> Reservation:
+    async def end_reservation(
+        self,
+        reservation_id: str,
+        end_time: datetime,
+    ) -> Reservation:
         """End a reservation."""
 
     @abstractmethod

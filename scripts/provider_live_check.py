@@ -36,7 +36,6 @@ from typing import Any
 
 from pycityvisitorparking import Client
 from pycityvisitorparking.models import Favorite, Reservation
-from pycityvisitorparking.util import mask_license_plate
 
 
 def _require_value(name: str, value: str | None) -> str:
@@ -44,6 +43,20 @@ def _require_value(name: str, value: str | None) -> str:
         print(f"Missing required value: {name}", file=sys.stderr)
         raise SystemExit(2)
     return value
+
+
+def _mask_license_plate(plate: str) -> str:
+    if not isinstance(plate, str):
+        return "***"
+    normalized = "".join(ch for ch in plate.upper() if ch.isascii() and ch.isalnum())
+    if not normalized:
+        return "***"
+    if len(normalized) <= 2:
+        return "*" * len(normalized)
+    if len(normalized) <= 4:
+        return f"{normalized[:1]}{'*' * (len(normalized) - 2)}{normalized[-1:]}"
+    masked = "*" * (len(normalized) - 4)
+    return f"{normalized[:2]}{masked}{normalized[-2:]}"
 
 
 def _load_credentials(raw_json: str | None, file_path: str | None) -> dict[str, Any]:
@@ -76,7 +89,7 @@ def _load_credentials(raw_json: str | None, file_path: str | None) -> dict[str, 
 
 
 def _format_reservation(reservation: Reservation) -> str:
-    masked_plate = mask_license_plate(reservation.license_plate)
+    masked_plate = _mask_license_plate(reservation.license_plate)
     name = reservation.name or "-"
     return (
         f"{reservation.id} | {name} | {masked_plate} | "
@@ -85,7 +98,7 @@ def _format_reservation(reservation: Reservation) -> str:
 
 
 def _format_favorite(favorite: Favorite) -> str:
-    masked_plate = mask_license_plate(favorite.license_plate)
+    masked_plate = _mask_license_plate(favorite.license_plate)
     name = favorite.name or "-"
     return f"{favorite.id} | {name} | {masked_plate}"
 

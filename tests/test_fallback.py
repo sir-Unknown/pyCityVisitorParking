@@ -1,3 +1,5 @@
+from datetime import datetime
+
 import aiohttp
 import pytest
 
@@ -22,13 +24,25 @@ class DummyProvider(BaseProvider):
     async def list_reservations(self):
         raise NotImplementedError
 
-    async def start_reservation(self, license_plate, start_time, end_time, name=None):
+    async def start_reservation(
+        self,
+        license_plate: str,
+        start_time: datetime,
+        end_time: datetime,
+        name: str | None = None,
+    ):
         raise NotImplementedError
 
-    async def update_reservation(self, reservation_id, start_time=None, end_time=None, name=None):
+    async def update_reservation(
+        self,
+        reservation_id: str,
+        start_time: datetime | None = None,
+        end_time: datetime | None = None,
+        name: str | None = None,
+    ):
         raise NotImplementedError
 
-    async def end_reservation(self, reservation_id, end_time):
+    async def end_reservation(self, reservation_id: str, end_time: datetime):
         raise NotImplementedError
 
     async def list_favorites(self):

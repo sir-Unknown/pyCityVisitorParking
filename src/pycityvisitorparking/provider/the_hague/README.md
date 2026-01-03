@@ -65,6 +65,8 @@ Recommended endpoints:
 
 Provider timestamps are converted to UTC and returned as ISO 8601 with `Z` and
 no microseconds.
+Reservation inputs must be timezone-aware `datetime` values; naive inputs are
+rejected.
 
 ## License plate normalization
 

@@ -161,7 +161,12 @@ async with Client(base_url=base_url, api_uri=api_uri) as client:
 
 ## Normalization rules
 
-- All public timestamps must be UTC ISO 8601 with `Z` and no microseconds.
+- Public APIs accept only timezone-aware `datetime` values; naive timestamps raise
+  `ValidationError`.
+- All public timestamps are normalized to UTC ISO 8601 with `Z` and second
+  precision (microseconds are truncated).
+- Internally, reservation times are handled as timezone-aware UTC `datetime`
+  values and serialized to strings only at provider and model boundaries.
 - License plates are normalized to uppercase `A-Z0-9` without spaces/symbols.
 - `zone_validity` must include only chargeable windows.
 

@@ -25,6 +25,8 @@ runtime package and is ignored by discovery.
 - Use the injected `aiohttp.ClientSession` from `BaseProvider`.
 - Use relative paths and join them with `base_url + api_uri` via
   `_request_json()` / `_request_text()` or `_build_url()`.
-- Normalize license plates and enforce UTC ISO 8601 `Z` timestamps.
+- Normalize license plates and enforce UTC ISO 8601 `Z` timestamps (second
+  precision). Accept only timezone-aware `datetime` values for reservation
+  inputs and reject naive timestamps.
 - Filter `zone_validity` to chargeable windows only.
 - Raise library exceptions (`AuthError`, `NetworkError`, `ValidationError`, `ProviderError`).

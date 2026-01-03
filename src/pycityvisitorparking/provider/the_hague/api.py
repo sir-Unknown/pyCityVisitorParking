@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from datetime import datetime
 from typing import Any
 
 import aiohttp
@@ -93,16 +94,18 @@ class Provider(BaseProvider):
     async def start_reservation(
         self,
         license_plate: str,
-        start_time: str,
-        end_time: str,
+        start_time: datetime,
+        end_time: datetime,
         name: str | None = None,
     ) -> Reservation:
         """Start a reservation for a license plate."""
-        start_time, end_time = self._validate_reservation_times(
+        start_dt, end_dt = self._validate_reservation_times(
             start_time,
             end_time,
             require_both=True,
         )
+        start_time_value = self._format_utc_timestamp(start_dt)
+        end_time_value = self._format_utc_timestamp(end_dt)
         normalized_plate = self._normalize_license_plate(license_plate)
         name_value = name or normalized_plate
         # The API requires a name; default to the normalized plate when omitted.
@@ -110,8 +113,8 @@ class Provider(BaseProvider):
             "id": None,
             "name": name_value,
             "license_plate": normalized_plate,
-            "start_time": start_time,
-            "end_time": end_time,
+            "start_time": start_time_value,
+            "end_time": end_time_value,
         }
         data = await self._request_json(
             "POST",
@@ -124,8 +127,8 @@ class Provider(BaseProvider):
     async def update_reservation(
         self,
         reservation_id: str,
-        start_time: str | None = None,
-        end_time: str | None = None,
+        start_time: datetime | None = None,
+        end_time: datetime | None = None,
         name: str | None = None,
     ) -> Reservation:
         """Update a reservation."""
@@ -134,7 +137,8 @@ class Provider(BaseProvider):
         if end_time is None:
             raise ValidationError("end_time is required.")
         reservation_id_value = self._require_id(reservation_id, "reservation_id")
-        normalized_end_time = self._ensure_utc_timestamp(end_time)
+        end_dt = self._normalize_datetime(end_time)
+        normalized_end_time = self._format_utc_timestamp(end_dt)
         payload = {"end_time": normalized_end_time}
         data = await self._request_json(
             "PATCH",
@@ -144,10 +148,15 @@ class Provider(BaseProvider):
         )
         return self._map_reservation(data)
 
-    async def end_reservation(self, reservation_id: str, end_time: str) -> Reservation:
+    async def end_reservation(
+        self,
+        reservation_id: str,
+        end_time: datetime,
+    ) -> Reservation:
         """End a reservation."""
         reservation_id_value = self._require_id(reservation_id, "reservation_id")
-        normalized_end_time = self._ensure_utc_timestamp(end_time)
+        end_dt = self._normalize_datetime(end_time)
+        normalized_end_time = self._format_utc_timestamp(end_dt)
         existing = self._find_reservation(
             await self.list_reservations(),
             reservation_id_value,

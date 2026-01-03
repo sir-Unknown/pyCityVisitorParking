@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+## 0.5.0
+
+- Breaking: reservation start/end inputs now require timezone-aware `datetime`
+  values; string inputs are rejected.
+- DVS Portal reservation creation payloads now use Europe/Amsterdam local time
+  with offsets and milliseconds to match API expectations.
+- Remove the `mask_license_plate` helper from core utilities; the live check
+  script now masks plates locally.
+
 ## 0.4.1
 
 - Default The Hague `api_uri` to `/api` when omitted.

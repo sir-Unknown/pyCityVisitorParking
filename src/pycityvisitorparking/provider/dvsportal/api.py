@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import base64
 from collections.abc import Mapping
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -17,6 +17,7 @@ from ...util import format_utc_timestamp
 from ..base import BaseProvider
 from ..loader import ProviderManifest
 from .const import (
+    API_TIMEZONE,
     AUTH_HEADER,
     AUTH_PREFIX,
     DEFAULT_API_URI,
@@ -61,6 +62,7 @@ class Provider(BaseProvider):
         self._credentials: dict[str, str] | None = None
         self._permit_media_type_id: str | int | None = None
         self._permit_media_code: str | None = None
+        self._api_timezone: ZoneInfo | None = None
 
     async def login(self, credentials: Mapping[str, str] | None = None, **kwargs: str) -> None:
         """Authenticate against the provider."""
@@ -121,24 +123,29 @@ class Provider(BaseProvider):
     async def start_reservation(
         self,
         license_plate: str,
-        start_time: str,
-        end_time: str,
+        start_time: datetime,
+        end_time: datetime,
         name: str | None = None,
     ) -> Reservation:
         """Start a reservation for a license plate."""
-        start_time, end_time = self._validate_reservation_times(
+        start_time_utc, end_time_utc = self._validate_reservation_times(
             start_time,
             end_time,
             require_both=True,
         )
+        start_time_utc_value = self._format_utc_timestamp(start_time_utc)
+        end_time_utc_value = self._format_utc_timestamp(end_time_utc)
         normalized_plate = self._normalize_license_plate(license_plate)
         await self._ensure_defaults()
 
+        # DVS Portal expects local timestamps with offsets and milliseconds in requests.
+        start_time_local = self._format_provider_timestamp(start_time_utc)
+        end_time_local = self._format_provider_timestamp(end_time_utc)
         payload = {
             "permitMediaTypeID": self._permit_media_type_id,
             "permitMediaCode": self._permit_media_code,
-            "DateFrom": start_time,
-            "DateUntil": end_time,
+            "DateFrom": start_time_local,
+            "DateUntil": end_time_local,
             "LicensePlate": {
                 "Value": normalized_plate,
                 "Name": name,
@@ -156,8 +163,8 @@ class Provider(BaseProvider):
         reservation = self._select_reservation(
             reservations,
             license_plate=normalized_plate,
-            start_time=start_time,
-            end_time=end_time,
+            start_time=start_time_utc_value,
+            end_time=end_time_utc_value,
         )
         if reservation is None:
             raise ProviderError("Reservation was not returned by the provider.")
@@ -166,16 +173,21 @@ class Provider(BaseProvider):
     async def update_reservation(
         self,
         reservation_id: str,
-        start_time: str | None = None,
-        end_time: str | None = None,
+        start_time: datetime | None = None,
+        end_time: datetime | None = None,
         name: str | None = None,
     ) -> Reservation:
         """Update a reservation."""
         raise ProviderError("Reservation updates are not supported.")
 
-    async def end_reservation(self, reservation_id: str, end_time: str) -> Reservation:
+    async def end_reservation(
+        self,
+        reservation_id: str,
+        end_time: datetime,
+    ) -> Reservation:
         """End a reservation."""
-        normalized_end_time = self._ensure_utc_timestamp(end_time)
+        end_dt = self._normalize_datetime(end_time)
+        normalized_end_time = self._format_utc_timestamp(end_dt)
         await self._ensure_defaults()
 
         existing = self._select_reservation(
@@ -443,11 +455,27 @@ class Provider(BaseProvider):
             raise ValidationError("Provider timestamp is not a valid ISO 8601 value.") from exc
         if parsed.tzinfo is None:
             # DVS Portal returns local timestamps without offsets; assume Europe/Amsterdam.
-            try:
-                parsed = parsed.replace(tzinfo=ZoneInfo("Europe/Amsterdam"))
-            except ZoneInfoNotFoundError as exc:
-                raise ProviderError("Timezone data for Europe/Amsterdam is unavailable.") from exc
+            # Use fold=0 deterministically for DST transitions.
+            parsed = parsed.replace(tzinfo=self._provider_timezone(), fold=0)
         return format_utc_timestamp(parsed)
+
+    def _format_provider_timestamp(self, value: datetime) -> str:
+        if value.tzinfo is None:
+            raise ValidationError("Timestamp must include timezone information.")
+        if value.tzinfo == UTC and value.microsecond == 0:
+            normalized = value
+        else:
+            normalized = self._normalize_datetime(value)
+        localized = normalized.astimezone(self._provider_timezone())
+        return localized.isoformat(timespec="milliseconds")
+
+    def _provider_timezone(self) -> ZoneInfo:
+        try:
+            if self._api_timezone is None:
+                self._api_timezone = ZoneInfo(API_TIMEZONE)
+            return self._api_timezone
+        except ZoneInfoNotFoundError as exc:
+            raise ProviderError(f"Timezone data for {API_TIMEZONE} is unavailable.") from exc
 
     def _select_reservation(
         self,

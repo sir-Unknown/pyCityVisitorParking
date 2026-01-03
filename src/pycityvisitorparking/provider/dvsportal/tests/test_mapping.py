@@ -1,4 +1,4 @@
-from datetime import UTC
+from datetime import UTC, datetime
 
 import aiohttp
 import pytest
@@ -183,6 +183,57 @@ async def test_map_reservations_converts_naive_local_to_utc():
     assert reservation.end_time == "2024-07-01T09:00:00Z"
     assert_utc_timestamp(reservation.start_time)
     assert_utc_timestamp(reservation.end_time)
+
+
+@pytest.mark.asyncio
+async def test_format_provider_timestamp_converts_utc_to_local():
+    async with aiohttp.ClientSession() as session:
+        provider = Provider(
+            session,
+            ProviderManifest(
+                id="dvsportal",
+                name="DVS Portal",
+                favorite_update_possible=False,
+            ),
+            base_url="https://example",
+        )
+        formatted = provider._format_provider_timestamp(datetime(2026, 1, 2, 22, 57, tzinfo=UTC))
+
+    assert formatted == "2026-01-02T23:57:00.000+01:00"
+
+
+@pytest.mark.asyncio
+async def test_parse_provider_timestamp_uses_fold_zero_for_ambiguous_time():
+    async with aiohttp.ClientSession() as session:
+        provider = Provider(
+            session,
+            ProviderManifest(
+                id="dvsportal",
+                name="DVS Portal",
+                favorite_update_possible=False,
+            ),
+            base_url="https://example",
+        )
+        parsed = provider._parse_provider_timestamp("2024-10-27T02:30:00")
+
+    assert parsed == "2024-10-27T00:30:00Z"
+
+
+@pytest.mark.asyncio
+async def test_parse_provider_timestamp_uses_fold_zero_for_nonexistent_time():
+    async with aiohttp.ClientSession() as session:
+        provider = Provider(
+            session,
+            ProviderManifest(
+                id="dvsportal",
+                name="DVS Portal",
+                favorite_update_possible=False,
+            ),
+            base_url="https://example",
+        )
+        parsed = provider._parse_provider_timestamp("2024-03-31T02:30:00")
+
+    assert parsed == "2024-03-31T01:30:00Z"
 
 
 @pytest.mark.asyncio

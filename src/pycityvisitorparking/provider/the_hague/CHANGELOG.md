@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.5.0
+
+- Require timezone-aware `datetime` values for reservation inputs.
+
 ## 0.4.1
 
 - Default `api_uri` to `/api` when omitted.

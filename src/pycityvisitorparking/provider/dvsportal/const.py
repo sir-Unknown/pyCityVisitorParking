@@ -1,6 +1,7 @@
 """Constants for the DVS Portal provider."""
 
 DEFAULT_API_URI = "/DVSWebAPI/api"
+API_TIMEZONE = "Europe/Amsterdam"
 
 LOGIN_ENDPOINT = "/login"
 LOGIN_GETBASE_ENDPOINT = "/login/getbase"

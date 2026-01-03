@@ -76,6 +76,8 @@
 - Convert all provider timestamps to UTC before returning them.
 - Format all public timestamps as ISO 8601 with `Z` and without microseconds.
 - Ensure every returned timestamp is parseable as a timezone-aware UTC datetime.
+- Accept only timezone-aware `datetime` values in public reservation methods.
+- Normalize to UTC `datetime` internally and serialize only at API/model boundaries.
 
 ✅ **Filter zone_validity to chargeable windows**
 - Build `Permit.zone_validity` using only chargeable windows.
@@ -103,6 +105,7 @@
 ✅ **Enforce reservation rules**
 - Require `end_time` for `start_reservation` and ❌ avoid defaults.
 - Enforce `end_time > start_time` and raise `ValidationError` when violated.
+- Require `start_time`/`end_time` as timezone-aware `datetime` values.
 
 ✅ **Add tests without live calls**
 - ❌ Avoid live services.
@@ -110,6 +113,8 @@
 - Add tests that verify:
   - license plate normalization
   - UTC conversion from an offset timestamp
+  - naive `datetime` inputs raise `ValidationError`
+  - serialization uses `Z` with second precision
   - `zone_validity` filtering to chargeable windows
   - mapping into strict public dataclasses
 
@@ -123,6 +128,7 @@
 - Confirm `manifest.json` validates against the schema.
 - Confirm `Provider` exports and ❌ avoid network calls on import.
 - Confirm UTC ISO 8601 `Z` timestamps in all public outputs.
+- Confirm reservation methods accept only timezone-aware `datetime` values.
 - Confirm license plate normalization and validation.
 - Confirm chargeable-only `zone_validity`.
 - Confirm `end_time` required and `end_time > start_time`.

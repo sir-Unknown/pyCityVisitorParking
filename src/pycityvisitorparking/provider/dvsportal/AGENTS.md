@@ -14,5 +14,10 @@ This file supplements the shared provider guidance in
 ## Behavior constraints
 
 - Reservation updates are not supported.
-- Favorite updates rely on remove + add fallback.
+- Favorite updates are not supported.
 - Default `api_uri` is `/DVSWebAPI/api` when omitted.
+
+## Favorite payloads
+
+- Upsert expects `permitMediaTypeID`, `permitMediaCode`, `licensePlate` object, and `name`.
+- Remove expects `permitMediaTypeID`, `permitMediaCode`, `licensePlate` string, and `name`.

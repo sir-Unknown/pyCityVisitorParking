@@ -51,7 +51,7 @@
 ✅ **Define and enforce the provider interface**
 - Define `BaseProvider` in `provider/base.py`.
 - Require providers to implement standardized async methods for login, permit, reservations, and favorites.
-- Implement core fallback behavior for `update_favorite` when native update is not supported.
+- Require `update_favorite()` to raise `ProviderError` when updates are not supported.
 
 ✅ **Standardize time, license plates, and zone_validity**
 - Return public timestamps as UTC ISO 8601 with `Z` and without microseconds.

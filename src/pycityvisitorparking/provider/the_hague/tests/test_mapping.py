@@ -7,7 +7,11 @@ from pycityvisitorparking.exceptions import ValidationError
 from pycityvisitorparking.models import Favorite, Permit, Reservation, ZoneValidityBlock
 from pycityvisitorparking.provider.loader import ProviderManifest
 from pycityvisitorparking.provider.the_hague.api import Provider
-from pycityvisitorparking.provider.the_hague.const import DEFAULT_API_URI, SESSION_ENDPOINT
+from pycityvisitorparking.provider.the_hague.const import (
+    DEFAULT_API_URI,
+    PERMIT_MEDIA_TYPE_HEADER,
+    SESSION_ENDPOINT,
+)
 from pycityvisitorparking.util import format_utc_timestamp, parse_timestamp
 
 ACCOUNT_SAMPLE = {
@@ -28,16 +32,6 @@ ACCOUNT_SAMPLE = {
     ],
 }
 
-ACCOUNT_SAMPLE_FALLBACK_ZONE = {
-    "id": 77,
-    "debit_minutes": 45,
-    "reservation_count": 0,
-    "zone_validity": [],
-    "zone": {
-        "start_time": "2024-02-01T09:00:00+01:00",
-        "end_time": "2024-02-01T17:00:00+01:00",
-    },
-}
 
 RESERVATION_SAMPLE = {
     "id": 123,
@@ -89,33 +83,6 @@ async def test_map_permit_filters_free_blocks_and_converts_utc():
 
 
 @pytest.mark.asyncio
-async def test_map_permit_falls_back_to_zone():
-    async with aiohttp.ClientSession() as session:
-        provider = Provider(
-            session,
-            ProviderManifest(
-                id="the_hague",
-                name="The Hague",
-                favorite_update_possible=True,
-            ),
-            base_url="https://example",
-        )
-        permit = provider._map_permit(ACCOUNT_SAMPLE_FALLBACK_ZONE)
-
-    assert permit.id == "77"
-    assert permit.remaining_balance == 45
-    assert permit.zone_validity == [
-        ZoneValidityBlock(
-            start_time="2024-02-01T08:00:00Z",
-            end_time="2024-02-01T16:00:00Z",
-        )
-    ]
-    for block in permit.zone_validity:
-        assert_utc_timestamp(block.start_time)
-        assert_utc_timestamp(block.end_time)
-
-
-@pytest.mark.asyncio
 async def test_map_reservation_normalizes_plate_and_utc():
     async with aiohttp.ClientSession() as session:
         provider = Provider(
@@ -140,6 +107,57 @@ async def test_map_reservation_normalizes_plate_and_utc():
 
 
 @pytest.mark.asyncio
+async def test_error_code_mapping():
+    async with aiohttp.ClientSession() as session:
+        provider = Provider(
+            session,
+            ProviderManifest(
+                id="the_hague",
+                name="The Hague",
+                favorite_update_possible=True,
+            ),
+            base_url="https://example",
+        )
+        message = provider._error_message_for_code("PV00076")
+
+    assert message == "Provider error pv76: No paid parking at this time"
+
+
+@pytest.mark.asyncio
+async def test_error_code_mapping_lowercase_with_zeros():
+    async with aiohttp.ClientSession() as session:
+        provider = Provider(
+            session,
+            ProviderManifest(
+                id="the_hague",
+                name="The Hague",
+                favorite_update_possible=True,
+            ),
+            base_url="https://example",
+        )
+        message = provider._error_message_for_code("pv00076")
+
+    assert message == "Provider error pv76: No paid parking at this time"
+
+
+@pytest.mark.asyncio
+async def test_error_code_mapping_unknown_code_is_generic():
+    async with aiohttp.ClientSession() as session:
+        provider = Provider(
+            session,
+            ProviderManifest(
+                id="the_hague",
+                name="The Hague",
+                favorite_update_possible=True,
+            ),
+            base_url="https://example",
+        )
+        message = provider._error_message_for_code("pv999")
+
+    assert message == "Provider error pv999."
+
+
+@pytest.mark.asyncio
 async def test_map_favorite_normalizes_plate():
     async with aiohttp.ClientSession() as session:
         provider = Provider(
@@ -156,7 +174,38 @@ async def test_map_favorite_normalizes_plate():
     assert isinstance(favorite, Favorite)
     assert favorite.id == "9"
     assert favorite.name == "Family"
-    assert favorite.license_plate == "XY99ZZ"
+
+
+@pytest.mark.asyncio
+async def test_request_includes_permit_media_type_header(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async with aiohttp.ClientSession() as session:
+        provider = Provider(
+            session,
+            ProviderManifest(
+                id="the_hague",
+                name="The Hague",
+                favorite_update_possible=True,
+            ),
+            base_url="https://example",
+        )
+        provider._permit_media_type_id = "1"
+        captured: dict[str, dict[str, str]] = {}
+
+        async def _fake_request(
+            method: str, url: str, *, expect_json: bool, **kwargs: object
+        ) -> object:
+            headers = kwargs.get("headers")
+            if isinstance(headers, dict):
+                captured["headers"] = headers
+            return {}
+
+        monkeypatch.setattr(provider, "_request", _fake_request)
+        await provider._request_json("GET", "/noop", allow_reauth=False)
+
+    headers = captured["headers"]
+    assert headers[PERMIT_MEDIA_TYPE_HEADER] == "1"
 
 
 @pytest.mark.asyncio

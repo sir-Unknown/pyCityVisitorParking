@@ -262,18 +262,14 @@ class BaseProvider(ABC):
         license_plate: str | None = None,
         name: str | None = None,
     ) -> Favorite:
-        """Update a favorite, with fallback for providers without native support."""
-        if self.favorite_update_possible:
-            return await self._update_favorite_native(
-                favorite_id,
-                license_plate=license_plate,
-                name=name,
-            )
-        if license_plate is None:
-            raise ValidationError("license_plate is required when update is not supported.")
-        normalized = self._normalize_license_plate(license_plate)
-        await self.remove_favorite(favorite_id)
-        return await self.add_favorite(normalized, name=name)
+        """Update a favorite."""
+        if not self.favorite_update_possible:
+            raise ProviderError("Favorite updates are not supported.")
+        return await self._update_favorite_native(
+            favorite_id,
+            license_plate=license_plate,
+            name=name,
+        )
 
     @abstractmethod
     async def _update_favorite_native(

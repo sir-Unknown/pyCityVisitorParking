@@ -1,4 +1,5 @@
 from datetime import UTC, datetime
+from typing import Any
 
 import aiohttp
 import pytest
@@ -237,6 +238,23 @@ async def test_parse_provider_timestamp_uses_fold_zero_for_nonexistent_time():
 
 
 @pytest.mark.asyncio
+async def test_parse_provider_timestamp_with_offset_is_converted_to_utc():
+    async with aiohttp.ClientSession() as session:
+        provider = Provider(
+            session,
+            ProviderManifest(
+                id="dvsportal",
+                name="DVS Portal",
+                favorite_update_possible=False,
+            ),
+            base_url="https://example",
+        )
+        parsed = provider._parse_provider_timestamp("2024-01-01T09:00:00+01:00")
+
+    assert parsed == "2024-01-01T08:00:00Z"
+
+
+@pytest.mark.asyncio
 async def test_map_favorites_normalizes_plate():
     async with aiohttp.ClientSession() as session:
         provider = Provider(
@@ -290,3 +308,182 @@ async def test_default_api_uri_is_applied():
 
         expected = f"https://example{DEFAULT_API_URI}{LOGIN_ENDPOINT}"
         assert provider._build_url(LOGIN_ENDPOINT) == expected
+
+
+@pytest.mark.asyncio
+async def test_extract_permit_falls_back_to_permits_list():
+    async with aiohttp.ClientSession() as session:
+        provider = Provider(
+            session,
+            ProviderManifest(
+                id="dvsportal",
+                name="DVS Portal",
+                favorite_update_possible=False,
+            ),
+            base_url="https://example",
+        )
+        extracted = provider._extract_permit({"Permits": [PERMIT_SAMPLE]})
+
+    assert extracted == PERMIT_SAMPLE
+
+
+@pytest.mark.asyncio
+async def test_start_reservation_payload_uses_local_offset_with_milliseconds(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async with aiohttp.ClientSession() as session:
+        provider = Provider(
+            session,
+            ProviderManifest(
+                id="dvsportal",
+                name="DVS Portal",
+                favorite_update_possible=False,
+            ),
+            base_url="https://example",
+        )
+        provider._permit_media_type_id = 1
+        provider._permit_media_code = "CARD-1"
+
+        async def _noop_defaults() -> None:
+            return None
+
+        monkeypatch.setattr(provider, "_ensure_defaults", _noop_defaults)
+        captured: dict[str, Any] = {}
+
+        async def _fake_request_json_auth(method: str, path: str, *, json: Any) -> Any:
+            captured["method"] = method
+            captured["path"] = path
+            captured["json"] = json
+            return {
+                "Permit": {
+                    "PermitMedias": [
+                        {
+                            "TypeID": 1,
+                            "Code": "CARD-1",
+                            "ActiveReservations": [
+                                {
+                                    "ReservationID": "123",
+                                    "ValidFrom": json["DateFrom"],
+                                    "ValidUntil": json["DateUntil"],
+                                    "LicensePlate": {
+                                        "Value": "AB12CD",
+                                        "DisplayValue": "AB-12-CD",
+                                    },
+                                }
+                            ],
+                            "LicensePlates": [],
+                        }
+                    ],
+                    "BlockTimes": [],
+                }
+            }
+
+        monkeypatch.setattr(provider, "_request_json_auth", _fake_request_json_auth)
+
+        start_dt = datetime(2026, 1, 2, 22, 57, tzinfo=UTC)
+        end_dt = datetime(2026, 1, 2, 23, 57, tzinfo=UTC)
+        reservation = await provider.start_reservation(
+            "ab-12 cd",
+            start_dt,
+            end_dt,
+            name="Visitor",
+        )
+
+    payload = captured["json"]
+    assert payload["permitMediaTypeID"] == 1
+    assert payload["permitMediaCode"] == "CARD-1"
+    assert payload["DateFrom"] == "2026-01-02T23:57:00.000+01:00"
+    assert payload["DateUntil"] == "2026-01-03T00:57:00.000+01:00"
+    assert payload["LicensePlate"]["Value"] == "AB12CD"
+    assert payload["LicensePlate"]["Name"] == "Visitor"
+    assert reservation.id == "123"
+
+
+@pytest.mark.asyncio
+async def test_add_favorite_payload_contains_required_fields(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async with aiohttp.ClientSession() as session:
+        provider = Provider(
+            session,
+            ProviderManifest(
+                id="dvsportal",
+                name="DVS Portal",
+                favorite_update_possible=False,
+            ),
+            base_url="https://example",
+        )
+        provider._permit_media_type_id = 1
+        provider._permit_media_code = "CARD-1"
+
+        async def _noop_defaults() -> None:
+            return None
+
+        monkeypatch.setattr(provider, "_ensure_defaults", _noop_defaults)
+        captured: dict[str, Any] = {}
+
+        async def _fake_request_json_auth(method: str, path: str, *, json: Any) -> Any:
+            captured["json"] = json
+            return {
+                "Permit": {
+                    "PermitMedias": [
+                        {
+                            "TypeID": 1,
+                            "Code": "CARD-1",
+                            "ActiveReservations": [],
+                            "LicensePlates": [
+                                {"Value": "AB12CD", "Name": "Visitor"},
+                            ],
+                        }
+                    ]
+                }
+            }
+
+        monkeypatch.setattr(provider, "_request_json_auth", _fake_request_json_auth)
+        favorite = await provider.add_favorite("ab-12 cd", name="Visitor")
+
+    payload = captured["json"]
+    assert payload["permitMediaTypeID"] == 1
+    assert payload["permitMediaCode"] == "CARD-1"
+    assert payload["licensePlate"]["Value"] == "AB12CD"
+    assert payload["licensePlate"]["Name"] == "Visitor"
+    assert payload["updateLicensePlate"] is None
+    assert payload["name"] == "Visitor"
+    assert favorite.id == "AB12CD"
+
+
+@pytest.mark.asyncio
+async def test_remove_favorite_payload_contains_required_fields(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async with aiohttp.ClientSession() as session:
+        provider = Provider(
+            session,
+            ProviderManifest(
+                id="dvsportal",
+                name="DVS Portal",
+                favorite_update_possible=False,
+            ),
+            base_url="https://example",
+        )
+        provider._permit_media_type_id = 1
+        provider._permit_media_code = "CARD-1"
+
+        async def _noop_defaults() -> None:
+            return None
+
+        monkeypatch.setattr(provider, "_ensure_defaults", _noop_defaults)
+        captured: dict[str, Any] = {}
+
+        async def _fake_request_json_auth(method: str, path: str, *, json: Any) -> Any:
+            captured["json"] = json
+            return {}
+
+        monkeypatch.setattr(provider, "_request_json_auth", _fake_request_json_auth)
+        await provider.remove_favorite("ab-12 cd")
+
+    payload = captured["json"]
+    assert payload["permitMediaTypeID"] == 1
+    assert payload["permitMediaCode"] == "CARD-1"
+    assert payload["licensePlate"] == "AB12CD"
+    assert payload["name"] == "AB12CD"

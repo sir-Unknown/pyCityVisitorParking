@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping
 from datetime import datetime
 from typing import Any
 
 import aiohttp
 
-from ...exceptions import AuthError, ProviderError, ValidationError
+from ...exceptions import AuthError, NetworkError, ProviderError, ValidationError
 from ...models import Favorite, Permit, Reservation, ZoneValidityBlock
 from ..base import BaseProvider
 from ..loader import ProviderManifest
@@ -21,6 +22,28 @@ from .const import (
     RESERVATION_ENDPOINT,
     SESSION_ENDPOINT,
 )
+
+_ERROR_CODE_RE = re.compile(r"^[a-z0-9_]+$")
+_ERROR_MESSAGES = {
+    "pv19": "License plate not found",
+    "pv20": "You have an invalid permit type",
+    "pv46": "You have no valid parking permit",
+    "pv51": "Maximum reservations reached",
+    "pv52": "Insufficient balance",
+    "pv63": "This license plate is already reserved at this time",
+    "pv71": "Upstream server not reachable",
+    "pv72": "No parking in selected zone",
+    "pv74": "Invalid start time",
+    "pv75": "Invalid end time",
+    "pv76": "No paid parking at this time",
+    "pv77": "No valid session found",
+    "pv97": "Incorrect license plate",
+    "pv111": "Incorrect credentials supplied",
+    "dit_kenteken_is_reeds_aangemeld": "License plate is already registered",
+    "account_already_linked": "This account is already linked",
+    "ilp": "Enter the license plate number without punctuation marks please",
+    "npvs_offline": "The parking registry is not available at this time.",
+}
 
 
 class Provider(BaseProvider):
@@ -56,7 +79,7 @@ class Provider(BaseProvider):
         merged = self._merge_credentials(credentials, **kwargs)
         username = merged.get("username")
         password = merged.get("password")
-        permit_media_type_id = merged.get("permit_media_type_id") or merged.get("permitMediaTypeId")
+        permit_media_type_id = merged.get("permit_media_type_id")
         if not username:
             raise ValidationError("username is required.")
         if not password:
@@ -237,10 +260,7 @@ class Provider(BaseProvider):
             raise ProviderError("Provider response included invalid account data.")
         account_id = self._coerce_response_id(account.get("id"), "account id")
         remaining_balance = self._parse_int(account.get("debit_minutes"))
-        zone_validity = self._map_zone_validity(
-            account.get("zone_validity"),
-            fallback_zone=account.get("zone"),
-        )
+        zone_validity = self._map_zone_validity(account.get("zone_validity"))
         return Permit(
             id=account_id,
             remaining_balance=remaining_balance,
@@ -250,8 +270,6 @@ class Provider(BaseProvider):
     def _map_zone_validity(
         self,
         raw: Any,
-        *,
-        fallback_zone: Any | None = None,
     ) -> list[ZoneValidityBlock]:
         if raw is None:
             raw_list: list[dict[str, Any]] = []
@@ -273,24 +291,7 @@ class Provider(BaseProvider):
                 raise ProviderError("Provider returned invalid zone validity data.") from exc
             entries.append((ZoneValidityBlock(start_time=start, end_time=end), not is_free))
         # Only include chargeable windows (is_free is not true).
-        zone_validity = self._filter_chargeable_zone_validity(entries)
-        if zone_validity or fallback_zone is None:
-            return zone_validity
-        if not isinstance(fallback_zone, dict):
-            return []
-        start_raw = fallback_zone.get("start_time")
-        end_raw = fallback_zone.get("end_time")
-        if not start_raw or not end_raw:
-            return []
-        if fallback_zone.get("is_free") is True:
-            return []
-        try:
-            start = self._ensure_utc_timestamp(start_raw)
-            end = self._ensure_utc_timestamp(end_raw)
-        except ValidationError as exc:
-            raise ProviderError("Provider returned invalid zone validity data.") from exc
-        # Fall back to the single-zone window when no list entries are available.
-        return [ZoneValidityBlock(start_time=start, end_time=end)]
+        return self._filter_chargeable_zone_validity(entries)
 
     def _map_reservation_list(self, data: Any) -> list[Reservation]:
         if data is None:
@@ -445,6 +446,41 @@ class Provider(BaseProvider):
                 raise
         raise ProviderError("Request failed.")
 
+    async def _request(self, method: str, url: str, *, expect_json: bool, **kwargs: Any) -> Any:
+        retries = self._retry_count if method.upper() == "GET" else 0
+        attempts = retries + 1
+        last_error: Exception | None = None
+        for attempt in range(attempts):
+            try:
+                timeout = kwargs.pop("timeout", self._timeout)
+                if timeout is None:
+                    timeout = self._timeout
+                async with self._session.request(
+                    method,
+                    url,
+                    timeout=timeout,
+                    ssl=True,
+                    **kwargs,
+                ) as response:
+                    if response.status == 400:
+                        message = await self._error_message_from_response(response)
+                        if message:
+                            raise ProviderError(message)
+                    self._raise_for_status(response)
+                    if expect_json:
+                        try:
+                            return await response.json()
+                        except (aiohttp.ContentTypeError, ValueError) as exc:
+                            raise ProviderError("Response did not contain valid JSON.") from exc
+                    return await response.text()
+            except (aiohttp.ClientError, TimeoutError) as exc:
+                last_error = exc
+                if attempt >= attempts - 1:
+                    raise NetworkError("Network request failed.") from exc
+        if last_error is not None:
+            raise NetworkError("Network request failed.") from last_error
+        raise ProviderError("Request failed.")
+
     async def _ensure_authenticated(self) -> None:
         if self._logged_in:
             return
@@ -518,3 +554,32 @@ class Provider(BaseProvider):
             except ValueError:
                 return 0
         return 0
+
+    def _normalize_error_code(self, value: str) -> str:
+        normalized = value.strip().lower()
+        if normalized.startswith("pv"):
+            suffix = normalized[2:]
+            if suffix.isdigit():
+                return f"pv{int(suffix)}"
+        return normalized
+
+    def _error_message_for_code(self, value: str) -> str | None:
+        code = self._normalize_error_code(value)
+        if not _ERROR_CODE_RE.match(code):
+            return None
+        message = _ERROR_MESSAGES.get(code)
+        if message:
+            return f"Provider error {code}: {message}"
+        return f"Provider error {code}."
+
+    async def _error_message_from_response(self, response: aiohttp.ClientResponse) -> str | None:
+        try:
+            data = await response.json()
+        except (aiohttp.ContentTypeError, ValueError):
+            return None
+        if not isinstance(data, dict):
+            return None
+        raw = data.get("description") or data.get("Description")
+        if not isinstance(raw, str) or not raw.strip():
+            return None
+        return self._error_message_for_code(raw)

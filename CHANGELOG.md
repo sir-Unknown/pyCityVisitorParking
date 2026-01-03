@@ -2,14 +2,18 @@
 
 ## Unreleased
 
-## 0.5.0
+## 0.5.1
 
-- Breaking: reservation start/end inputs now require timezone-aware `datetime`
-  values; string inputs are rejected.
-- DVS Portal reservation creation payloads now use Europe/Amsterdam local time
-  with offsets and milliseconds to match API expectations.
-- Remove the `mask_license_plate` helper from core utilities; the live check
-  script now masks plates locally.
+- Breaking: `update_favorite()` now raises `ProviderError` when updates are unsupported.
+- Breaking: drop legacy `permitMediaTypeID`/`permitMediaTypeId` credential aliases.
+- Breaking: remove The Hague `zone` fallback when `zone_validity` is empty.
+- Breaking: remove DVS reservation selection fallback.
+- Breaking: reservation start/end inputs now require timezone-aware `datetime` values; string inputs are rejected.
+- DVS Portal: fix favorite upsert/remove payloads and accept `Permits[0]` when `Permit` is omitted.
+- DVS Portal reservation creation payloads now use Europe/Amsterdam local time with offsets and milliseconds to match API expectations.
+- The Hague: map PV error codes to readable `ProviderError` messages.
+- Remove the `mask_license_plate` helper from core utilities; the live check script now masks plates locally.
+- Dev tooling: pin pip/Hatch/ruff/pytest/twine versions in Hatch envs, CI, and devcontainer.
 
 ## 0.4.1
 

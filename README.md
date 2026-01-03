@@ -34,6 +34,8 @@ For exact `base_url` and `api_uri` values, see the provider READMEs.
 
 ## Installation
 
+Requires Python 3.13+.
+
 ```bash
 pip install pycityvisitorparking
 ```
@@ -99,7 +101,8 @@ Provider READMEs list credential requirements and any unsupported operations.
   `end_reservation()` return `Reservation` with `id`, `name`, `license_plate`,
   `start_time`, and `end_time`.
 - Favorites: `list_favorites()` and `add_favorite()` return `Favorite` with `id`, `name`,
-  and `license_plate`. `update_favorite()` returns `Favorite`, while
+  and `license_plate`. `update_favorite()` returns `Favorite` when supported
+  (`favorite_update_possible`), otherwise it raises `ProviderError`.
   `remove_favorite()` removes the entry without returning data.
 
 ## Provider framework

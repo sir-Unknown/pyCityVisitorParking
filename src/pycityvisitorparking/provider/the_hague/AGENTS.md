@@ -12,4 +12,5 @@ This file supplements the shared provider guidance in
 ## Behavior constraints
 
 - Reservation updates only support changing `end_time`.
+- PV error codes from 400 responses are mapped to readable `ProviderError` messages.
 - Default `api_uri` is `/api` when omitted.

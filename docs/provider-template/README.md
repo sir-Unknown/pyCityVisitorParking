@@ -28,5 +28,9 @@ runtime package and is ignored by discovery.
 - Normalize license plates and enforce UTC ISO 8601 `Z` timestamps (second
   precision). Accept only timezone-aware `datetime` values for reservation
   inputs and reject naive timestamps.
+- Require `start_time` and `end_time` for `start_reservation` and enforce
+  `end_time > start_time`.
 - Filter `zone_validity` to chargeable windows only.
 - Raise library exceptions (`AuthError`, `NetworkError`, `ValidationError`, `ProviderError`).
+- If favorite updates are unsupported, set `favorite_update_possible` to `false`
+  and ensure `update_favorite()` raises `ProviderError`.

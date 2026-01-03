@@ -25,7 +25,7 @@ jobs:
       - name: Install Hatch
         run: |
           python -m pip install --upgrade pip
-          python -m pip install hatch
+          python -m pip install hatch==1.16.2
 
       - name: Lint (ruff)
         run: |
@@ -46,5 +46,5 @@ jobs:
 
       - name: Verify dist metadata
         run: |
-          python -m pip install --upgrade twine
+          python -m pip install twine==6.2.0
           python -m twine check dist/*

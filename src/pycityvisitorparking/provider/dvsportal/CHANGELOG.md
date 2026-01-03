@@ -2,8 +2,12 @@
 
 ## Unreleased
 
-## 0.5.0
+## 0.5.1
 
+- Fix favorite upsert/remove payloads and accept `Permits[0]` when `Permit` is omitted.
+- `update_favorite()` now raises `ProviderError` (unsupported).
+- Drop legacy `permitMediaTypeID` credential alias (use `permit_media_type_id`).
+- Remove reservation selection fallback.
 - Require timezone-aware `datetime` values for reservation inputs.
 - Send reservation creation timestamps in Europe/Amsterdam local time with
   offsets and milliseconds.

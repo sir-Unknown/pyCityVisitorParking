@@ -69,7 +69,7 @@ class Provider(BaseProvider):
         merged = self._merge_credentials(credentials, **kwargs)
         username = merged.get("username")
         password = merged.get("password")
-        permit_media_type_id = merged.get("permit_media_type_id") or merged.get("permitMediaTypeID")
+        permit_media_type_id = merged.get("permit_media_type_id")
         if not username:
             raise ValidationError("username is required.")
         if not password:
@@ -156,7 +156,10 @@ class Provider(BaseProvider):
             RESERVATION_CREATE_ENDPOINT,
             json=payload,
         )
-        permit = self._extract_permit(data)
+        try:
+            permit = self._extract_permit(data)
+        except ProviderError:
+            permit = await self._fetch_base()
         self._cache_defaults(permit)
         permit_media = self._select_permit_media(permit)
         reservations = self._map_reservations(permit_media)
@@ -193,7 +196,6 @@ class Provider(BaseProvider):
         existing = self._select_reservation(
             await self.list_reservations(),
             reservation_id=str(reservation_id),
-            fallback_first=False,
         )
         if existing is None:
             raise ValidationError("reservation_id was not found.")
@@ -207,7 +209,10 @@ class Provider(BaseProvider):
             RESERVATION_END_ENDPOINT,
             json=payload,
         )
-        permit = self._extract_permit(data)
+        try:
+            permit = self._extract_permit(data)
+        except ProviderError:
+            permit = await self._fetch_base()
         self._cache_defaults(permit)
         if existing is None:
             raise ProviderError("Reservation not found for ending.")
@@ -229,25 +234,31 @@ class Provider(BaseProvider):
         """Add a favorite."""
         normalized_plate = self._normalize_license_plate(license_plate)
         await self._ensure_defaults()
+        name_value = name or normalized_plate
 
         payload = {
             "permitMediaTypeID": self._permit_media_type_id,
             "permitMediaCode": self._permit_media_code,
             "licensePlate": {
                 "Value": normalized_plate,
-                "Name": name,
+                "Name": name_value,
             },
             "updateLicensePlate": None,
+            "name": name_value,
         }
         data = await self._request_json_auth(
             "POST",
             FAVORITE_UPSERT_ENDPOINT,
             json=payload,
         )
-        permit = self._extract_permit(data)
-        self._cache_defaults(permit)
-        permit_media = self._select_permit_media(permit)
-        favorites = self._map_favorites(permit_media)
+        try:
+            permit = self._extract_permit(data)
+        except ProviderError:
+            favorites = await self.list_favorites()
+        else:
+            self._cache_defaults(permit)
+            permit_media = self._select_permit_media(permit)
+            favorites = self._map_favorites(permit_media)
         favorite = self._select_favorite(favorites, normalized_plate)
         if favorite is None:
             raise ProviderError("Favorite was not returned by the provider.")
@@ -270,7 +281,7 @@ class Provider(BaseProvider):
             "permitMediaTypeID": self._permit_media_type_id,
             "permitMediaCode": self._permit_media_code,
             "licensePlate": normalized_plate,
-            "name": None,
+            "name": normalized_plate,
         }
         await self._request_json_auth("POST", FAVORITE_REMOVE_ENDPOINT, json=payload)
 
@@ -484,8 +495,6 @@ class Provider(BaseProvider):
         license_plate: str | None = None,
         start_time: str | None = None,
         end_time: str | None = None,
-        *,
-        fallback_first: bool = True,
     ) -> Reservation | None:
         for reservation in reservations:
             if reservation_id is not None and reservation.id != reservation_id:
@@ -497,8 +506,6 @@ class Provider(BaseProvider):
             if end_time is not None and reservation.end_time != end_time:
                 continue
             return reservation
-        if fallback_first and reservations:
-            return reservations[0]
         return None
 
     def _select_favorite(self, favorites: list[Favorite], plate: str) -> Favorite | None:

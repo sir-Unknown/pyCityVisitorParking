@@ -124,11 +124,11 @@ Use `validate_reservation_times()` for shared validation and normalization.
 Set `favorite_update_possible` in the manifest:
 
 - `true` only if the provider supports a native update endpoint.
-- `false` if updates require delete + add.
+- `false` if updates are not supported.
 
-When `favorite_update_possible` is `false`, the core fallback removes and re-adds
-the favorite. Providers should implement `_update_favorite_native()` even if the
-fallback is used (it can raise `ProviderError` if called unexpectedly).
+When `favorite_update_possible` is `false`, `update_favorite()` raises
+`ProviderError`. Providers should still implement `_update_favorite_native()` to
+raise `ProviderError` if called unexpectedly.
 
 ## Public models only
 

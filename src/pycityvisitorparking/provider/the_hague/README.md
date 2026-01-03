@@ -55,9 +55,7 @@ Recommended endpoints:
 - `Permit.remaining_balance` uses `Account.debit_minutes`.
 - `Permit.zone_validity` is empty because the public API does not expose
   chargeable windows. If an undocumented `zone_validity` list is present,
-  entries with `is_free` set to `true` are filtered out. When the list is empty
-  but a `zone` object is present, `zone.start_time`/`zone.end_time` are returned
-  (and filtered out if `zone.is_free` is `true`).
+  entries with `is_free` set to `true` are filtered out.
 - Reservations map directly to `Reservation` fields.
 - Favorites map directly to `Favorite` fields.
 
@@ -67,6 +65,7 @@ Provider timestamps are converted to UTC and returned as ISO 8601 with `Z` and
 no microseconds.
 Reservation inputs must be timezone-aware `datetime` values; naive inputs are
 rejected.
+Outbound reservation payloads use UTC ISO 8601 `Z` timestamps.
 
 ## License plate normalization
 
@@ -78,6 +77,8 @@ characters.
 - Reservation updates only support changing `end_time`.
 - `end_reservation` uses the delete endpoint and returns the supplied
   `end_time` in the response model.
+- 400 responses with PV error codes are mapped to readable `ProviderError`
+  messages.
 
 ## Links
 

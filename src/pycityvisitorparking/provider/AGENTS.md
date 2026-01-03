@@ -100,10 +100,10 @@
 ✅ **Respect favorite update behavior**
 - Set `favorite_update_possible` to `true` only when native update is supported.
 - Set `favorite_update_possible` to `false` when native update is not supported.
-- Rely on core fallback behavior (remove+add) when update is not supported.
+- `update_favorite()` must raise `ProviderError` when updates are not supported.
 
 ✅ **Enforce reservation rules**
-- Require `end_time` for `start_reservation` and ❌ avoid defaults.
+- Require `start_time` and `end_time` for `start_reservation` and ❌ avoid defaults.
 - Enforce `end_time > start_time` and raise `ValidationError` when violated.
 - Require `start_time`/`end_time` as timezone-aware `datetime` values.
 

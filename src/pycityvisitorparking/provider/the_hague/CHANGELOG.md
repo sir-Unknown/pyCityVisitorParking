@@ -2,8 +2,11 @@
 
 ## Unreleased
 
-## 0.5.0
+## 0.5.1
 
+- Map PV error codes to readable `ProviderError` messages.
+- Drop legacy `permitMediaTypeId` credential alias (use `permit_media_type_id`).
+- Remove `zone` fallback when `zone_validity` is empty.
 - Require timezone-aware `datetime` values for reservation inputs.
 
 ## 0.4.1

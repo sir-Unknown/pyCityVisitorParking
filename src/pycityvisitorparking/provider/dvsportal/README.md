@@ -86,7 +86,7 @@ listed `base_url` and `api_uri` values:
 Unsupported:
 
 - Reservation updates (`update_reservation`)
-- Native favorite updates (`update_favorite` uses remove + add fallback)
+- Favorite updates (`update_favorite`)
 
 ## Migration notes
 
@@ -102,6 +102,12 @@ Unsupported:
   `IsFree` is not `true`.
 - Reservations come from `PermitMedias[0].ActiveReservations`.
 - Favorites come from `PermitMedias[0].LicensePlates`.
+
+## Favorite payloads
+
+- Upsert sends `permitMediaTypeID`, `permitMediaCode`, `licensePlate` object, and `name`.
+- Remove sends `permitMediaTypeID`, `permitMediaCode`, `licensePlate` string, and `name`.
+  When `name` is omitted, the normalized license plate is used.
 
 ## Time handling
 
@@ -134,7 +140,7 @@ characters.
 
 - Only the first permit and permit media are used.
 - Reservation updates are not supported.
-- Favorite updates rely on the core remove + add fallback.
+- Favorite updates are not supported.
 
 ## Links
 

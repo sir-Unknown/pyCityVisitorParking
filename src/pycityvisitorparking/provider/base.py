@@ -56,18 +56,26 @@ class BaseProvider(ABC):
 
     @property
     def favorite_update_possible(self) -> bool:
-        return self._manifest.favorite_update_possible
+        return bool(self._manifest.favorite_update_fields)
+
+    @property
+    def favorite_update_fields(self) -> tuple[str, ...]:
+        return self._manifest.favorite_update_fields
 
     @property
     def reservation_update_possible(self) -> bool:
-        return self._manifest.reservation_update_possible
+        return bool(self._manifest.reservation_update_fields)
+
+    @property
+    def reservation_update_fields(self) -> tuple[str, ...]:
+        return self._manifest.reservation_update_fields
 
     @property
     def info(self) -> ProviderInfo:
         return ProviderInfo(
             id=self._manifest.id,
-            favorite_update_possible=self._manifest.favorite_update_possible,
-            reservation_update_possible=self._manifest.reservation_update_possible,
+            favorite_update_fields=self._manifest.favorite_update_fields,
+            reservation_update_fields=self._manifest.reservation_update_fields,
         )
 
     def _normalize_license_plate(self, plate: str) -> str:
@@ -270,6 +278,10 @@ class BaseProvider(ABC):
         """Update a favorite."""
         if not self.favorite_update_possible:
             raise ProviderError("Favorite updates are not supported.")
+        if license_plate is not None and "license_plate" not in self.favorite_update_fields:
+            raise ValidationError("license_plate updates are not supported.")
+        if name is not None and "name" not in self.favorite_update_fields:
+            raise ValidationError("name updates are not supported.")
         return await self._update_favorite_native(
             favorite_id,
             license_plate=license_plate,

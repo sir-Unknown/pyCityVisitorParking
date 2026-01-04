@@ -32,7 +32,7 @@ runtime package and is ignored by discovery.
   `end_time > start_time`.
 - Filter `zone_validity` to chargeable windows only.
 - Raise library exceptions (`AuthError`, `NetworkError`, `ValidationError`, `ProviderError`).
-- If favorite updates are unsupported, set `favorite_update_possible` to `false`
-  and ensure `update_favorite()` raises `ProviderError`.
-- If reservation updates are unsupported, set `reservation_update_possible` to
-  `false` and ensure `update_reservation()` raises `ProviderError`.
+- If favorite updates are unsupported, set `capabilities.favorite_update_fields`
+  to `[]` and ensure `update_favorite()` raises `ProviderError`.
+- If reservation updates are unsupported, set `capabilities.reservation_update_fields`
+  to `[]` and ensure `update_reservation()` raises `ProviderError`.

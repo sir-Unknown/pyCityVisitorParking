@@ -47,5 +47,5 @@ Notes:
 - Extra credentials can be supplied with `--extra key=value`.
 - Credentials can also be supplied via `--credentials-json` or
   `--credentials-file` (or `CREDENTIALS_JSON`/`CREDENTIALS_FILE` env vars).
-- The output includes provider capabilities (`favorite_update_possible` and
-  `reservation_update_possible`) from `ProviderInfo`.
+- The output includes provider capabilities (`favorite_update_fields` and
+  `reservation_update_fields`) from `ProviderInfo`.

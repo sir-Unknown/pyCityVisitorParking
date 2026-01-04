@@ -8,8 +8,8 @@ from dataclasses import dataclass
 @dataclass(frozen=True, slots=True)
 class ProviderInfo:
     id: str
-    favorite_update_possible: bool
-    reservation_update_possible: bool
+    favorite_update_fields: tuple[str, ...]
+    reservation_update_fields: tuple[str, ...]
 
 
 @dataclass(frozen=True, slots=True)

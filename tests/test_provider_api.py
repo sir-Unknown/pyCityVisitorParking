@@ -17,8 +17,8 @@ async def test_dvs_start_reservation_rejects_naive_datetime() -> None:
             ProviderManifest(
                 id="dvsportal",
                 name="DVS Portal",
-                favorite_update_possible=False,
-                reservation_update_possible=False,
+                favorite_update_fields=(),
+                reservation_update_fields=("end_time",),
             ),
             base_url="https://example",
         )
@@ -38,13 +38,30 @@ async def test_dvs_end_reservation_rejects_naive_datetime() -> None:
             ProviderManifest(
                 id="dvsportal",
                 name="DVS Portal",
-                favorite_update_possible=False,
-                reservation_update_possible=False,
+                favorite_update_fields=(),
+                reservation_update_fields=("end_time",),
             ),
             base_url="https://example",
         )
         with pytest.raises(ValidationError):
             await provider.end_reservation("1", datetime(2026, 1, 2, 11, 0))
+
+
+@pytest.mark.asyncio
+async def test_dvs_update_reservation_rejects_naive_datetime() -> None:
+    async with aiohttp.ClientSession() as session:
+        provider = DvsProvider(
+            session,
+            ProviderManifest(
+                id="dvsportal",
+                name="DVS Portal",
+                favorite_update_fields=(),
+                reservation_update_fields=("end_time",),
+            ),
+            base_url="https://example",
+        )
+        with pytest.raises(ValidationError):
+            await provider.update_reservation("1", end_time=datetime(2026, 1, 2, 11, 0))
 
 
 @pytest.mark.asyncio
@@ -55,8 +72,8 @@ async def test_the_hague_start_reservation_rejects_naive_datetime() -> None:
             ProviderManifest(
                 id="the_hague",
                 name="The Hague",
-                favorite_update_possible=True,
-                reservation_update_possible=True,
+                favorite_update_fields=("license_plate", "name"),
+                reservation_update_fields=("end_time",),
             ),
             base_url="https://example",
         )
@@ -76,8 +93,8 @@ async def test_the_hague_update_reservation_rejects_naive_end_time() -> None:
             ProviderManifest(
                 id="the_hague",
                 name="The Hague",
-                favorite_update_possible=True,
-                reservation_update_possible=True,
+                favorite_update_fields=("license_plate", "name"),
+                reservation_update_fields=("end_time",),
             ),
             base_url="https://example",
         )

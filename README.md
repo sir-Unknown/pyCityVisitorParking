@@ -95,15 +95,16 @@ The public API exposes a small, provider-agnostic set of models and operations.
 Provider READMEs list credential requirements and any unsupported operations.
 
 - Providers: `list_providers()` returns `ProviderInfo` with `id`,
-  `favorite_update_possible`, and `reservation_update_possible`.
+  `favorite_update_fields`, and `reservation_update_fields`.
 - Permit: `get_permit()` returns `Permit` with `id`, `remaining_balance` (minutes), and `zone_validity`.
 - Zone validity: each `ZoneValidityBlock` includes `start_time` and `end_time` (UTC ISO 8601).
 - Reservations: `list_reservations()`, `start_reservation()`, `update_reservation()`, and
   `end_reservation()` return `Reservation` with `id`, `name`, `license_plate`,
   `start_time`, and `end_time`.
+  Some providers only support updating `end_time` (see `reservation_update_fields`).
 - Favorites: `list_favorites()` and `add_favorite()` return `Favorite` with `id`, `name`,
   and `license_plate`. `update_favorite()` returns `Favorite` when supported
-  (`favorite_update_possible`), otherwise it raises `ProviderError`.
+  (`favorite_update_fields` is non-empty), otherwise it raises `ProviderError`.
   `remove_favorite()` removes the entry without returning data.
 
 ## Provider framework

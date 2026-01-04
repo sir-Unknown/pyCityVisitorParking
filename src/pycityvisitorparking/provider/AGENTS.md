@@ -46,8 +46,8 @@
 - Create `manifest.json` and include:
   - `id` and match it exactly to the folder name
   - `name`
-  - `favorite_update_possible`
-  - `reservation_update_possible`
+  - `capabilities.favorite_update_fields`
+  - `capabilities.reservation_update_fields`
 - Validate `manifest.json` against:
   `src/pycityvisitorparking/provider/manifest.schema.json`
 - ❌ Avoid imports or side effects when defining the manifest.
@@ -99,9 +99,9 @@
 - Use relative paths and build requests from `base_url + api_uri`.
 
 ✅ **Respect favorite update behavior**
-- Set `favorite_update_possible` to `true` only when native update is supported.
-- Set `favorite_update_possible` to `false` when native update is not supported.
-- `update_favorite()` must raise `ProviderError` when updates are not supported.
+- Set `capabilities.favorite_update_fields` to `[]` when updates are not supported.
+- Include `license_plate` and/or `name` when updates are supported.
+- `update_favorite()` must raise `ProviderError` when `favorite_update_fields` is empty.
 
 ✅ **Enforce reservation rules**
 - Require `start_time` and `end_time` for `start_reservation` and ❌ avoid defaults.

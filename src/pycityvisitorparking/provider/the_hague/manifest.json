@@ -1,6 +1,8 @@
 {
   "id": "the_hague",
   "name": "The Hague",
-  "favorite_update_possible": true,
-  "reservation_update_possible": true
+  "capabilities": {
+    "favorite_update_fields": ["license_plate", "name"],
+    "reservation_update_fields": ["end_time"]
+  }
 }

@@ -445,8 +445,8 @@ async def main() -> int:
     print(
         "Provider: "
         f"{provider.provider_name} ({provider.provider_id}) | "
-        f"favorite_update_possible={provider_info.favorite_update_possible} | "
-        f"reservation_update_possible={provider_info.reservation_update_possible}"
+        f"favorite_update_fields={provider_info.favorite_update_fields} | "
+        f"reservation_update_fields={provider_info.reservation_update_fields}"
     )
     print(f"Permit: {permit}")
     print(f"Reservations: {len(reservations)}")

@@ -1,6 +1,8 @@
 {
   "id": "provider_id",
   "name": "Provider Display Name",
-  "favorite_update_possible": false,
-  "reservation_update_possible": false
+  "capabilities": {
+    "favorite_update_fields": [],
+    "reservation_update_fields": []
+  }
 }

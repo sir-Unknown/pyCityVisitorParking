@@ -12,7 +12,7 @@ async def test_list_providers_includes_manifest() -> None:
     provider_ids = {provider.id for provider in providers}
     assert "dvsportal" in provider_ids
     dvs_provider = next(provider for provider in providers if provider.id == "dvsportal")
-    assert dvs_provider.reservation_update_possible is False
+    assert dvs_provider.reservation_update_fields == ("end_time",)
 
 
 @pytest.mark.asyncio

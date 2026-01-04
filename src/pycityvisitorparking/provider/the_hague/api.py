@@ -155,6 +155,8 @@ class Provider(BaseProvider):
         name: str | None = None,
     ) -> Reservation:
         """Update a reservation."""
+        if not self.reservation_update_possible:
+            raise ProviderError("Reservation updates are not supported.")
         if start_time is not None or name is not None:
             raise ValidationError("Only end_time can be updated.")
         if end_time is None:

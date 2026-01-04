@@ -62,8 +62,8 @@ async def test_map_permit_filters_free_blocks_and_converts_utc():
             ProviderManifest(
                 id="the_hague",
                 name="The Hague",
-                favorite_update_possible=True,
-                reservation_update_possible=True,
+                favorite_update_fields=("license_plate", "name"),
+                reservation_update_fields=("end_time",),
             ),
             base_url="https://example",
         )
@@ -91,8 +91,8 @@ async def test_map_reservation_normalizes_plate_and_utc():
             ProviderManifest(
                 id="the_hague",
                 name="The Hague",
-                favorite_update_possible=True,
-                reservation_update_possible=True,
+                favorite_update_fields=("license_plate", "name"),
+                reservation_update_fields=("end_time",),
             ),
             base_url="https://example",
         )
@@ -116,8 +116,8 @@ async def test_error_code_mapping():
             ProviderManifest(
                 id="the_hague",
                 name="The Hague",
-                favorite_update_possible=True,
-                reservation_update_possible=True,
+                favorite_update_fields=("license_plate", "name"),
+                reservation_update_fields=("end_time",),
             ),
             base_url="https://example",
         )
@@ -134,8 +134,8 @@ async def test_error_code_mapping_lowercase_with_zeros():
             ProviderManifest(
                 id="the_hague",
                 name="The Hague",
-                favorite_update_possible=True,
-                reservation_update_possible=True,
+                favorite_update_fields=("license_plate", "name"),
+                reservation_update_fields=("end_time",),
             ),
             base_url="https://example",
         )
@@ -152,8 +152,8 @@ async def test_error_code_mapping_unknown_code_is_generic():
             ProviderManifest(
                 id="the_hague",
                 name="The Hague",
-                favorite_update_possible=True,
-                reservation_update_possible=True,
+                favorite_update_fields=("license_plate", "name"),
+                reservation_update_fields=("end_time",),
             ),
             base_url="https://example",
         )
@@ -170,8 +170,8 @@ async def test_map_favorite_normalizes_plate():
             ProviderManifest(
                 id="the_hague",
                 name="The Hague",
-                favorite_update_possible=True,
-                reservation_update_possible=True,
+                favorite_update_fields=("license_plate", "name"),
+                reservation_update_fields=("end_time",),
             ),
             base_url="https://example",
         )
@@ -192,8 +192,8 @@ async def test_request_includes_permit_media_type_header(
             ProviderManifest(
                 id="the_hague",
                 name="The Hague",
-                favorite_update_possible=True,
-                reservation_update_possible=True,
+                favorite_update_fields=("license_plate", "name"),
+                reservation_update_fields=("end_time",),
             ),
             base_url="https://example",
         )
@@ -223,8 +223,8 @@ async def test_login_requires_username():
             ProviderManifest(
                 id="the_hague",
                 name="The Hague",
-                favorite_update_possible=True,
-                reservation_update_possible=True,
+                favorite_update_fields=("license_plate", "name"),
+                reservation_update_fields=("end_time",),
             ),
             base_url="https://example",
         )
@@ -241,8 +241,8 @@ async def test_default_api_uri_is_applied():
             ProviderManifest(
                 id="the_hague",
                 name="The Hague",
-                favorite_update_possible=True,
-                reservation_update_possible=True,
+                favorite_update_fields=("license_plate", "name"),
+                reservation_update_fields=("end_time",),
             ),
             base_url="https://example",
         )

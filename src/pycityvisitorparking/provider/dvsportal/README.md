@@ -78,6 +78,7 @@ listed `base_url` and `api_uri` values:
 - `get_permit`
 - `list_reservations`
 - `start_reservation` (requires `start_time` and `end_time`)
+- `update_reservation` (end time only)
 - `end_reservation`
 - `list_favorites`
 - `add_favorite`
@@ -85,7 +86,6 @@ listed `base_url` and `api_uri` values:
 
 Unsupported:
 
-- Reservation updates (`update_reservation`)
 - Favorite updates (`update_favorite`)
 
 ## Migration notes
@@ -108,6 +108,15 @@ Unsupported:
 - Upsert sends `permitMediaTypeID`, `permitMediaCode`, `licensePlate` object, and `name`.
 - Remove sends `permitMediaTypeID`, `permitMediaCode`, `licensePlate` string, and `name`.
   When `name` is omitted, the normalized license plate is used.
+
+## Reservation update payloads
+
+- Updates use `reservation/update` with `Minutes` (delta from the current end time),
+  `ReservationID`, `permitMediaTypeID`, and `permitMediaCode`.
+- The provider calculates `Minutes` by comparing the requested `end_time` with the
+  existing reservation end time. Positive values extend the reservation and
+  negative values shorten it.
+- `end_time` must align to whole minutes; second-level precision is rejected.
 
 ## Time handling
 
@@ -139,7 +148,7 @@ characters.
 ## Limitations
 
 - Only the first permit and permit media are used.
-- Reservation updates are not supported.
+- Reservation updates can adjust the end time only.
 - Favorite updates are not supported.
 
 ## Links

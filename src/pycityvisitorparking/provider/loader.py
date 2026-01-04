@@ -19,14 +19,43 @@ SCHEMA_FILENAME = "manifest.schema.json"
 _DEFAULT_CACHE_TTL_SECONDS = 300.0
 _MANIFEST_CACHE: tuple[ProviderManifest, ...] | None = None
 _MANIFEST_CACHE_EXPIRES_AT: float | None = None
+_FAVORITE_UPDATE_FIELDS = {"license_plate", "name"}
+_RESERVATION_UPDATE_FIELDS = {"start_time", "end_time", "name"}
 
 
 @dataclass(frozen=True, slots=True)
 class ProviderManifest:
     id: str
     name: str
-    favorite_update_possible: bool
-    reservation_update_possible: bool
+    favorite_update_fields: tuple[str, ...]
+    reservation_update_fields: tuple[str, ...]
+
+
+def _normalize_update_fields(
+    value: object,
+    *,
+    allowed: set[str],
+    field_name: str,
+) -> tuple[str, ...]:
+    if not isinstance(value, list):
+        raise ProviderError(f"Provider manifest {field_name} must be a list.")
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for item in value:
+        if not isinstance(item, str):
+            raise ProviderError(f"Provider manifest {field_name} must be a list of strings.")
+        text = item.strip()
+        if not text:
+            raise ProviderError(f"Provider manifest {field_name} cannot contain empty values.")
+        if text not in allowed:
+            raise ProviderError(
+                f"Provider manifest {field_name} contains unsupported value '{text}'."
+            )
+        if text in seen:
+            raise ProviderError(f"Provider manifest {field_name} cannot contain duplicates.")
+        seen.add(text)
+        normalized.append(text)
+    return tuple(normalized)
 
 
 def _provider_root() -> Traversable:
@@ -41,32 +70,41 @@ def load_manifest_schema() -> dict:
 def _build_manifest(data: dict, folder_name: str) -> ProviderManifest:
     if not isinstance(data, dict):
         raise ProviderError("Provider manifest must be a JSON object.")
-    missing = [
-        key
-        for key in ("id", "name", "favorite_update_possible", "reservation_update_possible")
-        if key not in data
-    ]
+    missing = [key for key in ("id", "name", "capabilities") if key not in data]
     if missing:
         raise ProviderError(f"Provider manifest missing keys: {', '.join(missing)}.")
     provider_id = data["id"]
     name = data["name"]
-    favorite_update_possible = data["favorite_update_possible"]
-    reservation_update_possible = data["reservation_update_possible"]
+    capabilities = data["capabilities"]
     if not isinstance(provider_id, str) or not provider_id:
         raise ProviderError("Provider manifest id must be a non-empty string.")
     if provider_id != folder_name:
         raise ProviderError("Provider manifest id must match its folder name.")
     if not isinstance(name, str) or not name:
         raise ProviderError("Provider manifest name must be a non-empty string.")
-    if not isinstance(favorite_update_possible, bool):
-        raise ProviderError("Provider manifest favorite_update_possible must be a boolean.")
-    if not isinstance(reservation_update_possible, bool):
-        raise ProviderError("Provider manifest reservation_update_possible must be a boolean.")
+    if not isinstance(capabilities, dict):
+        raise ProviderError("Provider manifest capabilities must be an object.")
+    if "favorite_update_fields" not in capabilities:
+        raise ProviderError("Provider manifest capabilities must include favorite_update_fields.")
+    if "reservation_update_fields" not in capabilities:
+        raise ProviderError(
+            "Provider manifest capabilities must include reservation_update_fields."
+        )
+    favorite_update_fields = _normalize_update_fields(
+        capabilities["favorite_update_fields"],
+        allowed=_FAVORITE_UPDATE_FIELDS,
+        field_name="favorite_update_fields",
+    )
+    reservation_update_fields = _normalize_update_fields(
+        capabilities["reservation_update_fields"],
+        allowed=_RESERVATION_UPDATE_FIELDS,
+        field_name="reservation_update_fields",
+    )
     return ProviderManifest(
         id=provider_id,
         name=name,
-        favorite_update_possible=favorite_update_possible,
-        reservation_update_possible=reservation_update_possible,
+        favorite_update_fields=favorite_update_fields,
+        reservation_update_fields=reservation_update_fields,
     )
 
 
@@ -145,8 +183,8 @@ def list_providers(
     return [
         ProviderInfo(
             id=manifest.id,
-            favorite_update_possible=manifest.favorite_update_possible,
-            reservation_update_possible=manifest.reservation_update_possible,
+            favorite_update_fields=manifest.favorite_update_fields,
+            reservation_update_fields=manifest.reservation_update_fields,
         )
         for manifest in load_manifests(refresh=refresh, cache_ttl=cache_ttl)
     ]

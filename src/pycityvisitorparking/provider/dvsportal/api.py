@@ -13,7 +13,7 @@ import aiohttp
 
 from ...exceptions import AuthError, NetworkError, ProviderError, ValidationError
 from ...models import Favorite, Permit, Reservation, ZoneValidityBlock
-from ...util import format_utc_timestamp
+from ...util import format_utc_timestamp, parse_timestamp
 from ..base import BaseProvider
 from ..loader import ProviderManifest
 from .const import (
@@ -29,6 +29,7 @@ from .const import (
     LOGIN_METHOD_PAS,
     RESERVATION_CREATE_ENDPOINT,
     RESERVATION_END_ENDPOINT,
+    RESERVATION_UPDATE_ENDPOINT,
     RETRY_AFTER_HEADER,
 )
 
@@ -181,7 +182,64 @@ class Provider(BaseProvider):
         name: str | None = None,
     ) -> Reservation:
         """Update a reservation."""
-        raise ProviderError("Reservation updates are not supported.")
+        if not self.reservation_update_possible:
+            raise ProviderError("Reservation updates are not supported.")
+        if start_time is not None or name is not None:
+            raise ValidationError("Only end_time can be updated.")
+        if end_time is None:
+            raise ValidationError("end_time is required.")
+        reservation_id_value = self._coerce_id(reservation_id).strip()
+        if not reservation_id_value:
+            raise ValidationError("reservation_id is required.")
+
+        end_dt = self._normalize_datetime(end_time)
+        permit = await self._fetch_base()
+        permit_media = self._select_permit_media(permit)
+        existing = self._select_reservation(
+            self._map_reservations(permit_media),
+            reservation_id=reservation_id_value,
+        )
+        if existing is None:
+            raise ValidationError("reservation_id was not found.")
+        if self._permit_media_type_id is None or self._permit_media_code is None:
+            raise ProviderError("Permit media defaults are missing.")
+        try:
+            existing_start_dt = parse_timestamp(existing.start_time)
+            existing_end_dt = parse_timestamp(existing.end_time)
+        except ValidationError as exc:
+            raise ProviderError("Provider returned invalid reservation data.") from exc
+
+        self._validate_reservation_times(existing_start_dt, end_dt, require_both=True)
+        delta_seconds = int((end_dt - existing_end_dt).total_seconds())
+        if delta_seconds % 60 != 0:
+            # The API accepts minute deltas only.
+            raise ValidationError("end_time must be aligned to whole minutes.")
+        minutes_delta = delta_seconds // 60
+        payload = {
+            "Minutes": minutes_delta,
+            "ReservationID": reservation_id_value,
+            "permitMediaTypeID": self._permit_media_type_id,
+            "permitMediaCode": self._permit_media_code,
+        }
+        data = await self._request_json_auth(
+            "POST",
+            RESERVATION_UPDATE_ENDPOINT,
+            json=payload,
+        )
+        try:
+            permit = self._extract_permit(data)
+        except ProviderError:
+            permit = await self._fetch_base()
+        self._cache_defaults(permit)
+        permit_media = self._select_permit_media(permit)
+        reservations = self._map_reservations(permit_media)
+        updated = self._select_reservation(
+            reservations,
+            reservation_id=reservation_id_value,
+        )
+        if updated is None:
+            raise ProviderError("Reservation was not returned by the provider.")
+        return updated
 
     async def end_reservation(
         self,

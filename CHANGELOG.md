@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 0.5.3
+
+- Breaking: replace manifest capability flags with a `capabilities` object and
+  expose `favorite_update_fields` / `reservation_update_fields` in `ProviderInfo`.
+- DVS Portal: support reservation updates via `reservation/update` with minute-delta conversion.
+
 ## 0.5.2
 
 - Add `reservation_update_possible` to provider manifests and `ProviderInfo`.

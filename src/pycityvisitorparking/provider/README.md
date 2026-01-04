@@ -27,8 +27,10 @@ Each provider must include a `manifest.json` with:
 {
   "id": "<provider_id>",
   "name": "Display Name",
-  "favorite_update_possible": true,
-  "reservation_update_possible": true
+  "capabilities": {
+    "favorite_update_fields": ["license_plate", "name"],
+    "reservation_update_fields": ["start_time", "end_time", "name"]
+  }
 }
 ```
 
@@ -122,24 +124,24 @@ Use `validate_reservation_times()` for shared validation and normalization.
 
 ## Favorites update behavior
 
-Set `favorite_update_possible` in the manifest:
+Set `capabilities.favorite_update_fields` in the manifest:
 
-- `true` only if the provider supports a native update endpoint.
-- `false` if updates are not supported.
+- Use `[]` when updates are not supported.
+- Include `license_plate` and/or `name` when updates are supported.
 
-When `favorite_update_possible` is `false`, `update_favorite()` raises
+When `favorite_update_fields` is empty, `update_favorite()` raises
 `ProviderError`. Providers should still implement `_update_favorite_native()` to
 raise `ProviderError` if called unexpectedly.
 
 ## Reservation update behavior
 
-Set `reservation_update_possible` in the manifest:
+Set `capabilities.reservation_update_fields` in the manifest:
 
-- `true` only if the provider supports reservation updates.
-- `false` if updates are not supported.
+- Use `[]` when updates are not supported.
+- Include any supported fields: `start_time`, `end_time`, `name`.
 
-When `reservation_update_possible` is `false`, `update_reservation()` should
-raise `ProviderError`.
+When `reservation_update_fields` is empty, `update_reservation()` should raise
+`ProviderError`.
 
 ## Public models only
 

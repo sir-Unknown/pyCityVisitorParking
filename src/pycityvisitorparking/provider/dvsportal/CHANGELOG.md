@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## 0.5.3
+
+- Move manifest update flags into `capabilities` with field lists.
+- Add reservation updates via `reservation/update` with minute-delta conversion.
+
 ## 0.5.2
 
 - Add `reservation_update_possible` to the provider manifest.

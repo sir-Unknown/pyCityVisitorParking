@@ -61,8 +61,8 @@ async def test_update_favorite_not_supported() -> None:
     manifest = ProviderManifest(
         id="dummy",
         name="Dummy",
-        favorite_update_possible=False,
-        reservation_update_possible=False,
+        favorite_update_fields=(),
+        reservation_update_fields=(),
     )
     async with aiohttp.ClientSession() as session:
         provider = DummyProvider(session, manifest)

@@ -5,9 +5,13 @@ import aiohttp
 import pytest
 
 from pycityvisitorparking.exceptions import ValidationError
-from pycityvisitorparking.models import ZoneValidityBlock
+from pycityvisitorparking.models import Reservation, ZoneValidityBlock
 from pycityvisitorparking.provider.dvsportal.api import Provider
-from pycityvisitorparking.provider.dvsportal.const import DEFAULT_API_URI, LOGIN_ENDPOINT
+from pycityvisitorparking.provider.dvsportal.const import (
+    DEFAULT_API_URI,
+    LOGIN_ENDPOINT,
+    RESERVATION_UPDATE_ENDPOINT,
+)
 from pycityvisitorparking.provider.loader import ProviderManifest
 from pycityvisitorparking.util import format_utc_timestamp, parse_timestamp
 
@@ -93,8 +97,8 @@ async def test_map_permit_filters_free_blocks_and_converts_utc():
             ProviderManifest(
                 id="dvsportal",
                 name="DVS Portal",
-                favorite_update_possible=False,
-                reservation_update_possible=False,
+                favorite_update_fields=(),
+                reservation_update_fields=("end_time",),
             ),
             base_url="https://example",
         )
@@ -121,8 +125,8 @@ async def test_map_reservations_normalizes_plate_and_utc():
             ProviderManifest(
                 id="dvsportal",
                 name="DVS Portal",
-                favorite_update_possible=False,
-                reservation_update_possible=False,
+                favorite_update_fields=(),
+                reservation_update_fields=("end_time",),
             ),
             base_url="https://example",
         )
@@ -148,8 +152,8 @@ async def test_map_permit_converts_naive_local_to_utc():
             ProviderManifest(
                 id="dvsportal",
                 name="DVS Portal",
-                favorite_update_possible=False,
-                reservation_update_possible=False,
+                favorite_update_fields=(),
+                reservation_update_fields=("end_time",),
             ),
             base_url="https://example",
         )
@@ -174,8 +178,8 @@ async def test_map_reservations_converts_naive_local_to_utc():
             ProviderManifest(
                 id="dvsportal",
                 name="DVS Portal",
-                favorite_update_possible=False,
-                reservation_update_possible=False,
+                favorite_update_fields=(),
+                reservation_update_fields=("end_time",),
             ),
             base_url="https://example",
         )
@@ -198,8 +202,8 @@ async def test_format_provider_timestamp_converts_utc_to_local():
             ProviderManifest(
                 id="dvsportal",
                 name="DVS Portal",
-                favorite_update_possible=False,
-                reservation_update_possible=False,
+                favorite_update_fields=(),
+                reservation_update_fields=("end_time",),
             ),
             base_url="https://example",
         )
@@ -216,8 +220,8 @@ async def test_parse_provider_timestamp_uses_fold_zero_for_ambiguous_time():
             ProviderManifest(
                 id="dvsportal",
                 name="DVS Portal",
-                favorite_update_possible=False,
-                reservation_update_possible=False,
+                favorite_update_fields=(),
+                reservation_update_fields=("end_time",),
             ),
             base_url="https://example",
         )
@@ -234,8 +238,8 @@ async def test_parse_provider_timestamp_uses_fold_zero_for_nonexistent_time():
             ProviderManifest(
                 id="dvsportal",
                 name="DVS Portal",
-                favorite_update_possible=False,
-                reservation_update_possible=False,
+                favorite_update_fields=(),
+                reservation_update_fields=("end_time",),
             ),
             base_url="https://example",
         )
@@ -252,8 +256,8 @@ async def test_parse_provider_timestamp_with_offset_is_converted_to_utc():
             ProviderManifest(
                 id="dvsportal",
                 name="DVS Portal",
-                favorite_update_possible=False,
-                reservation_update_possible=False,
+                favorite_update_fields=(),
+                reservation_update_fields=("end_time",),
             ),
             base_url="https://example",
         )
@@ -270,8 +274,8 @@ async def test_map_favorites_normalizes_plate():
             ProviderManifest(
                 id="dvsportal",
                 name="DVS Portal",
-                favorite_update_possible=False,
-                reservation_update_possible=False,
+                favorite_update_fields=(),
+                reservation_update_fields=("end_time",),
             ),
             base_url="https://example",
         )
@@ -293,8 +297,8 @@ async def test_login_requires_username():
             ProviderManifest(
                 id="dvsportal",
                 name="DVS Portal",
-                favorite_update_possible=False,
-                reservation_update_possible=False,
+                favorite_update_fields=(),
+                reservation_update_fields=("end_time",),
             ),
             base_url="https://example",
         )
@@ -311,8 +315,8 @@ async def test_default_api_uri_is_applied():
             ProviderManifest(
                 id="dvsportal",
                 name="DVS Portal",
-                favorite_update_possible=False,
-                reservation_update_possible=False,
+                favorite_update_fields=(),
+                reservation_update_fields=("end_time",),
             ),
             base_url="https://example",
         )
@@ -329,8 +333,8 @@ async def test_extract_permit_falls_back_to_permits_list():
             ProviderManifest(
                 id="dvsportal",
                 name="DVS Portal",
-                favorite_update_possible=False,
-                reservation_update_possible=False,
+                favorite_update_fields=(),
+                reservation_update_fields=("end_time",),
             ),
             base_url="https://example",
         )
@@ -349,8 +353,8 @@ async def test_start_reservation_payload_uses_local_offset_with_milliseconds(
             ProviderManifest(
                 id="dvsportal",
                 name="DVS Portal",
-                favorite_update_possible=False,
-                reservation_update_possible=False,
+                favorite_update_fields=(),
+                reservation_update_fields=("end_time",),
             ),
             base_url="https://example",
         )
@@ -413,6 +417,101 @@ async def test_start_reservation_payload_uses_local_offset_with_milliseconds(
 
 
 @pytest.mark.asyncio
+async def test_update_reservation_payload_uses_minute_delta(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async with aiohttp.ClientSession() as session:
+        provider = Provider(
+            session,
+            ProviderManifest(
+                id="dvsportal",
+                name="DVS Portal",
+                favorite_update_fields=(),
+                reservation_update_fields=("end_time",),
+            ),
+            base_url="https://example",
+        )
+        provider._permit_media_type_id = 1
+        provider._permit_media_code = "CARD-1"
+        existing_permit = {
+            "PermitMedias": [
+                {
+                    "TypeID": 1,
+                    "Code": "CARD-1",
+                    "ActiveReservations": [
+                        {
+                            "ReservationID": "123",
+                            "ValidFrom": "2026-01-02T09:00:00Z",
+                            "ValidUntil": "2026-01-02T10:00:00Z",
+                            "LicensePlate": {
+                                "Value": "AB12CD",
+                                "DisplayValue": "AB-12-CD",
+                            },
+                        }
+                    ],
+                    "LicensePlates": [],
+                }
+            ],
+            "BlockTimes": [],
+        }
+        updated_permit = {
+            "PermitMedias": [
+                {
+                    "TypeID": 1,
+                    "Code": "CARD-1",
+                    "ActiveReservations": [
+                        {
+                            "ReservationID": "123",
+                            "ValidFrom": "2026-01-02T09:00:00Z",
+                            "ValidUntil": "2026-01-02T10:10:00Z",
+                            "LicensePlate": {
+                                "Value": "AB12CD",
+                                "DisplayValue": "AB-12-CD",
+                            },
+                        }
+                    ],
+                    "LicensePlates": [],
+                }
+            ],
+            "BlockTimes": [],
+        }
+
+        async def _fake_fetch_base() -> dict[str, Any]:
+            return existing_permit
+
+        monkeypatch.setattr(provider, "_fetch_base", _fake_fetch_base)
+        captured: dict[str, Any] = {}
+
+        async def _fake_request_json_auth(method: str, path: str, *, json: Any) -> Any:
+            captured["method"] = method
+            captured["path"] = path
+            captured["json"] = json
+            return {"Permit": updated_permit}
+
+        monkeypatch.setattr(provider, "_request_json_auth", _fake_request_json_auth)
+
+        reservation = await provider.update_reservation(
+            "123",
+            end_time=datetime(2026, 1, 2, 10, 10, tzinfo=UTC),
+        )
+
+    payload = captured["json"]
+    assert captured["method"] == "POST"
+    assert captured["path"] == RESERVATION_UPDATE_ENDPOINT
+    assert payload["Minutes"] == 10
+    assert payload["ReservationID"] == "123"
+    assert payload["permitMediaTypeID"] == 1
+    assert payload["permitMediaCode"] == "CARD-1"
+    assert reservation == Reservation(
+        id="123",
+        name="AB-12-CD",
+        license_plate="AB12CD",
+        start_time="2026-01-02T09:00:00Z",
+        end_time="2026-01-02T10:10:00Z",
+    )
+
+
+@pytest.mark.asyncio
 async def test_add_favorite_payload_contains_required_fields(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -422,8 +521,8 @@ async def test_add_favorite_payload_contains_required_fields(
             ProviderManifest(
                 id="dvsportal",
                 name="DVS Portal",
-                favorite_update_possible=False,
-                reservation_update_possible=False,
+                favorite_update_fields=(),
+                reservation_update_fields=("end_time",),
             ),
             base_url="https://example",
         )
@@ -476,8 +575,8 @@ async def test_remove_favorite_payload_contains_required_fields(
             ProviderManifest(
                 id="dvsportal",
                 name="DVS Portal",
-                favorite_update_possible=False,
-                reservation_update_possible=False,
+                favorite_update_fields=(),
+                reservation_update_fields=("end_time",),
             ),
             base_url="https://example",
         )

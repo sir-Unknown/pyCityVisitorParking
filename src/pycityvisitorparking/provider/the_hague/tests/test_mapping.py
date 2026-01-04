@@ -63,6 +63,7 @@ async def test_map_permit_filters_free_blocks_and_converts_utc():
                 id="the_hague",
                 name="The Hague",
                 favorite_update_possible=True,
+                reservation_update_possible=True,
             ),
             base_url="https://example",
         )
@@ -91,6 +92,7 @@ async def test_map_reservation_normalizes_plate_and_utc():
                 id="the_hague",
                 name="The Hague",
                 favorite_update_possible=True,
+                reservation_update_possible=True,
             ),
             base_url="https://example",
         )
@@ -115,6 +117,7 @@ async def test_error_code_mapping():
                 id="the_hague",
                 name="The Hague",
                 favorite_update_possible=True,
+                reservation_update_possible=True,
             ),
             base_url="https://example",
         )
@@ -132,6 +135,7 @@ async def test_error_code_mapping_lowercase_with_zeros():
                 id="the_hague",
                 name="The Hague",
                 favorite_update_possible=True,
+                reservation_update_possible=True,
             ),
             base_url="https://example",
         )
@@ -149,6 +153,7 @@ async def test_error_code_mapping_unknown_code_is_generic():
                 id="the_hague",
                 name="The Hague",
                 favorite_update_possible=True,
+                reservation_update_possible=True,
             ),
             base_url="https://example",
         )
@@ -166,6 +171,7 @@ async def test_map_favorite_normalizes_plate():
                 id="the_hague",
                 name="The Hague",
                 favorite_update_possible=True,
+                reservation_update_possible=True,
             ),
             base_url="https://example",
         )
@@ -187,6 +193,7 @@ async def test_request_includes_permit_media_type_header(
                 id="the_hague",
                 name="The Hague",
                 favorite_update_possible=True,
+                reservation_update_possible=True,
             ),
             base_url="https://example",
         )
@@ -217,6 +224,7 @@ async def test_login_requires_username():
                 id="the_hague",
                 name="The Hague",
                 favorite_update_possible=True,
+                reservation_update_possible=True,
             ),
             base_url="https://example",
         )
@@ -234,6 +242,7 @@ async def test_default_api_uri_is_applied():
                 id="the_hague",
                 name="The Hague",
                 favorite_update_possible=True,
+                reservation_update_possible=True,
             ),
             base_url="https://example",
         )

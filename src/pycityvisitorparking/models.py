@@ -9,6 +9,7 @@ from dataclasses import dataclass
 class ProviderInfo:
     id: str
     favorite_update_possible: bool
+    reservation_update_possible: bool
 
 
 @dataclass(frozen=True, slots=True)

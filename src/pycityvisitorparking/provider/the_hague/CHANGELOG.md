@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.5.2
+
+- Add `reservation_update_possible` to the provider manifest.
+
 ## 0.5.1
 
 - Map PV error codes to readable `ProviderError` messages.

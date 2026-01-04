@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.5.2
+
+- Add `reservation_update_possible` to provider manifests and `ProviderInfo`.
+
 ## 0.5.1
 
 - Breaking: `update_favorite()` now raises `ProviderError` when updates are unsupported.

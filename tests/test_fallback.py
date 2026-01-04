@@ -58,7 +58,12 @@ class DummyProvider(BaseProvider):
 
 @pytest.mark.asyncio
 async def test_update_favorite_not_supported() -> None:
-    manifest = ProviderManifest(id="dummy", name="Dummy", favorite_update_possible=False)
+    manifest = ProviderManifest(
+        id="dummy",
+        name="Dummy",
+        favorite_update_possible=False,
+        reservation_update_possible=False,
+    )
     async with aiohttp.ClientSession() as session:
         provider = DummyProvider(session, manifest)
         with pytest.raises(ProviderError):

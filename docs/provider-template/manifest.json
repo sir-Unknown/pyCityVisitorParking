@@ -1,5 +1,6 @@
 {
   "id": "provider_id",
   "name": "Provider Display Name",
-  "favorite_update_possible": false
+  "favorite_update_possible": false,
+  "reservation_update_possible": false
 }

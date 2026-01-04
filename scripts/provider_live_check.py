@@ -441,7 +441,13 @@ async def main() -> int:
         print(f"Error: {exc.__class__.__name__}: {exc}", file=sys.stderr)
         return 1
 
-    print(f"Provider: {provider.provider_name} ({provider.provider_id})")
+    provider_info = provider.info
+    print(
+        "Provider: "
+        f"{provider.provider_name} ({provider.provider_id}) | "
+        f"favorite_update_possible={provider_info.favorite_update_possible} | "
+        f"reservation_update_possible={provider_info.reservation_update_possible}"
+    )
     print(f"Permit: {permit}")
     print(f"Reservations: {len(reservations)}")
     for reservation in reservations:

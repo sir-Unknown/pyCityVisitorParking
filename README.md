@@ -94,7 +94,8 @@ threads so async callers avoid blocking the event loop.
 The public API exposes a small, provider-agnostic set of models and operations.
 Provider READMEs list credential requirements and any unsupported operations.
 
-- Providers: `list_providers()` returns `ProviderInfo` with `id` and `favorite_update_possible`.
+- Providers: `list_providers()` returns `ProviderInfo` with `id`,
+  `favorite_update_possible`, and `reservation_update_possible`.
 - Permit: `get_permit()` returns `Permit` with `id`, `remaining_balance` (minutes), and `zone_validity`.
 - Zone validity: each `ZoneValidityBlock` includes `start_time` and `end_time` (UTC ISO 8601).
 - Reservations: `list_reservations()`, `start_reservation()`, `update_reservation()`, and

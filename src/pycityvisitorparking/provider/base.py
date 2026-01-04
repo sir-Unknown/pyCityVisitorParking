@@ -59,10 +59,15 @@ class BaseProvider(ABC):
         return self._manifest.favorite_update_possible
 
     @property
+    def reservation_update_possible(self) -> bool:
+        return self._manifest.reservation_update_possible
+
+    @property
     def info(self) -> ProviderInfo:
         return ProviderInfo(
             id=self._manifest.id,
             favorite_update_possible=self._manifest.favorite_update_possible,
+            reservation_update_possible=self._manifest.reservation_update_possible,
         )
 
     def _normalize_license_plate(self, plate: str) -> str:

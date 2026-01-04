@@ -18,6 +18,7 @@ async def test_dvs_start_reservation_rejects_naive_datetime() -> None:
                 id="dvsportal",
                 name="DVS Portal",
                 favorite_update_possible=False,
+                reservation_update_possible=False,
             ),
             base_url="https://example",
         )
@@ -38,6 +39,7 @@ async def test_dvs_end_reservation_rejects_naive_datetime() -> None:
                 id="dvsportal",
                 name="DVS Portal",
                 favorite_update_possible=False,
+                reservation_update_possible=False,
             ),
             base_url="https://example",
         )
@@ -54,6 +56,7 @@ async def test_the_hague_start_reservation_rejects_naive_datetime() -> None:
                 id="the_hague",
                 name="The Hague",
                 favorite_update_possible=True,
+                reservation_update_possible=True,
             ),
             base_url="https://example",
         )
@@ -74,6 +77,7 @@ async def test_the_hague_update_reservation_rejects_naive_end_time() -> None:
                 id="the_hague",
                 name="The Hague",
                 favorite_update_possible=True,
+                reservation_update_possible=True,
             ),
             base_url="https://example",
         )

@@ -34,3 +34,5 @@ runtime package and is ignored by discovery.
 - Raise library exceptions (`AuthError`, `NetworkError`, `ValidationError`, `ProviderError`).
 - If favorite updates are unsupported, set `favorite_update_possible` to `false`
   and ensure `update_favorite()` raises `ProviderError`.
+- If reservation updates are unsupported, set `reservation_update_possible` to
+  `false` and ensure `update_reservation()` raises `ProviderError`.

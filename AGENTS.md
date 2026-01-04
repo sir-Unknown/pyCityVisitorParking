@@ -90,7 +90,8 @@
 - Mask license plates in logs when logging is necessary.
 
 ✅ **Implement provider discovery via manifests without imports**
-- Require each provider to include `manifest.json` with `id`, `name`, and `favorite_update_possible`.
+- Require each provider to include `manifest.json` with `id`, `name`,
+  `favorite_update_possible`, and `reservation_update_possible`.
 - Read manifests using `importlib.resources` without importing provider modules.
 - Import provider modules only when selected by `get_provider()`.
 

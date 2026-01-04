@@ -1,5 +1,6 @@
 {
   "id": "dvsportal",
   "name": "DVS Portal",
-  "favorite_update_possible": false
+  "favorite_update_possible": false,
+  "reservation_update_possible": false
 }

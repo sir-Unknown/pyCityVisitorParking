@@ -47,6 +47,7 @@
   - `id` and match it exactly to the folder name
   - `name`
   - `favorite_update_possible`
+  - `reservation_update_possible`
 - Validate `manifest.json` against:
   `src/pycityvisitorparking/provider/manifest.schema.json`
 - ❌ Avoid imports or side effects when defining the manifest.

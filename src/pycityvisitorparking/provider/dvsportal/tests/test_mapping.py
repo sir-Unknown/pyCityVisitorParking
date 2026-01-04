@@ -94,6 +94,7 @@ async def test_map_permit_filters_free_blocks_and_converts_utc():
                 id="dvsportal",
                 name="DVS Portal",
                 favorite_update_possible=False,
+                reservation_update_possible=False,
             ),
             base_url="https://example",
         )
@@ -121,6 +122,7 @@ async def test_map_reservations_normalizes_plate_and_utc():
                 id="dvsportal",
                 name="DVS Portal",
                 favorite_update_possible=False,
+                reservation_update_possible=False,
             ),
             base_url="https://example",
         )
@@ -147,6 +149,7 @@ async def test_map_permit_converts_naive_local_to_utc():
                 id="dvsportal",
                 name="DVS Portal",
                 favorite_update_possible=False,
+                reservation_update_possible=False,
             ),
             base_url="https://example",
         )
@@ -172,6 +175,7 @@ async def test_map_reservations_converts_naive_local_to_utc():
                 id="dvsportal",
                 name="DVS Portal",
                 favorite_update_possible=False,
+                reservation_update_possible=False,
             ),
             base_url="https://example",
         )
@@ -195,6 +199,7 @@ async def test_format_provider_timestamp_converts_utc_to_local():
                 id="dvsportal",
                 name="DVS Portal",
                 favorite_update_possible=False,
+                reservation_update_possible=False,
             ),
             base_url="https://example",
         )
@@ -212,6 +217,7 @@ async def test_parse_provider_timestamp_uses_fold_zero_for_ambiguous_time():
                 id="dvsportal",
                 name="DVS Portal",
                 favorite_update_possible=False,
+                reservation_update_possible=False,
             ),
             base_url="https://example",
         )
@@ -229,6 +235,7 @@ async def test_parse_provider_timestamp_uses_fold_zero_for_nonexistent_time():
                 id="dvsportal",
                 name="DVS Portal",
                 favorite_update_possible=False,
+                reservation_update_possible=False,
             ),
             base_url="https://example",
         )
@@ -246,6 +253,7 @@ async def test_parse_provider_timestamp_with_offset_is_converted_to_utc():
                 id="dvsportal",
                 name="DVS Portal",
                 favorite_update_possible=False,
+                reservation_update_possible=False,
             ),
             base_url="https://example",
         )
@@ -263,6 +271,7 @@ async def test_map_favorites_normalizes_plate():
                 id="dvsportal",
                 name="DVS Portal",
                 favorite_update_possible=False,
+                reservation_update_possible=False,
             ),
             base_url="https://example",
         )
@@ -285,6 +294,7 @@ async def test_login_requires_username():
                 id="dvsportal",
                 name="DVS Portal",
                 favorite_update_possible=False,
+                reservation_update_possible=False,
             ),
             base_url="https://example",
         )
@@ -302,6 +312,7 @@ async def test_default_api_uri_is_applied():
                 id="dvsportal",
                 name="DVS Portal",
                 favorite_update_possible=False,
+                reservation_update_possible=False,
             ),
             base_url="https://example",
         )
@@ -319,6 +330,7 @@ async def test_extract_permit_falls_back_to_permits_list():
                 id="dvsportal",
                 name="DVS Portal",
                 favorite_update_possible=False,
+                reservation_update_possible=False,
             ),
             base_url="https://example",
         )
@@ -338,6 +350,7 @@ async def test_start_reservation_payload_uses_local_offset_with_milliseconds(
                 id="dvsportal",
                 name="DVS Portal",
                 favorite_update_possible=False,
+                reservation_update_possible=False,
             ),
             base_url="https://example",
         )
@@ -410,6 +423,7 @@ async def test_add_favorite_payload_contains_required_fields(
                 id="dvsportal",
                 name="DVS Portal",
                 favorite_update_possible=False,
+                reservation_update_possible=False,
             ),
             base_url="https://example",
         )
@@ -463,6 +477,7 @@ async def test_remove_favorite_payload_contains_required_fields(
                 id="dvsportal",
                 name="DVS Portal",
                 favorite_update_possible=False,
+                reservation_update_possible=False,
             ),
             base_url="https://example",
         )

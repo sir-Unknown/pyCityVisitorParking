@@ -1,5 +1,6 @@
 {
   "id": "the_hague",
   "name": "The Hague",
-  "favorite_update_possible": true
+  "favorite_update_possible": true,
+  "reservation_update_possible": true
 }

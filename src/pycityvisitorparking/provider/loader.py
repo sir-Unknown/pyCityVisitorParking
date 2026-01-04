@@ -26,6 +26,7 @@ class ProviderManifest:
     id: str
     name: str
     favorite_update_possible: bool
+    reservation_update_possible: bool
 
 
 def _provider_root() -> Traversable:
@@ -40,12 +41,17 @@ def load_manifest_schema() -> dict:
 def _build_manifest(data: dict, folder_name: str) -> ProviderManifest:
     if not isinstance(data, dict):
         raise ProviderError("Provider manifest must be a JSON object.")
-    missing = [key for key in ("id", "name", "favorite_update_possible") if key not in data]
+    missing = [
+        key
+        for key in ("id", "name", "favorite_update_possible", "reservation_update_possible")
+        if key not in data
+    ]
     if missing:
         raise ProviderError(f"Provider manifest missing keys: {', '.join(missing)}.")
     provider_id = data["id"]
     name = data["name"]
     favorite_update_possible = data["favorite_update_possible"]
+    reservation_update_possible = data["reservation_update_possible"]
     if not isinstance(provider_id, str) or not provider_id:
         raise ProviderError("Provider manifest id must be a non-empty string.")
     if provider_id != folder_name:
@@ -54,10 +60,13 @@ def _build_manifest(data: dict, folder_name: str) -> ProviderManifest:
         raise ProviderError("Provider manifest name must be a non-empty string.")
     if not isinstance(favorite_update_possible, bool):
         raise ProviderError("Provider manifest favorite_update_possible must be a boolean.")
+    if not isinstance(reservation_update_possible, bool):
+        raise ProviderError("Provider manifest reservation_update_possible must be a boolean.")
     return ProviderManifest(
         id=provider_id,
         name=name,
         favorite_update_possible=favorite_update_possible,
+        reservation_update_possible=reservation_update_possible,
     )
 
 
@@ -134,7 +143,11 @@ def list_providers(
 ) -> list[ProviderInfo]:
     """Return provider info entries from cached manifests."""
     return [
-        ProviderInfo(id=manifest.id, favorite_update_possible=manifest.favorite_update_possible)
+        ProviderInfo(
+            id=manifest.id,
+            favorite_update_possible=manifest.favorite_update_possible,
+            reservation_update_possible=manifest.reservation_update_possible,
+        )
         for manifest in load_manifests(refresh=refresh, cache_ttl=cache_ttl)
     ]
 

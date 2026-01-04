@@ -27,7 +27,8 @@ Each provider must include a `manifest.json` with:
 {
   "id": "<provider_id>",
   "name": "Display Name",
-  "favorite_update_possible": true
+  "favorite_update_possible": true,
+  "reservation_update_possible": true
 }
 ```
 
@@ -129,6 +130,16 @@ Set `favorite_update_possible` in the manifest:
 When `favorite_update_possible` is `false`, `update_favorite()` raises
 `ProviderError`. Providers should still implement `_update_favorite_native()` to
 raise `ProviderError` if called unexpectedly.
+
+## Reservation update behavior
+
+Set `reservation_update_possible` in the manifest:
+
+- `true` only if the provider supports reservation updates.
+- `false` if updates are not supported.
+
+When `reservation_update_possible` is `false`, `update_reservation()` should
+raise `ProviderError`.
 
 ## Public models only
 

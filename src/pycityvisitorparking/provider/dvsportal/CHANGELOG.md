@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.5.2
+
+- Add `reservation_update_possible` to the provider manifest.
+
 ## 0.5.1
 
 - Fix favorite upsert/remove payloads and accept `Permits[0]` when `Permit` is omitted.

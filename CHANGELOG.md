@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.5.5
+
+- Add PII-safe logging across client/provider flows with extra diagnostics for retries, reauth, and fallbacks.
+
 ## 0.5.4
 
 - DVS Portal: rely on the stored favorite name in remove payloads and reject duplicate plates when adding favorites.

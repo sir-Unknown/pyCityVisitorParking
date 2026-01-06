@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import importlib
+import logging
 
 import aiohttp
 
@@ -13,6 +14,7 @@ from .provider.base import BaseProvider
 from .provider.loader import ProviderManifest, get_manifest, list_providers
 
 _DEFAULT_TIMEOUT = aiohttp.ClientTimeout(total=30)
+_LOGGER = logging.getLogger(__name__)
 
 
 def _load_provider_data(provider_id: str) -> tuple[ProviderManifest, type[BaseProvider]]:
@@ -63,6 +65,7 @@ class Client:
             self._session = None
 
     async def list_providers(self) -> list[ProviderInfo]:
+        _LOGGER.debug("Listing providers")
         return await asyncio.to_thread(list_providers)
 
     async def get_provider(
@@ -72,8 +75,15 @@ class Client:
         base_url: str | None = None,
         api_uri: str | None = None,
     ) -> BaseProvider:
+        _LOGGER.debug("Loading provider %s", provider_id)
         manifest, provider_cls = await asyncio.to_thread(_load_provider_data, provider_id)
         session = self._ensure_session()
+        _LOGGER.info(
+            "Provider %s capabilities favorite_update_fields=%s reservation_update_fields=%s",
+            manifest.id,
+            manifest.favorite_update_fields,
+            manifest.reservation_update_fields,
+        )
         return provider_cls(
             session,
             manifest,
@@ -85,5 +95,6 @@ class Client:
 
     def _ensure_session(self) -> aiohttp.ClientSession:
         if self._session is None:
+            _LOGGER.debug("Creating internal aiohttp session")
             self._session = aiohttp.ClientSession(timeout=self._timeout)
         return self._session

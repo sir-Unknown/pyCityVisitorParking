@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import logging
 from collections.abc import Mapping
 from datetime import UTC, datetime
 from typing import Any
@@ -32,6 +33,8 @@ from .const import (
     RESERVATION_UPDATE_ENDPOINT,
     RETRY_AFTER_HEADER,
 )
+
+_LOGGER = logging.getLogger(__name__)
 
 
 class Provider(BaseProvider):
@@ -67,6 +70,7 @@ class Provider(BaseProvider):
 
     async def login(self, credentials: Mapping[str, str] | None = None, **kwargs: str) -> None:
         """Authenticate against the provider."""
+        _LOGGER.debug("Provider %s login started", self.provider_id)
         merged = self._merge_credentials(credentials, **kwargs)
         username = merged.get("username")
         password = merged.get("password")
@@ -109,17 +113,28 @@ class Provider(BaseProvider):
             "password": password,
             "permit_media_type_id": str(permit_media_type_id),
         }
+        _LOGGER.debug("Provider %s login completed", self.provider_id)
 
     async def get_permit(self) -> Permit:
         """Return the active permit for the account."""
+        _LOGGER.debug("Provider %s get_permit started", self.provider_id)
         permit = await self._fetch_base()
-        return self._map_permit(permit)
+        mapped = self._map_permit(permit)
+        _LOGGER.debug("Provider %s get_permit completed", self.provider_id)
+        return mapped
 
     async def list_reservations(self) -> list[Reservation]:
         """Return active reservations."""
+        _LOGGER.debug("Provider %s list_reservations started", self.provider_id)
         permit = await self._fetch_base()
         permit_media = self._select_permit_media(permit)
-        return self._map_reservations(permit_media)
+        reservations = self._map_reservations(permit_media)
+        _LOGGER.debug(
+            "Provider %s list_reservations completed count=%s",
+            self.provider_id,
+            len(reservations),
+        )
+        return reservations
 
     async def start_reservation(
         self,
@@ -129,6 +144,7 @@ class Provider(BaseProvider):
         name: str | None = None,
     ) -> Reservation:
         """Start a reservation for a license plate."""
+        _LOGGER.debug("Provider %s start_reservation started", self.provider_id)
         start_time_utc, end_time_utc = self._validate_reservation_times(
             start_time,
             end_time,
@@ -160,6 +176,10 @@ class Provider(BaseProvider):
         try:
             permit = self._extract_permit(data)
         except ProviderError:
+            _LOGGER.warning(
+                "Provider %s reservation create missing permit, refetching",
+                self.provider_id,
+            )
             permit = await self._fetch_base()
         self._cache_defaults(permit)
         permit_media = self._select_permit_media(permit)
@@ -172,6 +192,7 @@ class Provider(BaseProvider):
         )
         if reservation is None:
             raise ProviderError("Reservation was not returned by the provider.")
+        _LOGGER.debug("Provider %s start_reservation completed", self.provider_id)
         return reservation
 
     async def update_reservation(
@@ -182,6 +203,7 @@ class Provider(BaseProvider):
         name: str | None = None,
     ) -> Reservation:
         """Update a reservation."""
+        _LOGGER.debug("Provider %s update_reservation started", self.provider_id)
         if not self.reservation_update_possible:
             raise ProviderError("Reservation updates are not supported.")
         if start_time is not None or name is not None:
@@ -229,6 +251,10 @@ class Provider(BaseProvider):
         try:
             permit = self._extract_permit(data)
         except ProviderError:
+            _LOGGER.warning(
+                "Provider %s reservation update missing permit, refetching",
+                self.provider_id,
+            )
             permit = await self._fetch_base()
         self._cache_defaults(permit)
         permit_media = self._select_permit_media(permit)
@@ -239,6 +265,7 @@ class Provider(BaseProvider):
         )
         if updated is None:
             raise ProviderError("Reservation was not returned by the provider.")
+        _LOGGER.debug("Provider %s update_reservation completed", self.provider_id)
         return updated
 
     async def end_reservation(
@@ -247,6 +274,7 @@ class Provider(BaseProvider):
         end_time: datetime,
     ) -> Reservation:
         """End a reservation."""
+        _LOGGER.debug("Provider %s end_reservation started", self.provider_id)
         end_dt = self._normalize_datetime(end_time)
         normalized_end_time = self._format_utc_timestamp(end_dt)
         await self._ensure_defaults()
@@ -270,26 +298,40 @@ class Provider(BaseProvider):
         try:
             permit = self._extract_permit(data)
         except ProviderError:
+            _LOGGER.warning(
+                "Provider %s reservation end missing permit, refetching",
+                self.provider_id,
+            )
             permit = await self._fetch_base()
         self._cache_defaults(permit)
         if existing is None:
             raise ProviderError("Reservation not found for ending.")
-        return Reservation(
+        reservation = Reservation(
             id=existing.id,
             name=existing.name,
             license_plate=existing.license_plate,
             start_time=existing.start_time,
             end_time=normalized_end_time,
         )
+        _LOGGER.debug("Provider %s end_reservation completed", self.provider_id)
+        return reservation
 
     async def list_favorites(self) -> list[Favorite]:
         """Return stored favorites."""
+        _LOGGER.debug("Provider %s list_favorites started", self.provider_id)
         permit = await self._fetch_base()
         permit_media = self._select_permit_media(permit)
-        return self._map_favorites(permit_media)
+        favorites = self._map_favorites(permit_media)
+        _LOGGER.debug(
+            "Provider %s list_favorites completed count=%s",
+            self.provider_id,
+            len(favorites),
+        )
+        return favorites
 
     async def add_favorite(self, license_plate: str, name: str | None = None) -> Favorite:
         """Add a favorite."""
+        _LOGGER.debug("Provider %s add_favorite started", self.provider_id)
         normalized_plate = self._normalize_license_plate(license_plate)
         favorites = await self.list_favorites()
         for favorite in favorites:
@@ -318,6 +360,10 @@ class Provider(BaseProvider):
         try:
             permit = self._extract_permit(data)
         except ProviderError:
+            _LOGGER.warning(
+                "Provider %s favorite upsert missing permit, refetching list",
+                self.provider_id,
+            )
             favorites = await self.list_favorites()
         else:
             self._cache_defaults(permit)
@@ -326,6 +372,7 @@ class Provider(BaseProvider):
         favorite = self._select_favorite(favorites, normalized_plate)
         if favorite is None:
             raise ProviderError("Favorite was not returned by the provider.")
+        _LOGGER.debug("Provider %s add_favorite completed", self.provider_id)
         return favorite
 
     async def _update_favorite_native(
@@ -339,6 +386,7 @@ class Provider(BaseProvider):
 
     async def remove_favorite(self, favorite_id: str) -> None:
         """Remove a favorite."""
+        _LOGGER.debug("Provider %s remove_favorite started", self.provider_id)
         normalized_plate = self._normalize_license_plate(favorite_id)
         favorites = await self.list_favorites()
         # DVS removal expects the stored favorite name when available.
@@ -358,6 +406,7 @@ class Provider(BaseProvider):
             "name": name_value,
         }
         await self._request_json_auth("POST", FAVORITE_REMOVE_ENDPOINT, json=payload)
+        _LOGGER.debug("Provider %s remove_favorite completed", self.provider_id)
 
     async def _fetch_permit_media_type_id(self) -> str | int:
         data = await self._request_json(
@@ -675,6 +724,7 @@ class Provider(BaseProvider):
                 )
             except AuthError:
                 if allow_reauth and attempt == 0:
+                    _LOGGER.warning("Provider %s reauth triggered", self.provider_id)
                     await self._reauthenticate()
                     headers = {**DEFAULT_HEADERS, AUTH_HEADER: self._auth_header_value or ""}
                     continue
@@ -737,6 +787,11 @@ class Provider(BaseProvider):
                 delay = 0
             if delay > 0:
                 # Respect server-provided cooldown before retrying.
+                _LOGGER.debug(
+                    "Provider %s rate limited, retrying after %s seconds",
+                    self.provider_id,
+                    delay,
+                )
                 await asyncio.sleep(delay)
         if method.upper() != "GET" or attempt >= attempts - 1:
             raise ProviderError("Provider rate limit exceeded.")

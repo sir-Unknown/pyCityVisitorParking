@@ -294,6 +294,13 @@ async with Client(base_url=base_url, api_uri=api_uri) as client:
         handle_provider_issue(exc)
 ```
 
+## Logging
+
+The library logs diagnostic events to the `pycityvisitorparking` logger using
+the standard Python `logging` module. Configure handlers and levels in your
+application to enable debugging output. Logs avoid credentials and full license
+plates.
+
 ## Normalization rules
 
 - Public APIs accept only timezone-aware `datetime` values; naive timestamps raise

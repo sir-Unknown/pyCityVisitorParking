@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from abc import ABC, abstractmethod
 from collections.abc import Mapping
 from datetime import datetime
@@ -22,6 +23,7 @@ from ..util import (
 from .loader import ProviderManifest
 
 _DEFAULT_TIMEOUT = aiohttp.ClientTimeout(total=30)
+_LOGGER = logging.getLogger(__name__)
 
 
 class BaseProvider(ABC):
@@ -171,6 +173,13 @@ class BaseProvider(ABC):
         attempts = retries + 1
         last_error: Exception | None = None
         for attempt in range(attempts):
+            _LOGGER.debug(
+                "Provider %s request %s (attempt %s/%s)",
+                self.provider_id,
+                method.upper(),
+                attempt + 1,
+                attempts,
+            )
             try:
                 timeout = kwargs.pop("timeout", self._timeout)
                 if timeout is None:
@@ -182,6 +191,11 @@ class BaseProvider(ABC):
                     ssl=True,
                     **kwargs,
                 ) as response:
+                    _LOGGER.debug(
+                        "Provider %s response status=%s",
+                        self.provider_id,
+                        response.status,
+                    )
                     self._raise_for_status(response)
                     if expect_json:
                         try:
@@ -191,6 +205,11 @@ class BaseProvider(ABC):
                     return await response.text()
             except (aiohttp.ClientError, TimeoutError) as exc:
                 last_error = exc
+                _LOGGER.warning(
+                    "Provider %s request error: %s",
+                    self.provider_id,
+                    exc.__class__.__name__,
+                )
                 if attempt >= attempts - 1:
                     raise NetworkError("Network request failed.") from exc
         if last_error is not None:
@@ -200,6 +219,11 @@ class BaseProvider(ABC):
     def _raise_for_status(self, response: aiohttp.ClientResponse) -> None:
         if 200 <= response.status < 300:
             return
+        _LOGGER.warning(
+            "Provider %s request failed with status %s",
+            self.provider_id,
+            response.status,
+        )
         if response.status in (401, 403):
             raise AuthError("Authentication failed.")
         raise ProviderError(f"Provider request failed with status {response.status}.")
@@ -277,11 +301,16 @@ class BaseProvider(ABC):
     ) -> Favorite:
         """Update a favorite."""
         if not self.favorite_update_possible:
+            _LOGGER.info(
+                "Provider %s favorite update requested but not supported",
+                self.provider_id,
+            )
             raise ProviderError("Favorite updates are not supported.")
         if license_plate is not None and "license_plate" not in self.favorite_update_fields:
             raise ValidationError("license_plate updates are not supported.")
         if name is not None and "name" not in self.favorite_update_fields:
             raise ValidationError("name updates are not supported.")
+        _LOGGER.debug("Provider %s update_favorite started", self.provider_id)
         return await self._update_favorite_native(
             favorite_id,
             license_plate=license_plate,

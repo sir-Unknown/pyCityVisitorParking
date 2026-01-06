@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import time
 from collections.abc import Iterable
 from dataclasses import dataclass
@@ -21,6 +22,7 @@ _MANIFEST_CACHE: tuple[ProviderManifest, ...] | None = None
 _MANIFEST_CACHE_EXPIRES_AT: float | None = None
 _FAVORITE_UPDATE_FIELDS = {"license_plate", "name"}
 _RESERVATION_UPDATE_FIELDS = {"start_time", "end_time", "name"}
+_LOGGER = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -130,9 +132,11 @@ def load_manifests(
         raise ProviderError("cache_ttl must be non-negative.")
     if not refresh and _MANIFEST_CACHE is not None:
         if cache_ttl is None:
+            _LOGGER.debug("Manifest cache hit (no ttl)")
             return list(_MANIFEST_CACHE)
         now = time.monotonic()
         if _MANIFEST_CACHE_EXPIRES_AT is not None and now < _MANIFEST_CACHE_EXPIRES_AT:
+            _LOGGER.debug("Manifest cache hit")
             return list(_MANIFEST_CACHE)
     if cache_ttl is None:
         _MANIFEST_CACHE = None
@@ -150,10 +154,12 @@ def load_manifests(
         _MANIFEST_CACHE_EXPIRES_AT = None
         raise ProviderError("Provider package was not found.") from exc
     if cache_ttl is None:
+        _LOGGER.debug("Loaded %s provider manifests (no cache)", len(manifests))
         return manifests
     now = time.monotonic()
     _MANIFEST_CACHE = tuple(manifests)
     _MANIFEST_CACHE_EXPIRES_AT = now + cache_ttl
+    _LOGGER.debug("Loaded %s provider manifests", len(manifests))
     return list(_MANIFEST_CACHE)
 
 

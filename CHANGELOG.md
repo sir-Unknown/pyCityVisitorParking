@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.5.6
+
+- DVS Portal: serialize provider operations with a re-entrant async lock to avoid race conditions.
+
 ## 0.5.5
 
 - Add PII-safe logging across client/provider flows with extra diagnostics for retries, reauth, and fallbacks.

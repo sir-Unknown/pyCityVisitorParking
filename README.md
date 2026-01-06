@@ -107,6 +107,136 @@ Provider READMEs list credential requirements and any unsupported operations.
   (`favorite_update_fields` is non-empty), otherwise it raises `ProviderError`.
   `remove_favorite()` removes the entry without returning data.
 
+### Examples
+
+Providers (`list_providers()`):
+
+```python
+import asyncio
+
+from pycityvisitorparking import Client
+
+
+async def main() -> None:
+    async with Client() as client:
+        providers = await client.list_providers()
+        for info in providers:
+            print(info.id, info.favorite_update_fields, info.reservation_update_fields)
+
+
+asyncio.run(main())
+```
+
+Permit (`get_permit()`):
+
+```python
+import asyncio
+
+from pycityvisitorparking import Client
+
+
+async def main() -> None:
+    async with Client(base_url="https://example", api_uri="/api") as client:
+        provider = await client.get_provider("dvsportal")
+        await provider.login(credentials={"username": "user", "password": "secret"})
+        permit = await provider.get_permit()
+        print(permit.id, permit.remaining_balance)
+
+
+asyncio.run(main())
+```
+
+Zone validity (`ZoneValidityBlock`):
+
+```python
+import asyncio
+
+from pycityvisitorparking import Client
+
+
+async def main() -> None:
+    async with Client(base_url="https://example", api_uri="/api") as client:
+        provider = await client.get_provider("dvsportal")
+        await provider.login(credentials={"username": "user", "password": "secret"})
+        permit = await provider.get_permit()
+        for block in permit.zone_validity:
+            print(block.start_time, block.end_time)
+
+
+asyncio.run(main())
+```
+
+Reservations (`list_reservations()`, `start_reservation()`, `update_reservation()`, `end_reservation()`):
+
+```python
+import asyncio
+from datetime import datetime, timedelta, timezone
+
+from pycityvisitorparking import Client
+
+
+async def main() -> None:
+    async with Client(base_url="https://example", api_uri="/api") as client:
+        provider = await client.get_provider("dvsportal")
+        await provider.login(credentials={"username": "user", "password": "secret"})
+
+        reservations = await provider.list_reservations()
+        print([reservation.id for reservation in reservations])
+
+        start_time = datetime(2024, 5, 1, 9, 0, tzinfo=timezone.utc)
+        end_time = start_time + timedelta(hours=2)
+        reservation = await provider.start_reservation(
+            "12AB34",
+            start_time=start_time,
+            end_time=end_time,
+            name="Visitor",
+        )
+
+        if "end_time" in provider.reservation_update_fields:
+            new_end_time = end_time + timedelta(hours=1)
+            reservation = await provider.update_reservation(
+                reservation.id,
+                end_time=new_end_time,
+            )
+            end_time = new_end_time
+
+        ended = await provider.end_reservation(reservation.id, end_time=end_time)
+        print(ended.id, ended.start_time, ended.end_time)
+
+
+asyncio.run(main())
+```
+
+Favorites (`list_favorites()`, `add_favorite()`, `update_favorite()`, `remove_favorite()`):
+
+```python
+import asyncio
+
+from pycityvisitorparking import Client
+from pycityvisitorparking.exceptions import ProviderError
+
+
+async def main() -> None:
+    async with Client(base_url="https://example", api_uri="/api") as client:
+        provider = await client.get_provider("dvsportal")
+        await provider.login(credentials={"username": "user", "password": "secret"})
+
+        favorites = await provider.list_favorites()
+        print([favorite.id for favorite in favorites])
+
+        favorite = await provider.add_favorite("12AB34", name="Visitor")
+        try:
+            favorite = await provider.update_favorite(favorite.id, name="Visitor 2")
+            print(favorite.id, favorite.name, favorite.license_plate)
+        except ProviderError:
+            pass
+
+        await provider.remove_favorite(favorite.id)
+
+
+asyncio.run(main())
+```
+
 ## Provider framework
 
 Providers are discovered via `manifest.json` files without importing provider
@@ -173,6 +303,7 @@ async with Client(base_url=base_url, api_uri=api_uri) as client:
 - Internally, reservation times are handled as timezone-aware UTC `datetime`
   values and serialized to strings only at provider and model boundaries.
 - License plates are normalized to uppercase `A-Z0-9` without spaces/symbols.
+- Adding a favorite that already exists by license plate raises `ValidationError`.
 - `zone_validity` must include only chargeable windows.
 
 ## Development

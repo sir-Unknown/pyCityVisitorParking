@@ -209,6 +209,10 @@ class Provider(BaseProvider):
     async def add_favorite(self, license_plate: str, name: str | None = None) -> Favorite:
         """Add a favorite."""
         normalized_plate = self._normalize_license_plate(license_plate)
+        favorites = await self.list_favorites()
+        for favorite in favorites:
+            if favorite.license_plate == normalized_plate:
+                raise ValidationError("license_plate is already a favorite.")
         name_value = name or normalized_plate
         payload = {"name": name_value, "license_plate": normalized_plate}
         data = await self._request_json(
@@ -262,7 +266,10 @@ class Provider(BaseProvider):
             raise ProviderError("Provider response included invalid account data.")
         account_id = self._coerce_response_id(account.get("id"), "account id")
         remaining_balance = self._parse_int(account.get("debit_minutes"))
-        zone_validity = self._map_zone_validity(account.get("zone_validity"))
+        zone_validity = self._map_zone_validity(
+            account.get("zone_validity"),
+            fallback_zone=account.get("zone"),
+        )
         return Permit(
             id=account_id,
             remaining_balance=remaining_balance,
@@ -272,6 +279,8 @@ class Provider(BaseProvider):
     def _map_zone_validity(
         self,
         raw: Any,
+        *,
+        fallback_zone: Any | None = None,
     ) -> list[ZoneValidityBlock]:
         if raw is None:
             raw_list: list[dict[str, Any]] = []
@@ -292,7 +301,16 @@ class Provider(BaseProvider):
             except ValidationError as exc:
                 raise ProviderError("Provider returned invalid zone validity data.") from exc
             entries.append((ZoneValidityBlock(start_time=start, end_time=end), not is_free))
-        # Only include chargeable windows (is_free is not true).
+        if not entries and isinstance(fallback_zone, dict):
+            start_raw = fallback_zone.get("start_time")
+            end_raw = fallback_zone.get("end_time")
+            if isinstance(start_raw, str) and isinstance(end_raw, str):
+                try:
+                    start = self._ensure_utc_timestamp(start_raw)
+                    end = self._ensure_utc_timestamp(end_raw)
+                except ValidationError as exc:
+                    raise ProviderError("Provider returned invalid zone data.") from exc
+                entries.append((ZoneValidityBlock(start_time=start, end_time=end), True))
         return self._filter_chargeable_zone_validity(entries)
 
     def _map_reservation_list(self, data: Any) -> list[Reservation]:

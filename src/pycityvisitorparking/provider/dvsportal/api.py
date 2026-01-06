@@ -291,7 +291,13 @@ class Provider(BaseProvider):
     async def add_favorite(self, license_plate: str, name: str | None = None) -> Favorite:
         """Add a favorite."""
         normalized_plate = self._normalize_license_plate(license_plate)
-        await self._ensure_defaults()
+        favorites = await self.list_favorites()
+        for favorite in favorites:
+            if favorite.license_plate == normalized_plate:
+                raise ValidationError("license_plate is already a favorite.")
+        # The list call also refreshes cached permit media defaults.
+        if self._permit_media_type_id is None or self._permit_media_code is None:
+            raise ProviderError("Permit media defaults are missing.")
         name_value = name or normalized_plate
 
         payload = {
@@ -333,13 +339,23 @@ class Provider(BaseProvider):
 
     async def remove_favorite(self, favorite_id: str) -> None:
         """Remove a favorite."""
-        await self._ensure_defaults()
         normalized_plate = self._normalize_license_plate(favorite_id)
+        favorites = await self.list_favorites()
+        # DVS removal expects the stored favorite name when available.
+        name_value = normalized_plate
+        for favorite in favorites:
+            if favorite.license_plate != normalized_plate:
+                continue
+            if favorite.name:
+                name_value = favorite.name
+            break
+        if self._permit_media_type_id is None or self._permit_media_code is None:
+            raise ProviderError("Permit media defaults are missing.")
         payload = {
             "permitMediaTypeID": self._permit_media_type_id,
             "permitMediaCode": self._permit_media_code,
             "licensePlate": normalized_plate,
-            "name": normalized_plate,
+            "name": name_value,
         }
         await self._request_json_auth("POST", FAVORITE_REMOVE_ENDPOINT, json=payload)
 

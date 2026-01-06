@@ -73,6 +73,23 @@ def _mask_license_plate(plate: str) -> str:
     return f"{normalized[:2]}{masked}{normalized[-2:]}"
 
 
+def _normalize_plate_for_compare(value: str) -> str:
+    if not isinstance(value, str):
+        return ""
+    return "".join(ch for ch in value.upper() if ch.isascii() and ch.isalnum())
+
+
+def _build_favorite_name(license_plate: str, favorite_name: str | None) -> str:
+    normalized_plate = _normalize_plate_for_compare(license_plate)
+    name_value = favorite_name.strip() if isinstance(favorite_name, str) else ""
+    if not name_value:
+        suffix = normalized_plate[-4:] if normalized_plate else ""
+        name_value = f"Favorite {suffix}".strip()
+    if _normalize_plate_for_compare(name_value) == normalized_plate:
+        name_value = f"{name_value}-fav"
+    return name_value
+
+
 def _load_credentials(raw_json: str | None, file_path: str | None) -> dict[str, Any]:
     if raw_json:
         try:
@@ -352,8 +369,9 @@ async def _run_favorite_flow(
         for favorite in favorites:
             print(f"- {_format_favorite(favorite)}")
 
+    name_for_create = _build_favorite_name(license_plate, favorite_name)
     try:
-        created = await provider.add_favorite(license_plate, name=favorite_name)
+        created = await provider.add_favorite(license_plate, name=name_for_create)
         print(f"Favorite created: {_format_favorite(created)}")
     except Exception as exc:
         print(f"Favorite create failed: {exc.__class__.__name__}: {exc}", file=sys.stderr)

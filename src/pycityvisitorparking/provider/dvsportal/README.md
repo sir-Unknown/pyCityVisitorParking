@@ -107,7 +107,8 @@ Unsupported:
 
 - Upsert sends `permitMediaTypeID`, `permitMediaCode`, `licensePlate` object, and `name`.
 - Remove sends `permitMediaTypeID`, `permitMediaCode`, `licensePlate` string, and `name`.
-  When `name` is omitted, the normalized license plate is used.
+  The client uses the stored favorite name when available and falls back to the
+  normalized license plate when no name is available.
 
 ## Reservation update payloads
 

@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 0.5.4
+
+- DVS Portal: rely on the stored favorite name in remove payloads and reject duplicate plates when adding favorites.
+- README/test updates describe the favorite name handling and the live check helper now derives a distinct favorite name.
+- The Hague: fallback to `zone.start_time`/`zone.end_time` when `zone_validity` is missing and document the behavior; tests now cover the fallback.
+
 ## 0.5.3
 
 - Breaking: replace manifest capability flags with a `capabilities` object and

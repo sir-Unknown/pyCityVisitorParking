@@ -41,6 +41,17 @@ RESERVATION_SAMPLE = {
     "end_time": "2024-01-01T11:00:00+02:00",
 }
 
+ZONE_FALLBACK_SAMPLE = {
+    "id": 7,
+    "debit_minutes": 120,
+    "zone": {
+        "id": "10",
+        "name": "Benoordenhout",
+        "start_time": "2025-12-19T08:00:00Z",
+        "end_time": "2025-12-19T23:00:00Z",
+    },
+}
+
 FAVORITE_SAMPLE = {
     "id": 9,
     "name": "Family",
@@ -76,6 +87,33 @@ async def test_map_permit_filters_free_blocks_and_converts_utc():
         ZoneValidityBlock(
             start_time="2024-01-02T08:00:00Z",
             end_time="2024-01-02T17:00:00Z",
+        )
+    ]
+    for block in permit.zone_validity:
+        assert_utc_timestamp(block.start_time)
+        assert_utc_timestamp(block.end_time)
+
+
+@pytest.mark.asyncio
+async def test_map_permit_uses_zone_fallback_when_zone_validity_missing():
+    async with aiohttp.ClientSession() as session:
+        provider = Provider(
+            session,
+            ProviderManifest(
+                id="the_hague",
+                name="The Hague",
+                favorite_update_fields=("license_plate", "name"),
+                reservation_update_fields=("end_time",),
+            ),
+            base_url="https://example",
+        )
+        permit = provider._map_permit(ZONE_FALLBACK_SAMPLE)
+
+    assert isinstance(permit, Permit)
+    assert permit.zone_validity == [
+        ZoneValidityBlock(
+            start_time="2025-12-19T08:00:00Z",
+            end_time="2025-12-19T23:00:00Z",
         )
     ]
     for block in permit.zone_validity:
@@ -180,6 +218,46 @@ async def test_map_favorite_normalizes_plate():
     assert isinstance(favorite, Favorite)
     assert favorite.id == "9"
     assert favorite.name == "Family"
+
+
+@pytest.mark.asyncio
+async def test_add_favorite_rejects_duplicate_plate(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async with aiohttp.ClientSession() as session:
+        provider = Provider(
+            session,
+            ProviderManifest(
+                id="the_hague",
+                name="The Hague",
+                favorite_update_fields=("license_plate", "name"),
+                reservation_update_fields=("end_time",),
+            ),
+            base_url="https://example",
+        )
+
+        async def _fake_list_favorites() -> list[Favorite]:
+            return [Favorite(id="9", name="Family", license_plate="AB12CD")]
+
+        called = {"request": False}
+
+        async def _fake_request_json(
+            method: str,
+            path: str,
+            *,
+            json: object | None = None,
+            allow_reauth: bool,
+        ) -> object:
+            called["request"] = True
+            return {}
+
+        monkeypatch.setattr(provider, "list_favorites", _fake_list_favorites)
+        monkeypatch.setattr(provider, "_request_json", _fake_request_json)
+
+        with pytest.raises(ValidationError):
+            await provider.add_favorite("ab-12 cd", name="Other")
+
+    assert called["request"] is False
 
 
 @pytest.mark.asyncio

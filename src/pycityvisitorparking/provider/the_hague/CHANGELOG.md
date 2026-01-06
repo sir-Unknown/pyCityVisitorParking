@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Map permit zone validity from `zone` when `zone_validity` is missing.
+
 ## 0.5.3
 
 - Move manifest update flags into `capabilities` with field lists.

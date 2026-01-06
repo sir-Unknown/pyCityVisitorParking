@@ -5,7 +5,7 @@ import aiohttp
 import pytest
 
 from pycityvisitorparking.exceptions import ValidationError
-from pycityvisitorparking.models import Reservation, ZoneValidityBlock
+from pycityvisitorparking.models import Favorite, Reservation, ZoneValidityBlock
 from pycityvisitorparking.provider.dvsportal.api import Provider
 from pycityvisitorparking.provider.dvsportal.const import (
     DEFAULT_API_URI,
@@ -528,12 +528,10 @@ async def test_add_favorite_payload_contains_required_fields(
         )
         provider._permit_media_type_id = 1
         provider._permit_media_code = "CARD-1"
-
-        async def _noop_defaults() -> None:
-            return None
-
-        monkeypatch.setattr(provider, "_ensure_defaults", _noop_defaults)
         captured: dict[str, Any] = {}
+
+        async def _fake_list_favorites() -> list[Favorite]:
+            return []
 
         async def _fake_request_json_auth(method: str, path: str, *, json: Any) -> Any:
             captured["json"] = json
@@ -552,6 +550,7 @@ async def test_add_favorite_payload_contains_required_fields(
                 }
             }
 
+        monkeypatch.setattr(provider, "list_favorites", _fake_list_favorites)
         monkeypatch.setattr(provider, "_request_json_auth", _fake_request_json_auth)
         favorite = await provider.add_favorite("ab-12 cd", name="Visitor")
 
@@ -563,6 +562,42 @@ async def test_add_favorite_payload_contains_required_fields(
     assert payload["updateLicensePlate"] is None
     assert payload["name"] == "Visitor"
     assert favorite.id == "AB12CD"
+
+
+@pytest.mark.asyncio
+async def test_add_favorite_rejects_duplicate_plate(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async with aiohttp.ClientSession() as session:
+        provider = Provider(
+            session,
+            ProviderManifest(
+                id="dvsportal",
+                name="DVS Portal",
+                favorite_update_fields=(),
+                reservation_update_fields=("end_time",),
+            ),
+            base_url="https://example",
+        )
+        provider._permit_media_type_id = 1
+        provider._permit_media_code = "CARD-1"
+
+        async def _fake_list_favorites() -> list[Favorite]:
+            return [Favorite(id="AB12CD", name="Family", license_plate="AB12CD")]
+
+        called = {"request": False}
+
+        async def _fake_request_json_auth(method: str, path: str, *, json: Any) -> Any:
+            called["request"] = True
+            return {}
+
+        monkeypatch.setattr(provider, "list_favorites", _fake_list_favorites)
+        monkeypatch.setattr(provider, "_request_json_auth", _fake_request_json_auth)
+
+        with pytest.raises(ValidationError):
+            await provider.add_favorite("ab-12 cd", name="Other")
+
+    assert called["request"] is False
 
 
 @pytest.mark.asyncio
@@ -582,17 +617,16 @@ async def test_remove_favorite_payload_contains_required_fields(
         )
         provider._permit_media_type_id = 1
         provider._permit_media_code = "CARD-1"
-
-        async def _noop_defaults() -> None:
-            return None
-
-        monkeypatch.setattr(provider, "_ensure_defaults", _noop_defaults)
         captured: dict[str, Any] = {}
+
+        async def _fake_list_favorites() -> list[Favorite]:
+            return [Favorite(id="AB12CD", name="Visitor", license_plate="AB12CD")]
 
         async def _fake_request_json_auth(method: str, path: str, *, json: Any) -> Any:
             captured["json"] = json
             return {}
 
+        monkeypatch.setattr(provider, "list_favorites", _fake_list_favorites)
         monkeypatch.setattr(provider, "_request_json_auth", _fake_request_json_auth)
         await provider.remove_favorite("ab-12 cd")
 
@@ -600,4 +634,4 @@ async def test_remove_favorite_payload_contains_required_fields(
     assert payload["permitMediaTypeID"] == 1
     assert payload["permitMediaCode"] == "CARD-1"
     assert payload["licensePlate"] == "AB12CD"
-    assert payload["name"] == "AB12CD"
+    assert payload["name"] == "Visitor"

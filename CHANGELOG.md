@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.5.9
+
+- Fix release workflow version guard regex to correctly parse `__version__`.
+
 ## 0.5.8
 
 - Add Release Drafter configuration and workflow for automated release notes.

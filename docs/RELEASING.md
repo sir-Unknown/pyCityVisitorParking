@@ -74,7 +74,7 @@ Do not push tags before running build + twine checks locally.
   - `git push --follow-tags`
 
 ✅ **Publish to PyPI from GitHub Actions**
-- Push a tag `vX.Y.Z` to trigger the publish workflow.
+- Push a tag `vX.Y.Z` to trigger CI; the release workflow runs only after CI succeeds.
 - Ensure the workflow:
   - builds `sdist` and `wheel`
   - verifies artifacts (`twine check`)

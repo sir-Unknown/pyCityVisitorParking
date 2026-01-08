@@ -1,22 +1,48 @@
 name: Release
 
 on:
-  push:
-    tags:
-      - "v*"
+  workflow_run:
+    workflows: ["CI"]
+    types:
+      - completed
 
 permissions:
   id-token: write
   contents: read
 
 jobs:
+  resolve_tag:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.resolve.outputs.tag }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 0
+      - name: Resolve release tag
+        id: resolve
+        run: |
+          tag=$(git tag --points-at HEAD | grep -E '^v' | head -n 1 || true)
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          if [ -z "$tag" ]; then
+            echo "No release tag found for this commit; skipping."
+          else
+            echo "Resolved release tag: $tag"
+          fi
+
   publish:
     runs-on: ubuntu-latest
     environment: pypi
+    needs: resolve_tag
+    if: ${{ needs.resolve_tag.outputs.tag != '' && github.event.workflow_run.conclusion == 'success' }}
 
     steps:
       - name: Checkout
         uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.resolve_tag.outputs.tag }}
 
       - name: Set up Python
         uses: actions/setup-python@v6
@@ -30,7 +56,7 @@ jobs:
           from pathlib import Path
           import re
           import sys
-          tag = "${{ github.ref_name }}"
+          tag = "${{ needs.resolve_tag.outputs.tag }}"
           version_file = Path("src/pycityvisitorparking/_version.py").read_text(encoding="utf-8")
           match = re.search(r'__version__\s*=\s*"([^"]+)"', version_file)
           if not match:

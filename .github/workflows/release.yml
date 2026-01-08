@@ -42,6 +42,20 @@ jobs:
             sys.exit(1)
           print(f"Tag {tag} matches package version {version}.")
           PY
+      - name: Validate tag has changelog entry
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+          import sys
+          tag = "${{ github.ref_name }}"
+          version = tag.removeprefix("v")
+          changelog = Path("CHANGELOG.md").read_text(encoding="utf-8")
+          if not re.search(rf"^## {re.escape(version)}\\s*$", changelog, re.M):
+            print(f"CHANGELOG.md is missing entry for {version}.")
+            sys.exit(1)
+          print(f"CHANGELOG.md contains entry for {version}.")
+          PY
 
       - name: Install build tooling
         run: |

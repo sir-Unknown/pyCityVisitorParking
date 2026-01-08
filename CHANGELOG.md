@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.5.8
+
+- Add Release Drafter configuration and workflow for automated release notes.
+
 ## 0.5.7
 
 - Fix DVS Portal reservation update/end and favorite add control flow to ensure consistent returns.

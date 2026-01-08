@@ -272,8 +272,13 @@ Public methods raise library exceptions instead of raw `aiohttp` errors:
 - `NetworkError`: network/timeout failures.
 - `ValidationError`: invalid inputs (timestamps, plates, missing fields).
 - `ProviderError`: provider responses or request failures not covered above.
+- Optional specific errors: `RateLimitError`, `ServiceUnavailableError`,
+  `NotFoundError`, `TimeoutError`, and `ConfigError` for finer-grained handling.
 
-Exception messages avoid credentials and full license plates.
+Exceptions include a short `detail` string and a normalized `error_code`
+(`auth_error`, `network_error`, `validation_error`, `provider_error`). You can
+optionally pass a `user_message` that is safe to display directly. Exception
+messages avoid credentials and full license plates.
 
 Example handling:
 

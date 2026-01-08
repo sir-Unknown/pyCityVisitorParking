@@ -5,7 +5,17 @@ from __future__ import annotations
 from importlib.metadata import PackageNotFoundError, version
 
 from .client import Client
-from .exceptions import AuthError, NetworkError, ProviderError, ValidationError
+from .exceptions import (
+    AuthError,
+    ConfigError,
+    NetworkError,
+    NotFoundError,
+    ProviderError,
+    RateLimitError,
+    ServiceUnavailableError,
+    TimeoutError,
+    ValidationError,
+)
 from .models import Favorite, Permit, ProviderInfo, Reservation, ZoneValidityBlock
 
 try:
@@ -16,12 +26,17 @@ except PackageNotFoundError:  # pragma: no cover - not installed
 __all__ = [
     "AuthError",
     "Client",
+    "ConfigError",
     "Favorite",
     "NetworkError",
+    "NotFoundError",
     "Permit",
     "ProviderError",
     "ProviderInfo",
+    "RateLimitError",
     "Reservation",
+    "ServiceUnavailableError",
+    "TimeoutError",
     "ValidationError",
     "ZoneValidityBlock",
     "__version__",

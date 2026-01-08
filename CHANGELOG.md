@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## 0.5.10
+
+- Add structured exception metadata (`error_code`, `detail`, optional `user_message`) for safer client handling.
+- Add specialized exception types for rate limits, timeouts, config, not found, and service availability.
+
 ## 0.5.9
 
 - Fix release workflow version guard regex to correctly parse `__version__`.

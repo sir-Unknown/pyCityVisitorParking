@@ -5,6 +5,11 @@
 - ❌ Avoid publishing from local machines when CI publishing is available.
 - ❌ Avoid PyPI API tokens when OIDC is available.
 
+✅ **Keep release notes automated with Release Drafter**
+- Maintain PR labels so Release Drafter can categorize changes.
+- Review the draft release notes before tagging.
+- Publish the GitHub Release from the draft after the tag is pushed.
+
 ✅ **Use SemVer and keep changelogs accurate**
 - Use SemVer for the package version.
 - Bump MINOR for provider additions.
@@ -45,6 +50,7 @@
 
 ✅ **Recommended local release order**
 1) Update docs and changelogs.
+2) Review the Release Drafter draft for accuracy.
 2) `hatch run lint:format-check`
 3) `hatch run lint:check`
 4) `hatch run test:run`
@@ -55,6 +61,7 @@
 9) `git commit -am "Release X.Y.Z"`
 10) `git tag vX.Y.Z`
 11) `git push --follow-tags`
+12) Publish the GitHub Release from the Release Drafter draft.
 
 Do not push tags before running build + twine checks locally.
 
@@ -72,6 +79,10 @@ Do not push tags before running build + twine checks locally.
   - builds `sdist` and `wheel`
   - verifies artifacts (`twine check`)
   - publishes using `pypa/gh-action-pypi-publish` with OIDC
+
+✅ **Validate tag and version alignment**
+- The release workflow checks `vX.Y.Z` against `src/pycityvisitorparking/_version.py`.
+- If they do not match, bump the version with Hatch and re-tag.
 
 ✅ **Use TestPyPI for a dry run**
 - Trigger the publish workflow manually with `workflow_dispatch`.

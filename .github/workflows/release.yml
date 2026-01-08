@@ -32,7 +32,7 @@ jobs:
           import sys
           tag = "${{ github.ref_name }}"
           version_file = Path("src/pycityvisitorparking/_version.py").read_text(encoding="utf-8")
-          match = re.search(r'__version__\\s*=\\s*"([^"]+)"', version_file)
+          match = re.search(r'__version__\s*=\s*"([^"]+)"', version_file)
           if not match:
             print("Could not read __version__ from _version.py")
             sys.exit(1)

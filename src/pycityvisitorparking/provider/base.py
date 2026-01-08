@@ -137,7 +137,16 @@ class BaseProvider(ABC):
         self,
         entries: list[tuple[ZoneValidityBlock, bool]],
     ) -> list[ZoneValidityBlock]:
-        return filter_chargeable_zone_validity(entries)
+        filtered = filter_chargeable_zone_validity(entries)
+        normalized: list[ZoneValidityBlock] = []
+        for block in filtered:
+            try:
+                start = self._ensure_utc_timestamp(block.start_time)
+                end = self._ensure_utc_timestamp(block.end_time)
+            except ValidationError as exc:
+                raise ProviderError("Provider returned invalid zone validity data.") from exc
+            normalized.append(ZoneValidityBlock(start_time=start, end_time=end))
+        return normalized
 
     def _merge_credentials(
         self,

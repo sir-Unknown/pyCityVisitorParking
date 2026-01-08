@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 0.5.7
+
+- Fix DVS Portal reservation update/end and favorite add control flow to ensure consistent returns.
+- Add coverage-focused provider tests and negative input validation scenarios.
+- Add coverage defaults for pytest, update schema validation to ignore coverage addopts, and add ignore entries for coverage artifacts.
+
 ## 0.5.6
 
 - DVS Portal: serialize provider operations with a re-entrant async lock to avoid race conditions.

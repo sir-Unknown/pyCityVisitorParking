@@ -21,10 +21,12 @@ jobs:
         with:
           ref: ${{ github.event.workflow_run.head_sha }}
           fetch-depth: 0
+      - name: Fetch tags
+        run: git fetch --tags --force
       - name: Resolve release tag
         id: resolve
         run: |
-          tag=$(git tag --points-at HEAD | grep -E '^v' | head -n 1 || true)
+          tag=$(git tag --points-at HEAD 'v*' | head -n 1 || true)
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
           if [ -z "$tag" ]; then
             echo "No release tag found for this commit; skipping."

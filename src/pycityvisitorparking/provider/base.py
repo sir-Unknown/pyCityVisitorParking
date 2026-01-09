@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import logging
 from abc import ABC, abstractmethod
-from collections.abc import Mapping
+from collections.abc import Awaitable, Callable, Iterable, Mapping
 from datetime import datetime
-from typing import Any, Literal, overload
+from typing import Any, Literal, TypeVar, overload
 
 import aiohttp
 
@@ -24,10 +24,14 @@ from .loader import ProviderManifest
 
 _DEFAULT_TIMEOUT = aiohttp.ClientTimeout(total=30)
 _LOGGER = logging.getLogger(__name__)
+_T = TypeVar("_T")
 
 
 class BaseProvider(ABC):
     """Base class for provider implementations."""
+
+    class _RetryRequest(Exception):
+        """Internal signal to retry a request."""
 
     def __init__(
         self,
@@ -148,6 +152,48 @@ class BaseProvider(ABC):
             normalized.append(ZoneValidityBlock(start_time=start, end_time=end))
         return normalized
 
+    def _parse_int(self, value: Any) -> int:
+        if value is None or isinstance(value, bool):
+            return 0
+        if isinstance(value, int):
+            return value
+        if isinstance(value, str):
+            stripped = value.strip()
+            if not stripped:
+                return 0
+            try:
+                return int(stripped)
+            except ValueError:
+                return 0
+        return 0
+
+    def _require_id(self, value: Any, field: str) -> str:
+        if value is None:
+            raise ValidationError(f"{field} is required.")
+        text = str(value).strip()
+        if not text:
+            raise ValidationError(f"{field} is required.")
+        return text
+
+    def _coerce_response_id(self, value: Any, field: str) -> str:
+        if value is None:
+            raise ProviderError(f"Provider response missing {field}.")
+        text = str(value).strip()
+        if not text:
+            raise ProviderError(f"Provider response missing {field}.")
+        return text
+
+    def _coerce_id(self, value: Any) -> str:
+        if value is None:
+            return ""
+        return str(value)
+
+    def _find_by_id(self, items: Iterable[_T], item_id: str) -> _T | None:
+        for item in items:
+            if getattr(item, "id", None) == item_id:
+                return item
+        return None
+
     def _merge_credentials(
         self,
         credentials: Mapping[str, str] | None,
@@ -169,15 +215,14 @@ class BaseProvider(ABC):
             merged[key] = value
         return merged
 
-    async def _request_json(self, method: str, path: str, **kwargs: Any) -> Any:
-        url = self._build_url(path)
-        return await self._request(method, url, expect_json=True, **kwargs)
-
-    async def _request_text(self, method: str, path: str, **kwargs: Any) -> str:
-        url = self._build_url(path)
-        return await self._request(method, url, expect_json=False, **kwargs)
-
-    async def _request(self, method: str, url: str, *, expect_json: bool, **kwargs: Any) -> Any:
+    async def _request_with_retries(
+        self,
+        method: str,
+        url: str,
+        *,
+        request_kwargs: dict[str, Any],
+        response_handler: Callable[[aiohttp.ClientResponse, int, int], Awaitable[Any]],
+    ) -> Any:
         retries = self._retry_count if method.upper() == "GET" else 0
         attempts = retries + 1
         last_error: Exception | None = None
@@ -190,28 +235,18 @@ class BaseProvider(ABC):
                 attempts,
             )
             try:
-                timeout = kwargs.pop("timeout", self._timeout)
+                timeout = request_kwargs.get("timeout", self._timeout)
                 if timeout is None:
                     timeout = self._timeout
-                async with self._session.request(
-                    method,
-                    url,
-                    timeout=timeout,
-                    ssl=True,
-                    **kwargs,
-                ) as response:
-                    _LOGGER.debug(
-                        "Provider %s response status=%s",
-                        self.provider_id,
-                        response.status,
-                    )
-                    self._raise_for_status(response)
-                    if expect_json:
-                        try:
-                            return await response.json()
-                        except (aiohttp.ContentTypeError, ValueError) as exc:
-                            raise ProviderError("Response did not contain valid JSON.") from exc
-                    return await response.text()
+                merged_kwargs = dict(request_kwargs)
+                merged_kwargs.setdefault("ssl", True)
+                merged_kwargs["timeout"] = timeout
+                async with self._session.request(method, url, **merged_kwargs) as response:
+                    return await response_handler(response, attempt, attempts)
+            except self._RetryRequest:
+                if attempt >= attempts - 1:
+                    raise ProviderError("Request failed.") from None
+                continue
             except (aiohttp.ClientError, TimeoutError) as exc:
                 last_error = exc
                 _LOGGER.warning(
@@ -224,6 +259,40 @@ class BaseProvider(ABC):
         if last_error is not None:
             raise NetworkError("Network request failed.") from last_error
         raise ProviderError("Request failed.")
+
+    async def _request_json(self, method: str, path: str, **kwargs: Any) -> Any:
+        url = self._build_url(path)
+        return await self._request(method, url, expect_json=True, **kwargs)
+
+    async def _request_text(self, method: str, path: str, **kwargs: Any) -> str:
+        url = self._build_url(path)
+        return await self._request(method, url, expect_json=False, **kwargs)
+
+    async def _request(self, method: str, url: str, *, expect_json: bool, **kwargs: Any) -> Any:
+        async def handle_response(
+            response: aiohttp.ClientResponse,
+            _attempt: int,
+            _attempts: int,
+        ) -> Any:
+            _LOGGER.debug(
+                "Provider %s response status=%s",
+                self.provider_id,
+                response.status,
+            )
+            self._raise_for_status(response)
+            if expect_json:
+                try:
+                    return await response.json()
+                except (aiohttp.ContentTypeError, ValueError) as exc:
+                    raise ProviderError("Response did not contain valid JSON.") from exc
+            return await response.text()
+
+        return await self._request_with_retries(
+            method,
+            url,
+            request_kwargs=kwargs,
+            response_handler=handle_response,
+        )
 
     def _raise_for_status(self, response: aiohttp.ClientResponse) -> None:
         if 200 <= response.status < 300:

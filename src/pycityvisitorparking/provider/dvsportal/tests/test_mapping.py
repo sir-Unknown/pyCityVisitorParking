@@ -4,7 +4,7 @@ from typing import Any
 import aiohttp
 import pytest
 
-from pycityvisitorparking.exceptions import ValidationError
+from pycityvisitorparking.exceptions import ProviderError, ValidationError
 from pycityvisitorparking.models import Favorite, Reservation, ZoneValidityBlock
 from pycityvisitorparking.provider.dvsportal.api import Provider
 from pycityvisitorparking.provider.dvsportal.const import (
@@ -598,6 +598,50 @@ async def test_add_favorite_rejects_duplicate_plate(
             await provider.add_favorite("ab-12 cd", name="Other")
 
     assert called["request"] is False
+
+
+@pytest.mark.asyncio
+async def test_add_favorite_raises_when_response_misses_plate(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async with aiohttp.ClientSession() as session:
+        provider = Provider(
+            session,
+            ProviderManifest(
+                id="dvsportal",
+                name="DVS Portal",
+                favorite_update_fields=(),
+                reservation_update_fields=("end_time",),
+            ),
+            base_url="https://example",
+        )
+        provider._permit_media_type_id = 1
+        provider._permit_media_code = "CARD-1"
+
+        async def _fake_list_favorites() -> list[Favorite]:
+            return []
+
+        async def _fake_request_json_auth(method: str, path: str, *, json: Any) -> Any:
+            return {
+                "Permit": {
+                    "PermitMedias": [
+                        {
+                            "TypeID": 1,
+                            "Code": "CARD-1",
+                            "ActiveReservations": [],
+                            "LicensePlates": [
+                                {"Value": "ZZ99ZZ", "Name": "Other"},
+                            ],
+                        }
+                    ]
+                }
+            }
+
+        monkeypatch.setattr(provider, "list_favorites", _fake_list_favorites)
+        monkeypatch.setattr(provider, "_request_json_auth", _fake_request_json_auth)
+
+        with pytest.raises(ProviderError):
+            await provider.add_favorite("ab-12 cd", name="Visitor")
 
 
 @pytest.mark.asyncio

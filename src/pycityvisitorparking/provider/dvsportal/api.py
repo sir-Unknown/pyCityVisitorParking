@@ -13,7 +13,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import aiohttp
 
-from ...exceptions import AuthError, NetworkError, ProviderError, ValidationError
+from ...exceptions import AuthError, ProviderError, ValidationError
 from ...models import Favorite, Permit, Reservation, ZoneValidityBlock
 from ...util import format_utc_timestamp, parse_timestamp
 from ..base import BaseProvider
@@ -658,7 +658,7 @@ class Provider(BaseProvider):
         for favorite in favorites:
             if favorite.license_plate == plate:
                 return favorite
-        return favorites[0] if favorites else None
+        return None
 
     def _build_auth_header(self, token: str) -> str:
         encoded = base64.b64encode(token.encode("utf-8")).decode("ascii")
@@ -669,28 +669,6 @@ class Provider(BaseProvider):
             raise ValidationError("permit_media_type_id must be a string or integer.")
         if isinstance(value, str) and not value.strip():
             raise ValidationError("permit_media_type_id must be non-empty.")
-
-    def _coerce_id(self, value: Any) -> str:
-        if value is None:
-            return ""
-        return str(value)
-
-    def _parse_int(self, value: Any) -> int:
-        if value is None:
-            return 0
-        if isinstance(value, bool):
-            return 0
-        if isinstance(value, int):
-            return value
-        if isinstance(value, str):
-            stripped = value.strip()
-            if not stripped:
-                return 0
-            try:
-                return int(stripped)
-            except ValueError:
-                return 0
-        return 0
 
     async def _request_json_auth(self, method: str, path: str, *, json: Any | None = None) -> Any:
         await self._ensure_authenticated()
@@ -763,47 +741,41 @@ class Provider(BaseProvider):
         json: Any,
         headers: dict[str, str],
     ) -> Any:
-        retries = self._retry_count if method.upper() == "GET" else 0
-        attempts = retries + 1
-        for attempt in range(attempts):
-            try:
-                async with self._session.request(
-                    method,
-                    url,
-                    headers=headers,
-                    json=json,
-                    timeout=self._timeout,
-                    ssl=True,
-                ) as response:
-                    if response.status == 429:
-                        await self._handle_rate_limit(response, method, attempt, attempts)
-                        continue
-                    if response.status in (401, 403):
-                        _LOGGER.warning(
-                            "Provider %s request failed with auth status=%s",
-                            self.provider_id,
-                            response.status,
-                        )
-                        raise AuthError("Authentication failed.")
-                    if not 200 <= response.status < 300:
-                        _LOGGER.warning(
-                            "Provider %s request failed with status=%s",
-                            self.provider_id,
-                            response.status,
-                        )
-                        raise ProviderError(
-                            f"Provider request failed with status {response.status}."
-                        )
-                    if expect_json:
-                        try:
-                            return await response.json()
-                        except (aiohttp.ContentTypeError, ValueError) as exc:
-                            raise ProviderError("Response did not contain valid JSON.") from exc
-                    return await response.text()
-            except (aiohttp.ClientError, TimeoutError) as exc:
-                if attempt >= attempts - 1:
-                    raise NetworkError("Network request failed.") from exc
-        raise NetworkError("Network request failed.")
+        async def handle_response(
+            response: aiohttp.ClientResponse,
+            attempt: int,
+            attempts: int,
+        ) -> Any:
+            if response.status == 429:
+                await self._handle_rate_limit(response, method, attempt, attempts)
+                raise self._RetryRequest()
+            if response.status in (401, 403):
+                _LOGGER.warning(
+                    "Provider %s request failed with auth status=%s",
+                    self.provider_id,
+                    response.status,
+                )
+                raise AuthError("Authentication failed.")
+            if not 200 <= response.status < 300:
+                _LOGGER.warning(
+                    "Provider %s request failed with status=%s",
+                    self.provider_id,
+                    response.status,
+                )
+                raise ProviderError(f"Provider request failed with status {response.status}.")
+            if expect_json:
+                try:
+                    return await response.json()
+                except (aiohttp.ContentTypeError, ValueError) as exc:
+                    raise ProviderError("Response did not contain valid JSON.") from exc
+            return await response.text()
+
+        return await self._request_with_retries(
+            method,
+            url,
+            request_kwargs={"headers": headers, "json": json},
+            response_handler=handle_response,
+        )
 
     async def _handle_rate_limit(
         self,

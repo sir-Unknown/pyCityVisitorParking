@@ -10,7 +10,7 @@ from typing import Any
 
 import aiohttp
 
-from ...exceptions import AuthError, NetworkError, ProviderError, ValidationError
+from ...exceptions import AuthError, ProviderError, ValidationError
 from ...models import Favorite, Permit, Reservation, ZoneValidityBlock
 from ..base import BaseProvider
 from ..loader import ProviderManifest
@@ -203,10 +203,7 @@ class Provider(BaseProvider):
         reservation_id_value = self._require_id(reservation_id, "reservation_id")
         end_dt = self._normalize_datetime(end_time)
         normalized_end_time = self._format_utc_timestamp(end_dt)
-        existing = self._find_reservation(
-            await self.list_reservations(),
-            reservation_id_value,
-        )
+        existing = self._find_by_id(await self.list_reservations(), reservation_id_value)
         if existing is None:
             raise ValidationError("reservation_id was not found.")
         await self._request_text(
@@ -269,7 +266,7 @@ class Provider(BaseProvider):
             raise ValidationError("license_plate or name is required.")
         existing = None
         if license_plate is None or name is None:
-            existing = self._find_favorite(await self.list_favorites(), favorite_id_value)
+            existing = self._find_by_id(await self.list_favorites(), favorite_id_value)
             if existing is None:
                 raise ValidationError("favorite_id was not found.")
         plate_value = license_plate or (existing.license_plate if existing else None)
@@ -348,10 +345,6 @@ class Provider(BaseProvider):
                     end = self._ensure_utc_timestamp(end_raw)
                 except ValidationError as exc:
                     raise ProviderError("Provider returned invalid zone data.") from exc
-                _LOGGER.warning(
-                    "Provider %s zone validity fallback used",
-                    self.provider_id,
-                )
                 entries.append((ZoneValidityBlock(start_time=start, end_time=end), True))
         return self._filter_chargeable_zone_validity(entries)
 
@@ -510,39 +503,29 @@ class Provider(BaseProvider):
         raise ProviderError("Request failed.")
 
     async def _request(self, method: str, url: str, *, expect_json: bool, **kwargs: Any) -> Any:
-        retries = self._retry_count if method.upper() == "GET" else 0
-        attempts = retries + 1
-        last_error: Exception | None = None
-        for attempt in range(attempts):
-            try:
-                timeout = kwargs.pop("timeout", self._timeout)
-                if timeout is None:
-                    timeout = self._timeout
-                async with self._session.request(
-                    method,
-                    url,
-                    timeout=timeout,
-                    ssl=True,
-                    **kwargs,
-                ) as response:
-                    if response.status == 400:
-                        message = await self._error_message_from_response(response)
-                        if message:
-                            raise ProviderError(message)
-                    self._raise_for_status(response)
-                    if expect_json:
-                        try:
-                            return await response.json()
-                        except (aiohttp.ContentTypeError, ValueError) as exc:
-                            raise ProviderError("Response did not contain valid JSON.") from exc
-                    return await response.text()
-            except (aiohttp.ClientError, TimeoutError) as exc:
-                last_error = exc
-                if attempt >= attempts - 1:
-                    raise NetworkError("Network request failed.") from exc
-        if last_error is not None:
-            raise NetworkError("Network request failed.") from last_error
-        raise ProviderError("Request failed.")
+        async def handle_response(
+            response: aiohttp.ClientResponse,
+            _attempt: int,
+            _attempts: int,
+        ) -> Any:
+            if response.status == 400:
+                message = await self._error_message_from_response(response)
+                if message:
+                    raise ProviderError(message)
+            self._raise_for_status(response)
+            if expect_json:
+                try:
+                    return await response.json()
+                except (aiohttp.ContentTypeError, ValueError) as exc:
+                    raise ProviderError("Response did not contain valid JSON.") from exc
+            return await response.text()
+
+        return await self._request_with_retries(
+            method,
+            url,
+            request_kwargs=kwargs,
+            response_handler=handle_response,
+        )
 
     async def _ensure_authenticated(self) -> None:
         if self._logged_in:
@@ -566,57 +549,6 @@ class Provider(BaseProvider):
         if not normalized:
             raise ValidationError("permit_media_type_id must be non-empty.")
         return normalized
-
-    def _require_id(self, value: Any, field: str) -> str:
-        if value is None:
-            raise ValidationError(f"{field} is required.")
-        text = str(value).strip()
-        if not text:
-            raise ValidationError(f"{field} is required.")
-        return text
-
-    def _coerce_response_id(self, value: Any, field: str) -> str:
-        if value is None:
-            raise ProviderError(f"Provider response missing {field}.")
-        text = str(value).strip()
-        if not text:
-            raise ProviderError(f"Provider response missing {field}.")
-        return text
-
-    def _find_reservation(
-        self,
-        reservations: list[Reservation],
-        reservation_id: str,
-    ) -> Reservation | None:
-        for reservation in reservations:
-            if reservation.id == reservation_id:
-                return reservation
-        return None
-
-    def _find_favorite(
-        self,
-        favorites: list[Favorite],
-        favorite_id: str,
-    ) -> Favorite | None:
-        for favorite in favorites:
-            if favorite.id == favorite_id:
-                return favorite
-        return None
-
-    def _parse_int(self, value: Any) -> int:
-        if value is None or isinstance(value, bool):
-            return 0
-        if isinstance(value, int):
-            return value
-        if isinstance(value, str):
-            stripped = value.strip()
-            if not stripped:
-                return 0
-            try:
-                return int(stripped)
-            except ValueError:
-                return 0
-        return 0
 
     def _normalize_error_code(self, value: str) -> str:
         normalized = value.strip().lower()

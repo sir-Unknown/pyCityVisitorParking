@@ -216,18 +216,3 @@ def get_manifest(
         if manifest.id == provider_id:
             return manifest
     raise ProviderError("Provider not found.")
-
-
-async def async_get_manifest(
-    provider_id: str,
-    *,
-    refresh: bool = False,
-    cache_ttl: float | None = _DEFAULT_CACHE_TTL_SECONDS,
-) -> ProviderManifest:
-    """Async wrapper for get_manifest to avoid blocking the event loop."""
-    return await asyncio.to_thread(
-        get_manifest,
-        provider_id,
-        refresh=refresh,
-        cache_ttl=cache_ttl,
-    )

@@ -36,3 +36,8 @@ runtime package and is ignored by discovery.
   to `[]` and ensure `update_favorite()` raises `ProviderError`.
 - If reservation updates are unsupported, set `capabilities.reservation_update_fields`
   to `[]` and ensure `update_reservation()` raises `ProviderError`.
+
+## Testing
+
+- Avoid live services; use mocked aiohttp responses.
+- Cover request/response flows and error mapping (auth, non-2xx, invalid JSON).

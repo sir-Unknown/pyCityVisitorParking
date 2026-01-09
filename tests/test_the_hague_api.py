@@ -3,9 +3,10 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+import aiohttp
 import pytest
 
-from pycityvisitorparking.exceptions import AuthError, ProviderError, ValidationError
+from pycityvisitorparking.exceptions import AuthError, NetworkError, ProviderError, ValidationError
 from pycityvisitorparking.models import Favorite
 from pycityvisitorparking.provider.loader import ProviderManifest
 from pycityvisitorparking.provider.the_hague.api import Provider
@@ -18,11 +19,52 @@ class _DummySession:
 
 
 class _FakeResponse:
-    def __init__(self, payload: Any) -> None:
+    def __init__(
+        self,
+        payload: Any,
+        *,
+        status: int = 200,
+        text_data: str = "",
+        json_error: Exception | None = None,
+    ) -> None:
+        self.status = status
         self._payload = payload
+        self._text_data = text_data
+        self._json_error = json_error
 
     async def json(self) -> Any:
+        if self._json_error is not None:
+            raise self._json_error
         return self._payload
+
+    async def text(self) -> str:
+        return self._text_data
+
+
+class _FakeRequestContext:
+    def __init__(self, response: _FakeResponse) -> None:
+        self._response = response
+
+    async def __aenter__(self) -> _FakeResponse:
+        return self._response
+
+    async def __aexit__(self, exc_type, exc, tb) -> bool:
+        return False
+
+
+class _SequenceSession:
+    def __init__(self, responses: list[object]) -> None:
+        self._responses = responses
+        self.calls: list[dict[str, Any]] = []
+        self._index = 0
+
+    def request(self, method: str, url: str, **kwargs: Any) -> _FakeRequestContext:
+        self.calls.append({"method": method, "url": url, "kwargs": kwargs})
+        response = self._responses[self._index]
+        self._index += 1
+        if isinstance(response, Exception):
+            raise response
+        return _FakeRequestContext(response)
 
 
 def _provider() -> Provider:
@@ -36,6 +78,21 @@ def _provider() -> Provider:
         ),
         base_url="https://example",
     )
+
+
+def _provider_with_session(session: object) -> Provider:
+    provider = Provider(
+        session,  # type: ignore[arg-type]
+        ProviderManifest(
+            id="the_hague",
+            name="The Hague",
+            favorite_update_fields=("license_plate", "name"),
+            reservation_update_fields=("end_time",),
+        ),
+        base_url="https://example",
+    )
+    provider._logged_in = True
+    return provider
 
 
 def test_build_headers_includes_permit_media_type() -> None:
@@ -195,3 +252,110 @@ async def test_end_reservation_requires_existing(monkeypatch: pytest.MonkeyPatch
 def test_error_message_for_invalid_code() -> None:
     provider = _provider()
     assert provider._error_message_for_code("###") is None
+
+
+@pytest.mark.asyncio
+async def test_get_permit_requests_account_endpoint() -> None:
+    session = _SequenceSession(
+        [
+            _FakeResponse(
+                {
+                    "id": 9,
+                    "debit_minutes": 42,
+                    "zone_validity": [
+                        {
+                            "is_free": False,
+                            "start_time": "2024-01-02T09:00:00+01:00",
+                            "end_time": "2024-01-02T18:00:00+01:00",
+                        }
+                    ],
+                }
+            )
+        ]
+    )
+    provider = _provider_with_session(session)
+    permit = await provider.get_permit()
+
+    assert permit.id == "9"
+    assert permit.remaining_balance == 42
+    assert permit.zone_validity[0].start_time == "2024-01-02T08:00:00Z"
+    assert session.calls[0]["url"].endswith("/api/account/0")
+
+
+@pytest.mark.asyncio
+async def test_start_reservation_posts_normalized_payload() -> None:
+    session = _SequenceSession(
+        [
+            _FakeResponse(
+                {
+                    "id": "abc",
+                    "name": "AB12CD",
+                    "license_plate": "AB12CD",
+                    "start_time": "2024-01-01T10:00:00Z",
+                    "end_time": "2024-01-01T11:00:00Z",
+                }
+            )
+        ]
+    )
+    provider = _provider_with_session(session)
+    reservation = await provider.start_reservation(
+        "ab-12 cd",
+        start_time=datetime(2024, 1, 1, 10, 0, tzinfo=UTC),
+        end_time=datetime(2024, 1, 1, 11, 0, tzinfo=UTC),
+    )
+
+    payload = session.calls[0]["kwargs"]["json"]
+    assert payload["license_plate"] == "AB12CD"
+    assert payload["name"] == "AB12CD"
+    assert reservation.license_plate == "AB12CD"
+
+
+@pytest.mark.asyncio
+async def test_remove_favorite_sends_delete() -> None:
+    session = _SequenceSession([_FakeResponse({}, text_data="ok")])
+    provider = _provider_with_session(session)
+    await provider.remove_favorite("fav-1")
+
+    assert session.calls[0]["method"] == "DELETE"
+    assert session.calls[0]["url"].endswith("/api/favorite/fav-1")
+
+
+@pytest.mark.asyncio
+async def test_request_handles_provider_error_message() -> None:
+    session = _SequenceSession([_FakeResponse({"description": "pv76"}, status=400)])
+    provider = _provider_with_session(session)
+    with pytest.raises(ProviderError, match="pv76"):
+        await provider._request("GET", "https://example/api/account/0", expect_json=True)
+
+
+@pytest.mark.asyncio
+async def test_request_invalid_json_raises_provider_error() -> None:
+    session = _SequenceSession([_FakeResponse({}, json_error=ValueError("bad"))])
+    provider = _provider_with_session(session)
+    with pytest.raises(ProviderError, match="valid JSON"):
+        await provider._request("GET", "https://example/api/account/0", expect_json=True)
+
+
+@pytest.mark.asyncio
+async def test_request_network_error_raises_network_error() -> None:
+    session = _SequenceSession([aiohttp.ClientError("boom")])
+    provider = _provider_with_session(session)
+    with pytest.raises(NetworkError):
+        await provider._request("GET", "https://example/api/account/0", expect_json=True)
+
+
+@pytest.mark.asyncio
+async def test_request_json_requires_authentication() -> None:
+    session = _SequenceSession([])
+    provider = Provider(
+        session,  # type: ignore[arg-type]
+        ProviderManifest(
+            id="the_hague",
+            name="The Hague",
+            favorite_update_fields=("license_plate", "name"),
+            reservation_update_fields=("end_time",),
+        ),
+        base_url="https://example",
+    )
+    with pytest.raises(AuthError):
+        await provider._request_json("GET", "/account/0", allow_reauth=True)

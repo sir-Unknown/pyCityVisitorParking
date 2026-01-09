@@ -189,6 +189,8 @@ Add coverage for:
 - UTC conversion from provider timestamps
 - zone validity filtering
 - mapping into public models
+- request/response flows for provider methods with mocked aiohttp responses
+- HTTP/auth/error mapping for non-2xx and invalid JSON responses
 
 Run the test suite with:
 

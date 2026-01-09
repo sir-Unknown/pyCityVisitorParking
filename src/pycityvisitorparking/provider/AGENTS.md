@@ -118,6 +118,8 @@
   - serialization uses `Z` with second precision
   - `zone_validity` filtering to chargeable windows
   - mapping into strict public dataclasses
+  - request/response flows with mocked aiohttp responses
+  - HTTP/auth/error mapping for non-2xx and invalid JSON responses
 
 ✅ **Make provider changes release-ready**
 - Update provider `CHANGELOG.md` when provider behavior changes.

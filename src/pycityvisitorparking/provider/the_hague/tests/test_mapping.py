@@ -95,7 +95,7 @@ async def test_map_permit_filters_free_blocks_and_converts_utc():
 
 
 @pytest.mark.asyncio
-async def test_map_permit_uses_zone_fallback_when_zone_validity_missing():
+async def test_map_permit_uses_zone_when_zone_validity_missing():
     async with aiohttp.ClientSession() as session:
         provider = Provider(
             session,

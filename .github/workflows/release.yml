@@ -81,17 +81,3 @@ jobs:
 
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
-
-  publish_github_release:
-    runs-on: ubuntu-latest
-    needs: resolve_tag
-    if: ${{ needs.resolve_tag.outputs.tag != '' && github.event.workflow_run.conclusion == 'success' }}
-    steps:
-      - name: Publish GitHub release from draft
-        uses: release-drafter/release-drafter@v6
-        with:
-          config-name: release-drafter.yml
-          tag: ${{ needs.resolve_tag.outputs.tag }}
-          publish: true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.5.11
+
+- Refactor provider request retry handling into the shared base provider.
+- Consolidate provider ID helpers and align request tests with shared behavior.
 ## 0.5.10
 
 - Add structured exception metadata (`error_code`, `detail`, optional `user_message`) for safer client handling.

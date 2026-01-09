@@ -26,7 +26,10 @@ jobs:
       - name: Resolve release tag
         id: resolve
         run: |
-          tag=$(git tag --points-at HEAD 'v*' | head -n 1 || true)
+          echo "HEAD: $(git rev-parse HEAD)"
+          echo "Tags pointing at HEAD:"
+          git for-each-ref --points-at HEAD --format '%(refname:short)' refs/tags || true
+          tag=$(git for-each-ref --points-at HEAD --format '%(refname:short)' refs/tags/v* | head -n 1 || true)
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
           if [ -z "$tag" ]; then
             echo "No release tag found for this commit; skipping."

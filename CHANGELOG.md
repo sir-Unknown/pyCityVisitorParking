@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.5.14
+
+- Publish releases directly on tag pushes to ensure PyPI publishing runs.
+
 ## 0.5.13
 
 - Fix release workflow tag resolution to enable CI PyPI publishing.

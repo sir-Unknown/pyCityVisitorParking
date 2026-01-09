@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.5.12
+
+- Publish GitHub releases automatically after successful tagged CI runs.
+
 ## 0.5.11
 
 - Refactor provider request retry handling into the shared base provider.

@@ -4,6 +4,11 @@ on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to publish (e.g., v0.5.14)"
+        required: false
 
 permissions:
   id-token: write
@@ -15,10 +20,23 @@ jobs:
     environment: pypi
 
     steps:
+      - name: Resolve tag
+        id: vars
+        run: |
+          tag="${{ inputs.tag }}"
+          if [ -z "$tag" ]; then
+            tag="${{ github.ref_name }}"
+          fi
+          if [ -z "$tag" ]; then
+            echo "Tag is required to publish."
+            exit 1
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
       - name: Checkout
         uses: actions/checkout@v6
         with:
-          ref: ${{ github.ref }}
+          ref: ${{ steps.vars.outputs.tag }}
 
       - name: Set up Python
         uses: actions/setup-python@v6
@@ -32,7 +50,7 @@ jobs:
           from pathlib import Path
           import re
           import sys
-          tag = "${{ github.ref_name }}"
+          tag = "${{ steps.vars.outputs.tag }}"
           version_file = Path("src/pycityvisitorparking/_version.py").read_text(encoding="utf-8")
           match = re.search(r'__version__\s*=\s*"([^"]+)"', version_file)
           if not match:

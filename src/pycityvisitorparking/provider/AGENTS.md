@@ -125,6 +125,7 @@
 - Update provider `CHANGELOG.md` when provider behavior changes.
 - Keep provider `README.md` accurate for required login keys and limitations.
 - ❌ Avoid adding new runtime dependencies without maintainer approval.
+- When tagging releases, use annotated tags or push tags explicitly so CI triggers.
 
 ✅ **Run the checklist before opening a PR**
 - Confirm adding files only under `provider/<provider_id>/`.

@@ -122,10 +122,11 @@
 ✅ **Publish releases to PyPI in a controlled way (Hatch)**
 - Bump versions using `hatch version <new>` or `hatch version <major|minor|patch>`.
 - Update root `CHANGELOG.md` and move “Unreleased” entries into the new version section.
-- Create a git tag `vX.Y.Z` and push it.
+- Create an annotated git tag `vX.Y.Z` and push it.
 - Publish from CI on tags using trusted publishing (OIDC) when possible.
 - ❌ Avoid manual local publishing when CI publish is available.
 - Verify release contents include manifests, schema, and provider docs in `sdist`.
+ - If `git push --follow-tags` is used, ensure the tag is annotated or push the tag explicitly.
 
 ✅ **Apply release rules**
 - Use SemVer and keep root `CHANGELOG.md` updated.

@@ -5,11 +5,6 @@
 - ❌ Avoid publishing from local machines when CI publishing is available.
 - ❌ Avoid PyPI API tokens when OIDC is available.
 
-✅ **Keep release notes automated with Release Drafter**
-- Maintain PR labels so Release Drafter can categorize changes.
-- Review the draft release notes before tagging.
-- Publish the GitHub Release from the draft after the tag is pushed.
-
 ✅ **Use SemVer and keep changelogs accurate**
 - Use SemVer for the package version.
 - Bump MINOR for provider additions.
@@ -50,7 +45,6 @@
 
 ✅ **Recommended local release order**
 1) Update docs and changelogs.
-2) Review the Release Drafter draft for accuracy.
 2) `hatch run lint:format-check`
 3) `hatch run lint:check`
 4) `hatch run test:run`
@@ -59,9 +53,8 @@
 7) `rm -rf dist` (optional cleanup after checks)
 8) `hatch version X.Y.Z`
 9) `git commit -am "Release X.Y.Z"`
-10) `git tag vX.Y.Z`
+10) `git tag -a vX.Y.Z -m "Release vX.Y.Z"`
 11) `git push --follow-tags`
-12) Publish the GitHub Release from the Release Drafter draft.
 
 Do not push tags before running build + twine checks locally.
 
@@ -69,16 +62,18 @@ Do not push tags before running build + twine checks locally.
 - Commit release changes:
   - `git commit -am "Release vX.Y.Z"`
 - Create a version tag:
-  - `git tag vX.Y.Z`
+  - `git tag -a vX.Y.Z -m "Release vX.Y.Z"`
 - Push commits and tags:
   - `git push --follow-tags`
 
 ✅ **Publish to PyPI from GitHub Actions**
-- Push a tag `vX.Y.Z` to trigger CI; the release workflow runs only after CI succeeds.
+- Push a tag `vX.Y.Z` to trigger the release workflow on tag pushes.
+- Annotated tags are required for `git push --follow-tags`; otherwise push the tag explicitly.
 - Ensure the workflow:
   - builds `sdist` and `wheel`
   - verifies artifacts (`twine check`)
   - publishes using `pypa/gh-action-pypi-publish` with OIDC
+ - If a tag push did not trigger the workflow, run the `Release` workflow manually and pass the tag.
 
 ✅ **Validate tag and version alignment**
 - The release workflow checks `vX.Y.Z` against `src/pycityvisitorparking/_version.py`.

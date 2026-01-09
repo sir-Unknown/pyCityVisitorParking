@@ -84,6 +84,11 @@ asyncio.run(main())
 - Provider-specific optional fields (for example `permit_media_type_id`) are
   documented in each provider README.
 
+## Releases
+
+Releases publish from GitHub Actions on tag pushes. Use annotated tags
+(`git tag -a vX.Y.Z -m "Release vX.Y.Z"`) or push the tag explicitly so CI runs.
+
 ## Async behavior
 
 Provider discovery (`list_providers()`, `get_provider()`) runs in background

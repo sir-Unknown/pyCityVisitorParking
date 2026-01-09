@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.5.13
+
+- Fix release workflow tag resolution to enable CI PyPI publishing.
+
 ## 0.5.12
 
 - Publish GitHub releases automatically after successful tagged CI runs.

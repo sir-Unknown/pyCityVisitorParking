@@ -9,6 +9,7 @@ on:
       tag:
         description: "Tag to publish (e.g., v0.5.14)"
         required: false
+        default: "v0.0.0"
 
 permissions:
   id-token: write
@@ -31,15 +32,19 @@ jobs:
             echo "Tag is required to publish."
             exit 1
           fi
+          if [ "$tag" = "v0.0.0" ]; then
+            echo "Default tag v0.0.0 is not allowed. Provide an explicit tag."
+            exit 1
+          fi
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
 
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           ref: ${{ steps.vars.outputs.tag }}
 
       - name: Set up Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@83679a892e2d95755f2dac6acb0bfd1e9ac5d548 # v6.1.0
         with:
           python-version: "3.13"
           cache: "pip"
@@ -65,7 +70,7 @@ jobs:
 
       - name: Install build tooling
         run: |
-          python -m pip install --upgrade pip
+          python -m pip install --upgrade pip==25.3
           python -m pip install hatch==1.16.2 twine==6.2.0
 
       - name: Build
@@ -74,4 +79,4 @@ jobs:
           python -m twine check dist/*
 
       - name: Publish to PyPI
-        uses: pypa/gh-action-pypi-publish@release/v1
+        uses: pypa/gh-action-pypi-publish@ec4db0b4ddc65acdf4bff5fa45ac92d78b56bdf0 # v1.9.0

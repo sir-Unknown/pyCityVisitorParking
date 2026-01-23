@@ -26,7 +26,7 @@ The script avoids printing full license plates.
 Debug helpers:
   --debug-http prints sanitized request/response summaries.
   --dump-json prints sanitized request/response JSON payloads.
-  --dump-dir writes sanitized request/response JSON to files.
+  --dump-dir writes sanitized request/response JSON to a single run file.
   --traceback prints full tracebacks on errors.
   --sanitize-output sanitizes privacy-sensitive output.
 
@@ -261,7 +261,11 @@ class _DebugRecorder:
         self._dump_dir = dump_dir
         self._max_text = max_text
         self._counter = 0
+        self._run_id = time.strftime("%Y%m%d-%H%M%S")
+        if dump_dir:
+            self._run_id = f"{self._run_id}-{os.getpid()}"
         self._requests: dict[str, dict[str, Any]] = {}
+        self._run_entries: dict[str, dict[str, Any]] = {}
         if self._dump_dir:
             self._dump_dir.mkdir(parents=True, exist_ok=True)
 
@@ -333,8 +337,15 @@ class _DebugRecorder:
     def _write_dump(self, request_id: str, label: str, payload: dict[str, Any]) -> None:
         if not self._dump_dir:
             return
-        path = self._dump_dir / f"{request_id}-{label}.json"
-        path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+        path = self._dump_dir / f"{self._run_id}.json"
+        entry = self._run_entries.get(request_id)
+        if not entry:
+            entry = {"id": request_id}
+            self._run_entries[request_id] = entry
+        entry[label] = payload
+        entries = [self._run_entries[key] for key in sorted(self._run_entries)]
+        output = {"run_id": self._run_id, "entries": entries}
+        path.write_text(json.dumps(output, indent=2, sort_keys=True), encoding="utf-8")
 
 
 class _DebugResponse:
@@ -584,7 +595,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--dump-dir",
         dest="dump_dir",
-        help="Write sanitized request/response JSON files to this directory.",
+        help="Write sanitized request/response JSON run files to this directory.",
     )
     parser.add_argument(
         "--dump-limit",

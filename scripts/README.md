@@ -11,6 +11,8 @@ public library API and should not be used in production integrations.
 
 From the repository root:
 
+Basic login + read-only checks for each provider:
+
 ```bash
 PYTHONPATH=src PROVIDER_ID=the_hague BASE_URL=https://parkerendenhaag.denhaag.nl \
 USERNAME=... PASSWORD=... \
@@ -38,13 +40,20 @@ PYTHONPATH=src python scripts/provider_live_check.py \
 Live reservation/favorite flows (requires a license plate):
 
 ```bash
+# Run full create/update/end flows with a fixed wait between steps.
 PYTHONPATH=src PROVIDER_ID=dvsportal BASE_URL=https://parkeren.rijswijk.nl \
 USERNAME=... PASSWORD=... LICENSE_PLATE=AB12CD \
 python scripts/provider_live_check.py --run-all --post-create-wait 5
 
+# Same flow for Amsterdam (client_product_id required), using a license plate.
 PYTHONPATH=src PROVIDER_ID=amsterdam BASE_URL=https://api.parkeervergunningen.egisparkingservices.nl \
 USERNAME=... PASSWORD=... CLIENT_PRODUCT_ID=... LICENSE_PLATE=AB12CD \
 python scripts/provider_live_check.py --run-all --post-create-wait 5
+
+# Run all flows and capture sanitized HTTP payloads/responses to a run file.
+PYTHONPATH=src PROVIDER_ID=amsterdam BASE_URL=https://api.parkeervergunningen.egisparkingservices.nl \
+USERNAME=... PASSWORD=... LICENSE_PLATE=AB12CD \
+python scripts/provider_live_check.py --run-all --dump-json --dump-dir .tmp/http-trace --sanitize-output
 ```
 
 Notes:
@@ -63,6 +72,6 @@ Debug options (sanitized output):
 
 - `--debug-http` prints request/response summaries.
 - `--dump-json` prints sanitized request/response JSON payloads.
-- `--dump-dir <path>` writes sanitized request/response JSON files.
+- `--dump-dir <path>` writes sanitized request/response JSON to a single run file.
 - `--traceback` prints full tracebacks on errors.
 - `--sanitize-output` sanitizes privacy-sensitive values in standard output.

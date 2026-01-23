@@ -262,12 +262,14 @@ class _DebugRecorder:
         dump_dir: Path | None,
         max_text: int,
         sanitize_output: bool,
+        commit_id: str,
     ) -> None:
         self._enabled = enabled
         self._dump_json = dump_json
         self._dump_dir = dump_dir
         self._max_text = max_text
         self._sanitize_output = sanitize_output
+        self._commit_id = commit_id
         self._counter = 0
         self._run_id = time.strftime("%Y%m%d-%H%M%S")
         if dump_dir:
@@ -369,7 +371,7 @@ class _DebugRecorder:
             self._run_entries[request_id] = entry
         entry[label] = payload
         entries = [self._run_entries[key] for key in sorted(self._run_entries)]
-        output = {"run_id": self._run_id, "entries": entries}
+        output = {"run_id": self._run_id, "commit": self._commit_id, "entries": entries}
         path.write_text(json.dumps(output, indent=2, sort_keys=True), encoding="utf-8")
 
 
@@ -1009,6 +1011,7 @@ async def main() -> int:
         dump_dir=Path(args.dump_dir) if args.dump_dir else None,
         max_text=args.dump_limit,
         sanitize_output=args.sanitize_output,
+        commit_id=commit_id,
     )
     debug_session: _DebugSession | None = None
     if recorder._enabled:

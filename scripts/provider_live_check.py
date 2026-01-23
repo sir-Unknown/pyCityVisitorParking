@@ -23,6 +23,12 @@ Optional environment variables:
   LICENSE_PLATE
 
 The script avoids printing full license plates.
+Debug helpers:
+  --debug-http prints sanitized request/response summaries.
+  --dump-json prints sanitized request/response JSON payloads.
+  --dump-dir writes sanitized request/response JSON to a single run file.
+  --traceback prints full tracebacks on errors.
+  --sanitize-output sanitizes privacy-sensitive output.
 
 Run live reservation/favorite flows (requires LICENSE_PLATE):
   PYTHONPATH=src PROVIDER_ID=the_hague BASE_URL=... \
@@ -40,16 +46,28 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import logging
 import os
 import sys
-from datetime import datetime, timedelta
+import time
+import traceback
+from collections.abc import Mapping
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+import aiohttp
+from sanitize import mask_license_plate as _mask_license_plate
+from sanitize import sanitize_data as _sanitize_data
+from sanitize import sanitize_headers as _sanitize_headers
 
 from pycityvisitorparking import Client
 from pycityvisitorparking.exceptions import ProviderError, ValidationError
 from pycityvisitorparking.models import Favorite, Reservation
+
+_LOGGER = logging.getLogger(__name__)
+_TEXT_TRUNCATE = 2000
 
 
 def _require_value(name: str, value: str | None) -> str:
@@ -59,18 +77,16 @@ def _require_value(name: str, value: str | None) -> str:
     return value
 
 
-def _mask_license_plate(plate: str) -> str:
-    if not isinstance(plate, str):
-        return "***"
-    normalized = "".join(ch for ch in plate.upper() if ch.isascii() and ch.isalnum())
-    if not normalized:
-        return "***"
-    if len(normalized) <= 2:
-        return "*" * len(normalized)
-    if len(normalized) <= 4:
-        return f"{normalized[:1]}{'*' * (len(normalized) - 2)}{normalized[-1:]}"
-    masked = "*" * (len(normalized) - 4)
-    return f"{normalized[:2]}{masked}{normalized[-2:]}"
+def _truncate_text(value: str, limit: int) -> str:
+    if limit <= 0 or len(value) <= limit:
+        return value
+    return f"{value[:limit]}... [truncated]"
+
+
+def _print_exception(label: str, exc: Exception, *, trace: bool) -> None:
+    print(f"{label}: {exc.__class__.__name__}: {exc}", file=sys.stderr)
+    if trace:
+        traceback.print_exc()
 
 
 def _normalize_plate_for_compare(value: str) -> str:
@@ -119,19 +135,284 @@ def _load_credentials(raw_json: str | None, file_path: str | None) -> dict[str, 
     raise SystemExit(2)
 
 
-def _format_reservation(reservation: Reservation) -> str:
-    masked_plate = _mask_license_plate(reservation.license_plate)
-    name = reservation.name or "-"
+def _format_reservation(reservation: Reservation, *, sanitize: bool = False) -> str:
+    data = {
+        "id": reservation.id,
+        "name": reservation.name or "-",
+        "license_plate": reservation.license_plate,
+        "start_time": reservation.start_time,
+        "end_time": reservation.end_time,
+    }
+    if sanitize:
+        data = _sanitize_data(data)
+    else:
+        data["license_plate"] = _mask_license_plate(reservation.license_plate)
     return (
-        f"{reservation.id} | {name} | {masked_plate} | "
-        f"{reservation.start_time} -> {reservation.end_time}"
+        f"{data['id']} | {data['name']} | {data['license_plate']} | "
+        f"{data['start_time']} -> {data['end_time']}"
     )
 
 
-def _format_favorite(favorite: Favorite) -> str:
-    masked_plate = _mask_license_plate(favorite.license_plate)
-    name = favorite.name or "-"
-    return f"{favorite.id} | {name} | {masked_plate}"
+def _format_favorite(favorite: Favorite, *, sanitize: bool = False) -> str:
+    data = {
+        "id": favorite.id,
+        "name": favorite.name or "-",
+        "license_plate": favorite.license_plate,
+    }
+    if sanitize:
+        data = _sanitize_data(data)
+    else:
+        data["license_plate"] = _mask_license_plate(favorite.license_plate)
+    return f"{data['id']} | {data['name']} | {data['license_plate']}"
+
+
+class _DebugRecorder:
+    def __init__(
+        self,
+        *,
+        enabled: bool,
+        dump_json: bool,
+        dump_dir: Path | None,
+        max_text: int,
+    ) -> None:
+        self._enabled = enabled
+        self._dump_json = dump_json
+        self._dump_dir = dump_dir
+        self._max_text = max_text
+        self._counter = 0
+        self._run_id = time.strftime("%Y%m%d-%H%M%S")
+        if dump_dir:
+            self._run_id = f"{self._run_id}-{os.getpid()}"
+        self._requests: dict[str, dict[str, Any]] = {}
+        self._run_entries: dict[str, dict[str, Any]] = {}
+        if self._dump_dir:
+            self._dump_dir.mkdir(parents=True, exist_ok=True)
+
+    def start_request(
+        self,
+        *,
+        method: str,
+        url: str,
+        headers: Mapping[str, Any],
+        params: Mapping[str, Any] | None,
+        json_payload: Any | None,
+        data_payload: Any | None,
+    ) -> str:
+        self._counter += 1
+        request_id = f"{self._counter:04d}"
+        entry = {
+            "id": request_id,
+            "method": method,
+            "url": url,
+            "headers": _sanitize_headers(headers),
+            "params": _sanitize_data(params) if params else None,
+            "json": _sanitize_data(json_payload) if json_payload is not None else None,
+            "data": _sanitize_data(data_payload) if data_payload is not None else None,
+            "started_at": time.monotonic(),
+        }
+        self._requests[request_id] = entry
+        if self._enabled:
+            print(f"[HTTP] -> {method} {url}", file=sys.stderr)
+        if self._dump_json:
+            self._print_json(request_id, "request", entry)
+        self._write_dump(request_id, "request", entry)
+        return request_id
+
+    def record_response(
+        self,
+        request_id: str,
+        *,
+        status: int,
+        headers: Mapping[str, Any],
+        json_body: Any | None = None,
+        text_body: str | None = None,
+        error: Exception | None = None,
+    ) -> None:
+        entry = self._requests.get(request_id, {})
+        elapsed_ms = None
+        if "started_at" in entry:
+            elapsed_ms = int((time.monotonic() - entry["started_at"]) * 1000)
+        response_entry = {
+            "id": request_id,
+            "status": status,
+            "headers": _sanitize_headers(headers),
+            "elapsed_ms": elapsed_ms,
+            "json": _sanitize_data(json_body) if json_body is not None else None,
+            "text": _truncate_text(text_body, self._max_text) if text_body else None,
+            "error": f"{error.__class__.__name__}: {error}" if error else None,
+        }
+        if self._enabled:
+            status_text = f"{status}" if status is not None else "unknown"
+            duration = f"{elapsed_ms}ms" if elapsed_ms is not None else "n/a"
+            print(f"[HTTP] <- {status_text} ({duration})", file=sys.stderr)
+        if self._dump_json:
+            self._print_json(request_id, "response", response_entry)
+        self._write_dump(request_id, "response", response_entry)
+
+    def _print_json(self, request_id: str, label: str, payload: dict[str, Any]) -> None:
+        dumped = json.dumps(payload, indent=2, sort_keys=True)
+        print(f"[RAW] {request_id} {label} (sanitized):\n{dumped}", file=sys.stderr)
+
+    def _write_dump(self, request_id: str, label: str, payload: dict[str, Any]) -> None:
+        if not self._dump_dir:
+            return
+        path = self._dump_dir / f"{self._run_id}.json"
+        entry = self._run_entries.get(request_id)
+        if not entry:
+            entry = {"id": request_id}
+            self._run_entries[request_id] = entry
+        entry[label] = payload
+        entries = [self._run_entries[key] for key in sorted(self._run_entries)]
+        output = {"run_id": self._run_id, "entries": entries}
+        path.write_text(json.dumps(output, indent=2, sort_keys=True), encoding="utf-8")
+
+
+class _DebugResponse:
+    def __init__(
+        self,
+        response: aiohttp.ClientResponse,
+        recorder: _DebugRecorder | None,
+        request_id: str,
+    ) -> None:
+        self._response = response
+        self._recorder = recorder
+        self._request_id = request_id
+        self._json_cache: Any | None = None
+        self._text_cache: str | None = None
+        self._json_cached = False
+        self._text_cached = False
+        self._recorded = False
+
+    @property
+    def status(self) -> int:
+        return self._response.status
+
+    @property
+    def headers(self) -> Mapping[str, Any]:
+        return self._response.headers
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._response, name)
+
+    async def json(self, *args: Any, **kwargs: Any) -> Any:
+        if self._json_cached:
+            return self._json_cache
+        try:
+            data = await self._response.json(*args, **kwargs)
+        except Exception as exc:
+            if self._recorder:
+                self._recorder.record_response(
+                    self._request_id,
+                    status=self._response.status,
+                    headers=self._response.headers,
+                    error=exc,
+                )
+                self._recorded = True
+            raise
+        self._json_cached = True
+        self._json_cache = data
+        if self._recorder and not self._recorded:
+            self._recorder.record_response(
+                self._request_id,
+                status=self._response.status,
+                headers=self._response.headers,
+                json_body=data,
+            )
+            self._recorded = True
+        return data
+
+    async def text(self, *args: Any, **kwargs: Any) -> str:
+        if self._text_cached:
+            return self._text_cache or ""
+        try:
+            text = await self._response.text(*args, **kwargs)
+        except Exception as exc:
+            if self._recorder:
+                self._recorder.record_response(
+                    self._request_id,
+                    status=self._response.status,
+                    headers=self._response.headers,
+                    error=exc,
+                )
+                self._recorded = True
+            raise
+        self._text_cached = True
+        self._text_cache = text
+        if self._recorder and not self._recorded:
+            self._recorder.record_response(
+                self._request_id,
+                status=self._response.status,
+                headers=self._response.headers,
+                text_body=text,
+            )
+            self._recorded = True
+        return text
+
+    def record_if_missing(self) -> None:
+        if self._recorded or not self._recorder:
+            return
+        self._recorder.record_response(
+            self._request_id,
+            status=self._response.status,
+            headers=self._response.headers,
+        )
+        self._recorded = True
+
+
+class _DebugResponseContext:
+    def __init__(
+        self,
+        context: Any,
+        recorder: _DebugRecorder | None,
+        request_id: str,
+    ) -> None:
+        self._context = context
+        self._recorder = recorder
+        self._request_id = request_id
+
+    async def __aenter__(self) -> _DebugResponse:
+        response = await self._context.__aenter__()
+        self._debug_response = _DebugResponse(response, self._recorder, self._request_id)
+        return self._debug_response
+
+    async def __aexit__(self, exc_type, exc, tb) -> Literal[False]:
+        if getattr(self, "_debug_response", None):
+            self._debug_response.record_if_missing()
+        return await self._context.__aexit__(exc_type, exc, tb)
+
+
+class _DebugSession:
+    def __init__(self, session: aiohttp.ClientSession, recorder: _DebugRecorder | None) -> None:
+        self._session = session
+        self._recorder = recorder
+
+    def request(self, method: str, url: str, **kwargs: Any) -> _DebugResponseContext:
+        headers = kwargs.get("headers") or {}
+        params = kwargs.get("params")
+        json_payload = kwargs.get("json")
+        data_payload = kwargs.get("data")
+        request_id = "0000"
+        if self._recorder:
+            request_id = self._recorder.start_request(
+                method=method,
+                url=str(url),
+                headers=headers,
+                params=params,
+                json_payload=json_payload,
+                data_payload=data_payload,
+            )
+        context = self._session.request(method, url, **kwargs)
+        return _DebugResponseContext(context, self._recorder, request_id)
+
+    async def close(self) -> None:
+        await self._session.close()
+
+    @property
+    def closed(self) -> bool:
+        return self._session.closed
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._session, name)
 
 
 def _parse_args() -> argparse.Namespace:
@@ -211,6 +492,54 @@ def _parse_args() -> argparse.Namespace:
         "--credentials-file",
         dest="credentials_file",
         help="Path to a JSON file containing credentials.",
+    )
+    parser.add_argument(
+        "--debug-http",
+        dest="debug_http",
+        action="store_true",
+        help="Print HTTP request/response summaries (sanitized).",
+    )
+    parser.add_argument(
+        "--debug",
+        dest="debug",
+        action="store_true",
+        help="Print extra script debug details.",
+    )
+    parser.add_argument(
+        "--dump-json",
+        dest="dump_json",
+        action="store_true",
+        help="Print sanitized request/response JSON payloads.",
+    )
+    parser.add_argument(
+        "--dump-dir",
+        dest="dump_dir",
+        help="Write sanitized request/response JSON run files to this directory.",
+    )
+    parser.add_argument(
+        "--dump-limit",
+        dest="dump_limit",
+        type=int,
+        default=_TEXT_TRUNCATE,
+        help="Max characters for captured text responses (default: 2000).",
+    )
+    parser.add_argument(
+        "--traceback",
+        dest="traceback",
+        action="store_true",
+        help="Print full tracebacks on errors.",
+    )
+    parser.add_argument(
+        "--sanitize-output",
+        dest="sanitize_output",
+        action="store_true",
+        help="Sanitize privacy-sensitive values in standard output.",
+    )
+    parser.add_argument(
+        "--log-level",
+        dest="log_level",
+        default="INFO",
+        help="Python log level for the script (default: INFO).",
     )
     parser.add_argument("--username", dest="username", help="Username for login.")
     parser.add_argument("--password", dest="password", help="Password for login.")
@@ -301,6 +630,9 @@ async def _run_reservation_flow(
     extend_minutes: int,
     timezone_name: str,
     post_create_wait: int,
+    traceback_enabled: bool,
+    debug_enabled: bool,
+    sanitize_output: bool,
 ) -> None:
     try:
         start_dt, end_dt = _build_reservation_window(
@@ -312,6 +644,19 @@ async def _run_reservation_flow(
         print(f"Reservation time error: {exc}", file=sys.stderr)
         return
 
+    if debug_enabled:
+        start_utc = start_dt.astimezone(UTC)
+        end_utc = end_dt.astimezone(UTC)
+        print(
+            f"Reservation window (local): {start_dt.isoformat()} -> {end_dt.isoformat()}",
+            file=sys.stderr,
+        )
+        print(
+            f"Reservation window (UTC): {start_utc.isoformat()} -> {end_utc.isoformat()}",
+            file=sys.stderr,
+        )
+        print(f"Reservation plate: {_mask_license_plate(license_plate)}", file=sys.stderr)
+
     try:
         created = await provider.start_reservation(
             license_plate,
@@ -319,9 +664,9 @@ async def _run_reservation_flow(
             end_dt,
             name=reservation_name,
         )
-        print(f"Reservation created: {_format_reservation(created)}")
+        print(f"Reservation created: {_format_reservation(created, sanitize=sanitize_output)}")
     except Exception as exc:
-        print(f"Reservation create failed: {exc.__class__.__name__}: {exc}", file=sys.stderr)
+        _print_exception("Reservation create failed", exc, trace=traceback_enabled)
         return
     if post_create_wait > 0:
         await asyncio.sleep(post_create_wait)
@@ -329,25 +674,25 @@ async def _run_reservation_flow(
         active = await provider.list_reservations()
         print(f"Reservations after create: {len(active)}")
         for reservation in active:
-            print(f"- {_format_reservation(reservation)}")
+            print(f"- {_format_reservation(reservation, sanitize=sanitize_output)}")
     except Exception as exc:
-        print(f"Reservation list failed: {exc.__class__.__name__}: {exc}", file=sys.stderr)
+        _print_exception("Reservation list failed", exc, trace=traceback_enabled)
 
     updated_end = end_dt + timedelta(minutes=extend_minutes)
     try:
         updated = await provider.update_reservation(created.id, end_time=updated_end)
-        print(f"Reservation updated: {_format_reservation(updated)}")
+        print(f"Reservation updated: {_format_reservation(updated, sanitize=sanitize_output)}")
         created = updated
         end_dt = updated_end
     except ProviderError as exc:
         print(f"Reservation update skipped: {exc}")
     except Exception as exc:
-        print(f"Reservation update failed: {exc.__class__.__name__}: {exc}", file=sys.stderr)
+        _print_exception("Reservation update failed", exc, trace=traceback_enabled)
     try:
         ended = await provider.end_reservation(created.id, end_dt)
-        print(f"Reservation ended: {_format_reservation(ended)}")
+        print(f"Reservation ended: {_format_reservation(ended, sanitize=sanitize_output)}")
     except Exception as exc:
-        print(f"Reservation end failed: {exc.__class__.__name__}: {exc}", file=sys.stderr)
+        _print_exception("Reservation end failed", exc, trace=traceback_enabled)
 
 
 async def _run_favorite_flow(
@@ -356,25 +701,32 @@ async def _run_favorite_flow(
     license_plate: str,
     favorite_name: str | None,
     post_create_wait: int,
+    traceback_enabled: bool,
+    debug_enabled: bool,
+    sanitize_output: bool,
 ) -> None:
     async def _print_favorites(label: str) -> None:
         try:
             favorites = await provider.list_favorites()
         except Exception as exc:
-            print(
-                f"Favorite list failed ({label}): {exc.__class__.__name__}: {exc}", file=sys.stderr
+            _print_exception(
+                f"Favorite list failed ({label})",
+                exc,
+                trace=traceback_enabled,
             )
             return
         print(f"Favorites {label}: {len(favorites)}")
         for favorite in favorites:
-            print(f"- {_format_favorite(favorite)}")
+            print(f"- {_format_favorite(favorite, sanitize=sanitize_output)}")
 
     name_for_create = _build_favorite_name(license_plate, favorite_name)
+    if debug_enabled:
+        print(f"Favorite plate: {_mask_license_plate(license_plate)}", file=sys.stderr)
     try:
         created = await provider.add_favorite(license_plate, name=name_for_create)
-        print(f"Favorite created: {_format_favorite(created)}")
+        print(f"Favorite created: {_format_favorite(created, sanitize=sanitize_output)}")
     except Exception as exc:
-        print(f"Favorite create failed: {exc.__class__.__name__}: {exc}", file=sys.stderr)
+        _print_exception("Favorite create failed", exc, trace=traceback_enabled)
         return
     if post_create_wait > 0:
         await asyncio.sleep(post_create_wait)
@@ -388,10 +740,10 @@ async def _run_favorite_flow(
                 license_plate=created.license_plate,
                 name=updated_name,
             )
-            print(f"Favorite updated: {_format_favorite(updated)}")
+            print(f"Favorite updated: {_format_favorite(updated, sanitize=sanitize_output)}")
             created = updated
         except Exception as exc:
-            print(f"Favorite update failed: {exc.__class__.__name__}: {exc}", file=sys.stderr)
+            _print_exception("Favorite update failed", exc, trace=traceback_enabled)
     else:
         print("Favorite update skipped: updates are not supported.")
     await _print_favorites("after update")
@@ -400,12 +752,16 @@ async def _run_favorite_flow(
         await provider.remove_favorite(created.id)
         print(f"Favorite removed: {created.id}")
     except Exception as exc:
-        print(f"Favorite remove failed: {exc.__class__.__name__}: {exc}", file=sys.stderr)
+        _print_exception("Favorite remove failed", exc, trace=traceback_enabled)
     await _print_favorites("after remove")
 
 
 async def main() -> int:
     args = _parse_args()
+    log_level = args.log_level.upper()
+    if args.debug and log_level == "INFO":
+        log_level = "DEBUG"
+    logging.basicConfig(level=log_level)
     provider_id = args.provider_id or os.getenv("PROVIDER_ID")
     base_url = args.base_url or os.getenv("BASE_URL")
     api_uri = args.api_uri or os.getenv("API_URI")
@@ -430,8 +786,36 @@ async def main() -> int:
         print("Missing required value: license_plate", file=sys.stderr)
         return 2
 
+    if args.debug:
+        masked_plate = _mask_license_plate(license_plate or "")
+        print(
+            "Debug config: "
+            f"provider_id={provider_id} base_url={base_url} api_uri={api_uri} "
+            f"run_reservations={run_reservations} run_favorites={run_favorites} "
+            f"license_plate={masked_plate or '-'}",
+            file=sys.stderr,
+        )
+        key_list = ", ".join(sorted(credentials.keys())) if credentials else "-"
+        print(f"Credential keys: {key_list}", file=sys.stderr)
+
+    recorder = _DebugRecorder(
+        enabled=args.debug_http or args.dump_json or bool(args.dump_dir),
+        dump_json=args.dump_json,
+        dump_dir=Path(args.dump_dir) if args.dump_dir else None,
+        max_text=args.dump_limit,
+    )
+    debug_session: _DebugSession | None = None
+    if recorder._enabled:
+        session = aiohttp.ClientSession()
+        debug_session = _DebugSession(session, recorder)
+        _LOGGER.info("HTTP debug enabled (sanitized output).")
+
     try:
-        async with Client(base_url=base_url, api_uri=api_uri) as client:
+        async with Client(
+            session=debug_session,
+            base_url=base_url,
+            api_uri=api_uri,
+        ) as client:
             provider = await client.get_provider(provider_id)
             await provider.login(credentials=credentials)
             permit = await provider.get_permit()
@@ -447,6 +831,9 @@ async def main() -> int:
                     extend_minutes=args.extend_minutes,
                     timezone_name=args.timezone,
                     post_create_wait=args.post_create_wait,
+                    traceback_enabled=args.traceback,
+                    debug_enabled=args.debug,
+                    sanitize_output=args.sanitize_output,
                 )
             if run_favorites:
                 await _run_favorite_flow(
@@ -454,10 +841,16 @@ async def main() -> int:
                     license_plate=license_plate,
                     favorite_name=args.favorite_name,
                     post_create_wait=args.post_create_wait,
+                    traceback_enabled=args.traceback,
+                    debug_enabled=args.debug,
+                    sanitize_output=args.sanitize_output,
                 )
     except Exception as exc:
-        print(f"Error: {exc.__class__.__name__}: {exc}", file=sys.stderr)
+        _print_exception("Error", exc, trace=args.traceback)
         return 1
+    finally:
+        if debug_session:
+            await debug_session.close()
 
     provider_info = provider.info
     print(
@@ -469,10 +862,10 @@ async def main() -> int:
     print(f"Permit: {permit}")
     print(f"Reservations: {len(reservations)}")
     for reservation in reservations:
-        print(f"- {_format_reservation(reservation)}")
+        print(f"- {_format_reservation(reservation, sanitize=args.sanitize_output)}")
     print(f"Favorites: {len(favorites)}")
     for favorite in favorites:
-        print(f"- {_format_favorite(favorite)}")
+        print(f"- {_format_favorite(favorite, sanitize=args.sanitize_output)}")
     return 0
 
 

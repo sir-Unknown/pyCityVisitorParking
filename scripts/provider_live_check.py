@@ -49,6 +49,7 @@ import asyncio
 import json
 import logging
 import os
+import subprocess
 import sys
 import time
 import traceback
@@ -108,6 +109,24 @@ def _truncate_text(value: str, limit: int) -> str:
     if limit <= 0 or len(value) <= limit:
         return value
     return f"{value[:limit]}... [truncated]"
+
+
+def _get_git_commit_id() -> str:
+    repo_root = Path(__file__).resolve().parents[1]
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=repo_root,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except (OSError, ValueError):
+        return "unknown"
+    commit = (result.stdout or "").strip()
+    if commit:
+        return commit
+    return "unknown"
 
 
 def _normalize_debug_value(value: Any) -> Any:
@@ -944,9 +963,12 @@ async def main() -> int:
 
     provider_id = _require_value("provider_id", provider_id)
     base_url = _require_value("base_url", base_url)
+    commit_id = _get_git_commit_id()
     print(
         _style(
-            f"[RUN] provider={provider_id} base_url={base_url} api_uri={api_uri or '-'}",
+            "[RUN] "
+            f"provider={provider_id} base_url={base_url} api_uri={api_uri or '-'} "
+            f"commit={commit_id}",
             "magenta",
             bold=True,
         ),

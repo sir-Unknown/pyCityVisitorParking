@@ -25,7 +25,6 @@ from .const import (
     FAVORITE_DELETE_ENDPOINT,
     FAVORITE_LIST_ENDPOINT,
     LOGIN_ENDPOINT,
-    PAID_PARKING_ZONE_BY_MACHINE_ENDPOINT,
     PARKING_SESSION_EDIT_ENDPOINT,
     PARKING_SESSION_LIST_ENDPOINT,
     PARKING_SESSION_START_ENDPOINT,
@@ -66,7 +65,6 @@ class Provider(BaseProvider):
         self._auth_header_value: str | None = None
         self._credentials: dict[str, str] | None = None
         self._client_product_id: str | None = None
-        self._machine_number: str | None = None
         self._roles: tuple[str, ...] = ()
         self._logged_in = False
 
@@ -77,13 +75,10 @@ class Provider(BaseProvider):
         username = merged.get("username")
         password = merged.get("password")
         client_product_id = merged.get("client_product_id")
-        machine_number = merged.get("machine_number")
         if not username:
             raise ValidationError("username is required.")
         if not password:
             raise ValidationError("password is required.")
-        if machine_number and not str(machine_number).isdigit():
-            raise ValidationError("machine_number must be numeric.")
 
         payload = {"username": username, "password": password}
         data = await self._request_json(
@@ -107,7 +102,6 @@ class Provider(BaseProvider):
         self._token = raw_token
         self._auth_header_value = auth_value
         self._client_product_id = client_product_id
-        self._machine_number = machine_number
         self._roles = roles
         self._credentials = {
             "username": username,
@@ -115,8 +109,6 @@ class Provider(BaseProvider):
         }
         if client_product_id:
             self._credentials["client_product_id"] = client_product_id
-        if machine_number:
-            self._credentials["machine_number"] = machine_number
         self._logged_in = True
         _LOGGER.debug("Provider %s login completed", self.provider_id)
 
@@ -180,9 +172,6 @@ class Provider(BaseProvider):
             "started_at": self._format_rfc1123(start_dt),
             "ended_at": self._format_rfc1123(end_dt),
         }
-        zone_payload = await self._build_zone_payload(client_product_id)
-        if zone_payload:
-            payload.update(zone_payload)
         if self._is_visitor_role():
             payload["brand"] = "IDEAL"
         data = await self._request_json(
@@ -467,40 +456,6 @@ class Provider(BaseProvider):
         if value.isdigit():
             return int(value)
         return value
-
-    async def _build_zone_payload(self, client_product_id: str) -> dict[str, Any]:
-        if not self._machine_number:
-            return {}
-        if not self._machine_number.isdigit():
-            raise ValidationError("machine_number must be numeric.")
-        zone = await self._get_zone_by_machine_number(client_product_id, self._machine_number)
-        zone_id = zone.get("zone_id") if isinstance(zone, dict) else None
-        if not zone_id:
-            raise ProviderError("Provider response missing zone_id.")
-        return {
-            "zone_id": zone_id,
-            "machine_number": int(self._machine_number),
-        }
-
-    async def _get_zone_by_machine_number(
-        self, client_product_id: str, machine_number: str
-    ) -> dict[str, Any]:
-        payload = {
-            "client_product_id": self._coerce_client_product_id(client_product_id),
-            "machine_number": int(machine_number),
-        }
-        data = await self._request_json(
-            "POST",
-            PAID_PARKING_ZONE_BY_MACHINE_ENDPOINT,
-            json=payload,
-            allow_reauth=True,
-            auth_required=True,
-        )
-        if isinstance(data, dict) and isinstance(data.get("zone"), dict):
-            return data["zone"]
-        if isinstance(data, dict):
-            return data
-        raise ProviderError("Provider response included invalid zone data.")
 
     def _map_permit(self, data: Any, *, client_product_id: str) -> Permit:
         if not isinstance(data, dict):

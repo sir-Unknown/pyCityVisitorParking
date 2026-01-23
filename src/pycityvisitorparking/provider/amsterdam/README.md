@@ -15,8 +15,6 @@ expects credentials with the following keys:
 - `username` (string, required)
 - `password` (string, required)
 - `client_product_id` (string, optional, parsed from the JWT when omitted)
-- `machine_number` (string, optional, required when the permit enforces a
-  parking machine selection)
 
 Example credential shape:
 
@@ -25,7 +23,6 @@ Example credential shape:
     "username": "user@example.com",
     "password": "secret",
     "client_product_id": "12345",
-    "machine_number": "12345",
 }
 ```
 
@@ -81,8 +78,6 @@ characters.
 
 - Reservation updates only support changing `end_time`.
 - Favorite updates are not supported.
-- Permits that require selecting a parking machine must configure
-  `machine_number` in credentials.
 
 ## Links
 

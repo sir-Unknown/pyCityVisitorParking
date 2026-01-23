@@ -5,3 +5,20 @@ repos:
       - id: ruff
         args: [--fix]
       - id: ruff-format
+  - repo: local
+    hooks:
+      - id: hatch-lint-check
+        name: hatch run lint:check
+        entry: hatch run lint:check
+        language: system
+        pass_filenames: false
+      - id: hatch-lint-format-check
+        name: hatch run lint:format-check
+        entry: hatch run lint:format-check
+        language: system
+        pass_filenames: false
+      - id: hatch-test-run
+        name: hatch run test:run
+        entry: hatch run test:run
+        language: system
+        pass_filenames: false

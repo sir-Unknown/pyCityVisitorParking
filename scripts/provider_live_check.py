@@ -58,39 +58,27 @@ from typing import Any, Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import aiohttp
+from sanitize import mask_license_plate as _mask_license_plate
+from sanitize import sanitize_data as _sanitize_data
+from sanitize import sanitize_headers as _sanitize_headers
 
 from pycityvisitorparking import Client
 from pycityvisitorparking.exceptions import ProviderError, ValidationError
 from pycityvisitorparking.models import Favorite, Reservation
 
 _LOGGER = logging.getLogger(__name__)
-_REDACTED = "***"
 _TEXT_TRUNCATE = 2000
-_SENSITIVE_KEYS = {
-    "password",
-    "token",
-    "authorization",
-    "access_token",
-    "refresh_token",
-    "secret",
-    "pin",
+_ANSI_STYLES = {
+    "reset": "\x1b[0m",
+    "bold": "\x1b[1m",
+    "red": "\x1b[31m",
+    "green": "\x1b[32m",
+    "yellow": "\x1b[33m",
+    "blue": "\x1b[34m",
+    "cyan": "\x1b[36m",
+    "magenta": "\x1b[35m",
 }
-_PII_KEYS = {
-    "email",
-    "phone",
-    "username",
-    "user_name",
-    "first_name",
-    "last_name",
-    "name",
-}
-_PLATE_KEYS = {
-    "license_plate",
-    "licenseplate",
-    "vrn",
-    "vehicle_plate",
-    "plate",
-}
+_COLOR_ENABLED = False
 
 
 def _require_value(name: str, value: str | None) -> str:
@@ -100,62 +88,18 @@ def _require_value(name: str, value: str | None) -> str:
     return value
 
 
-def _mask_license_plate(plate: str) -> str:
-    if not isinstance(plate, str):
-        return "***"
-    normalized = "".join(ch for ch in plate.upper() if ch.isascii() and ch.isalnum())
-    if not normalized:
-        return "***"
-    if len(normalized) <= 2:
-        return "*" * len(normalized)
-    if len(normalized) <= 4:
-        return f"{normalized[:1]}{'*' * (len(normalized) - 2)}{normalized[-1:]}"
-    masked = "*" * (len(normalized) - 4)
-    return f"{normalized[:2]}{masked}{normalized[-2:]}"
+def _style(text: str, color: str | None = None, *, bold: bool = False) -> str:
+    if not _COLOR_ENABLED or not color:
+        return text
+    color_code = _ANSI_STYLES.get(color)
+    if not color_code:
+        return text
+    prefix = _ANSI_STYLES["bold"] if bold else ""
+    return f"{prefix}{color_code}{text}{_ANSI_STYLES['reset']}"
 
 
-def _mask_value_for_key(key: str, value: Any) -> Any:
-    key_lower = key.lower()
-    if any(fragment in key_lower for fragment in _SENSITIVE_KEYS):
-        return _REDACTED
-    if any(fragment in key_lower for fragment in _PII_KEYS):
-        return _REDACTED
-    if any(fragment in key_lower for fragment in _PLATE_KEYS):
-        if isinstance(value, str):
-            return _mask_license_plate(value)
-        return _REDACTED
-    return value
-
-
-def _sanitize_data(value: Any, *, key: str | None = None) -> Any:
-    if key is not None:
-        value = _mask_value_for_key(key, value)
-    if isinstance(value, dict):
-        return {str(k): _sanitize_data(v, key=str(k)) for k, v in value.items()}
-    if isinstance(value, list):
-        return [_sanitize_data(item, key=key) for item in value]
-    if isinstance(value, str) and key in _PLATE_KEYS:
-        return _mask_license_plate(value)
-    if isinstance(value, datetime):
-        return value.isoformat()
-    if isinstance(value, bytes):
-        return "<bytes>"
-    if isinstance(value, Path):
-        return str(value)
-    if value is None or isinstance(value, (str, int, float, bool)):
-        return value
-    return str(value)
-    return value
-
-
-def _sanitize_headers(headers: Mapping[str, Any]) -> dict[str, Any]:
-    sanitized: dict[str, Any] = {}
-    for key, value in headers.items():
-        if key.lower() == "authorization":
-            sanitized[key] = _REDACTED
-        else:
-            sanitized[key] = _sanitize_data(value, key=key)
-    return sanitized
+def _format_action(label: str, value: str, *, color: str | None = None) -> str:
+    return f"{_style(label, color, bold=True)}: {value}"
 
 
 def _truncate_text(value: str, limit: int) -> str:
@@ -165,7 +109,8 @@ def _truncate_text(value: str, limit: int) -> str:
 
 
 def _print_exception(label: str, exc: Exception, *, trace: bool) -> None:
-    print(f"{label}: {exc.__class__.__name__}: {exc}", file=sys.stderr)
+    styled_label = _style(label, "red", bold=True)
+    print(f"{styled_label}: {exc.__class__.__name__}: {exc}", file=sys.stderr)
     if trace:
         traceback.print_exc()
 
@@ -611,6 +556,13 @@ def _parse_args() -> argparse.Namespace:
         help="Print full tracebacks on errors.",
     )
     parser.add_argument(
+        "--color",
+        dest="color",
+        choices=("auto", "always", "never"),
+        default="auto",
+        help="Colorize output (default: auto).",
+    )
+    parser.add_argument(
         "--sanitize-output",
         dest="sanitize_output",
         action="store_true",
@@ -745,7 +697,13 @@ async def _run_reservation_flow(
             end_dt,
             name=reservation_name,
         )
-        print(f"Reservation created: {_format_reservation(created, sanitize=sanitize_output)}")
+        print(
+            _format_action(
+                "Reservation created",
+                _format_reservation(created, sanitize=sanitize_output),
+                color="green",
+            )
+        )
     except Exception as exc:
         _print_exception("Reservation create failed", exc, trace=traceback_enabled)
         return
@@ -753,7 +711,7 @@ async def _run_reservation_flow(
         await asyncio.sleep(post_create_wait)
     try:
         active = await provider.list_reservations()
-        print(f"Reservations after create: {len(active)}")
+        print(_format_action("Reservations after create", str(len(active)), color="cyan"))
         for reservation in active:
             print(f"- {_format_reservation(reservation, sanitize=sanitize_output)}")
     except Exception as exc:
@@ -762,16 +720,28 @@ async def _run_reservation_flow(
     updated_end = end_dt + timedelta(minutes=extend_minutes)
     try:
         updated = await provider.update_reservation(created.id, end_time=updated_end)
-        print(f"Reservation updated: {_format_reservation(updated, sanitize=sanitize_output)}")
+        print(
+            _format_action(
+                "Reservation updated",
+                _format_reservation(updated, sanitize=sanitize_output),
+                color="green",
+            )
+        )
         created = updated
         end_dt = updated_end
     except ProviderError as exc:
-        print(f"Reservation update skipped: {exc}")
+        print(_format_action("Reservation update skipped", str(exc), color="yellow"))
     except Exception as exc:
         _print_exception("Reservation update failed", exc, trace=traceback_enabled)
     try:
         ended = await provider.end_reservation(created.id, end_dt)
-        print(f"Reservation ended: {_format_reservation(ended, sanitize=sanitize_output)}")
+        print(
+            _format_action(
+                "Reservation ended",
+                _format_reservation(ended, sanitize=sanitize_output),
+                color="green",
+            )
+        )
     except Exception as exc:
         _print_exception("Reservation end failed", exc, trace=traceback_enabled)
 
@@ -796,7 +766,7 @@ async def _run_favorite_flow(
                 trace=traceback_enabled,
             )
             return
-        print(f"Favorites {label}: {len(favorites)}")
+        print(_format_action(f"Favorites {label}", str(len(favorites)), color="cyan"))
         for favorite in favorites:
             print(f"- {_format_favorite(favorite, sanitize=sanitize_output)}")
 
@@ -805,7 +775,13 @@ async def _run_favorite_flow(
         print(f"Favorite plate: {_mask_license_plate(license_plate)}", file=sys.stderr)
     try:
         created = await provider.add_favorite(license_plate, name=name_for_create)
-        print(f"Favorite created: {_format_favorite(created, sanitize=sanitize_output)}")
+        print(
+            _format_action(
+                "Favorite created",
+                _format_favorite(created, sanitize=sanitize_output),
+                color="green",
+            )
+        )
     except Exception as exc:
         _print_exception("Favorite create failed", exc, trace=traceback_enabled)
         return
@@ -821,17 +797,25 @@ async def _run_favorite_flow(
                 license_plate=created.license_plate,
                 name=updated_name,
             )
-            print(f"Favorite updated: {_format_favorite(updated, sanitize=sanitize_output)}")
+            print(
+                _format_action(
+                    "Favorite updated",
+                    _format_favorite(updated, sanitize=sanitize_output),
+                    color="green",
+                )
+            )
             created = updated
         except Exception as exc:
             _print_exception("Favorite update failed", exc, trace=traceback_enabled)
     else:
-        print("Favorite update skipped: updates are not supported.")
+        print(
+            _format_action("Favorite update skipped", "updates are not supported", color="yellow")
+        )
     await _print_favorites("after update")
 
     try:
         await provider.remove_favorite(created.id)
-        print(f"Favorite removed: {created.id}")
+        print(_format_action("Favorite removed", created.id, color="green"))
     except Exception as exc:
         _print_exception("Favorite remove failed", exc, trace=traceback_enabled)
     await _print_favorites("after remove")
@@ -843,6 +827,13 @@ async def main() -> int:
     if args.debug and log_level == "INFO":
         log_level = "DEBUG"
     logging.basicConfig(level=log_level)
+    global _COLOR_ENABLED
+    if args.color == "always":
+        _COLOR_ENABLED = True
+    elif args.color == "never":
+        _COLOR_ENABLED = False
+    else:
+        _COLOR_ENABLED = sys.stdout.isatty() or sys.stderr.isatty()
     provider_id = args.provider_id or os.getenv("PROVIDER_ID")
     base_url = args.base_url or os.getenv("BASE_URL")
     api_uri = args.api_uri or os.getenv("API_URI")
@@ -935,16 +926,19 @@ async def main() -> int:
 
     provider_info = provider.info
     print(
-        "Provider: "
-        f"{provider.provider_name} ({provider.provider_id}) | "
-        f"favorite_update_fields={provider_info.favorite_update_fields} | "
-        f"reservation_update_fields={provider_info.reservation_update_fields}"
+        _format_action(
+            "Provider",
+            f"{provider.provider_name} ({provider.provider_id}) | "
+            f"favorite_update_fields={provider_info.favorite_update_fields} | "
+            f"reservation_update_fields={provider_info.reservation_update_fields}",
+            color="cyan",
+        )
     )
-    print(f"Permit: {permit}")
-    print(f"Reservations: {len(reservations)}")
+    print(_format_action("Permit", str(permit), color="cyan"))
+    print(_format_action("Reservations", str(len(reservations)), color="cyan"))
     for reservation in reservations:
         print(f"- {_format_reservation(reservation, sanitize=args.sanitize_output)}")
-    print(f"Favorites: {len(favorites)}")
+    print(_format_action("Favorites", str(len(favorites)), color="cyan"))
     for favorite in favorites:
         print(f"- {_format_favorite(favorite, sanitize=args.sanitize_output)}")
     return 0

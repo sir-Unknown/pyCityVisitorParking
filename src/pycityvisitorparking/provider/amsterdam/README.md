@@ -14,7 +14,9 @@ expects credentials with the following keys:
 
 - `username` (string, required)
 - `password` (string, required)
-- `client_product_id` (string, optional, parsed from the JWT when omitted)
+
+The provider derives `client_product_id` automatically from the login token or
+permit metadata; it should not be supplied manually.
 
 Example credential shape:
 
@@ -22,7 +24,6 @@ Example credential shape:
 {
     "username": "user@example.com",
     "password": "secret",
-    "client_product_id": "12345",
 }
 ```
 

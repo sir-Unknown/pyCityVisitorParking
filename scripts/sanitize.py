@@ -13,6 +13,7 @@ from typing import Any
 _SENSITIVE_KEYS = {
     "password",
     "token",
+    "jwt",
     "authorization",
     "access_token",
     "refresh_token",

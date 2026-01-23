@@ -28,9 +28,6 @@ from .const import (
     PARKING_SESSION_EDIT_ENDPOINT,
     PARKING_SESSION_LIST_ENDPOINT,
     PARKING_SESSION_START_ENDPOINT,
-    PERMIT_LIST_ENDPOINT,
-    PERMIT_LIST_FOR_CLIENT_ENDPOINT,
-    PERMIT_OVERVIEW_PRODUCT_LIST_ENDPOINT,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -77,6 +74,7 @@ class Provider(BaseProvider):
         merged = self._merge_credentials(credentials, **kwargs)
         username = merged.get("username")
         password = merged.get("password")
+        client_product_id = merged.get("client_product_id")
         if not username:
             raise ValidationError("username is required.")
         if not password:
@@ -98,19 +96,20 @@ class Provider(BaseProvider):
 
         token_payload = self._decode_token(raw_token)
         roles = self._extract_roles(token_payload)
-        client_product_id = self._extract_client_product_id(token_payload)
+        if client_product_id is None:
+            client_product_id = self._extract_client_product_id(token_payload)
 
         self._token = raw_token
         self._auth_header_value = auth_value
+        self._client_product_id = client_product_id
         self._roles = roles
         self._credentials = {
             "username": username,
             "password": password,
         }
+        if client_product_id:
+            self._credentials["client_product_id"] = client_product_id
         self._logged_in = True
-        if client_product_id is None:
-            client_product_id = await self._fetch_client_product_id()
-        self._client_product_id = client_product_id
         _LOGGER.debug("Provider %s login completed", self.provider_id)
 
     async def get_permit(self) -> Permit:
@@ -451,7 +450,7 @@ class Provider(BaseProvider):
     def _require_client_product_id(self) -> str:
         if self._client_product_id:
             return self._client_product_id
-        raise ValidationError("client_product_id could not be determined from provider data.")
+        raise ValidationError("client_product_id is required.")
 
     def _coerce_client_product_id(self, value: str) -> int | str:
         if value.isdigit():
@@ -709,153 +708,11 @@ class Provider(BaseProvider):
         return ()
 
     def _extract_client_product_id(self, payload: dict[str, Any]) -> str | None:
-        # Handle multiple JWT payload shapes seen across deployments/versions.
-        for key in ("client_product_id", "clientProductId"):
-            value = payload.get(key)
-            text = self._coerce_client_product_id_value(value)
-            if text:
-                return text
-        for key in ("client_product_ids", "clientProductIds"):
-            text = self._extract_client_product_id_from_container(payload.get(key))
-            if text:
-                return text
-        for key in ("client_products", "clientProducts", "client_product", "clientProduct"):
-            text = self._extract_client_product_id_from_container(payload.get(key))
-            if text:
-                return text
-        return None
-
-    async def _fetch_client_product_id(self) -> str:
-        last_error: Exception | None = None
-        attempts = [
-            (
-                PERMIT_OVERVIEW_PRODUCT_LIST_ENDPOINT,
-                {"page": 1, "row_per_page": 25},
-                self._extract_client_product_id_from_product_list,
-            ),
-            (
-                PERMIT_LIST_FOR_CLIENT_ENDPOINT,
-                None,
-                self._extract_client_product_id_from_permit_list,
-            ),
-            (PERMIT_LIST_ENDPOINT, None, self._extract_client_product_id_from_permit_list),
-        ]
-        for path, params, extractor in attempts:
-            try:
-                data = await self._request_json(
-                    "GET",
-                    path,
-                    params=params,
-                    allow_reauth=False,
-                    auth_required=True,
-                )
-            except ProviderError as exc:
-                last_error = exc
-                continue
-            client_product_id = extractor(data)
-            if client_product_id:
-                return client_product_id
-        raise ProviderError("Provider did not return client_product_id.") from last_error
-
-    def _extract_client_product_id_from_product_list(self, data: Any) -> str | None:
-        if isinstance(data, dict):
-            for key in ("client_product_id", "clientProductId"):
-                text = self._coerce_client_product_id_value(data.get(key))
-                if text:
-                    return text
-            items = data.get("data") or data.get("results") or data.get("items")
-            return self._extract_client_product_id_from_product_items(items)
-        if isinstance(data, list):
-            return self._extract_client_product_id_from_product_items(data)
-        return None
-
-    def _extract_client_product_id_from_product_items(self, value: Any) -> str | None:
-        if not isinstance(value, list):
-            return None
-        for item in value:
-            if not isinstance(item, dict):
-                continue
-            if self._is_client_product_item(item):
-                for key in (
-                    "client_product_id",
-                    "clientProductId",
-                    "product_id",
-                    "productId",
-                    "id",
-                ):
-                    text = self._coerce_client_product_id_value(item.get(key))
-                    if text:
-                        return text
-            for key in ("client_product_id", "clientProductId"):
-                text = self._coerce_client_product_id_value(item.get(key))
-                if text:
-                    return text
-        return None
-
-    def _is_client_product_item(self, item: dict[str, Any]) -> bool:
-        for key in ("type", "request_type", "requestType", "product_type", "productType"):
-            value = item.get(key)
-            if isinstance(value, str) and value.lower() == "client_product":
-                return True
-        return False
-
-    def _extract_client_product_id_from_permit_list(self, data: Any) -> str | None:
-        if isinstance(data, dict):
-            for key in ("client_product_id", "clientProductId", "mainId"):
-                text = self._coerce_client_product_id_value(data.get(key))
-                if text:
-                    return text
-            permits = data.get("permit") or data.get("permits") or data.get("results")
-            if isinstance(permits, list):
-                return self._extract_client_product_id_from_permits(permits)
-        if isinstance(data, list):
-            return self._extract_client_product_id_from_permits(data)
-        return None
-
-    def _extract_client_product_id_from_permits(self, permits: list[Any]) -> str | None:
-        for permit in permits:
-            if not isinstance(permit, dict):
-                continue
-            for key in ("client_product_id", "clientProductId", "product_id", "productId"):
-                text = self._coerce_client_product_id_value(permit.get(key))
-                if text:
-                    return text
-            # Permit listings often only expose permit_id; treat it as the client product id.
-            text = self._coerce_client_product_id_value(permit.get("permit_id"))
-            if text:
-                return text
-        return None
-
-    def _coerce_client_product_id_value(self, value: Any) -> str | None:
+        value = payload.get("client_product_id")
         if value is None:
             return None
         text = str(value).strip()
         return text or None
-
-    def _extract_client_product_id_from_container(self, value: Any) -> str | None:
-        if value is None:
-            return None
-        if isinstance(value, dict):
-            for key in ("client_product_id", "id"):
-                text = self._coerce_client_product_id_value(value.get(key))
-                if text:
-                    return text
-            for key in ("client_product_ids", "clientProductIds"):
-                text = self._extract_client_product_id_from_container(value.get(key))
-                if text:
-                    return text
-            for key in ("client_products", "clientProducts", "client_product", "clientProduct"):
-                text = self._extract_client_product_id_from_container(value.get(key))
-                if text:
-                    return text
-            return None
-        if isinstance(value, list):
-            for item in value:
-                text = self._extract_client_product_id_from_container(item)
-                if text:
-                    return text
-            return None
-        return self._coerce_client_product_id_value(value)
 
     def _is_visitor_role(self) -> bool:
         return "ROLE_VISITOR_SSP" in self._roles

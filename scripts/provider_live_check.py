@@ -22,11 +22,12 @@ Optional environment variables:
   PASSWORD
   LICENSE_PLATE
 
-The script avoids printing full license plates.
+When --sanitize-output is enabled, the script avoids printing full license plates.
 Debug helpers:
-  --debug-http prints sanitized request/response summaries.
-  --dump-json prints sanitized request/response JSON payloads.
-  --dump-dir writes sanitized request/response JSON to a single run file.
+  --debug-http prints request/response summaries (sanitized with --sanitize-output).
+  --dump-json prints request/response JSON payloads (sanitized with --sanitize-output).
+  --dump-dir writes request/response JSON to a single run file
+              (sanitized with --sanitize-output).
   --traceback prints full tracebacks on errors.
   --sanitize-output sanitizes privacy-sensitive output.
 
@@ -108,6 +109,22 @@ def _truncate_text(value: str, limit: int) -> str:
     return f"{value[:limit]}... [truncated]"
 
 
+def _normalize_debug_value(value: Any) -> Any:
+    if isinstance(value, Mapping):
+        return {str(k): _normalize_debug_value(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_normalize_debug_value(item) for item in value]
+    if isinstance(value, tuple):
+        return [_normalize_debug_value(item) for item in value]
+    if isinstance(value, datetime):
+        return value.isoformat()
+    if isinstance(value, bytes):
+        return value.decode("utf-8", "backslashreplace")
+    if isinstance(value, Path):
+        return str(value)
+    return value
+
+
 def _print_exception(label: str, exc: Exception, *, trace: bool) -> None:
     styled_label = _style(label, "red", bold=True)
     print(f"{styled_label}: {exc.__class__.__name__}: {exc}", file=sys.stderr)
@@ -171,8 +188,6 @@ def _format_reservation(reservation: Reservation, *, sanitize: bool = False) -> 
     }
     if sanitize:
         data = _sanitize_data(data)
-    else:
-        data["license_plate"] = _mask_license_plate(reservation.license_plate)
     return (
         f"{data['id']} | {data['name']} | {data['license_plate']} | "
         f"{data['start_time']} -> {data['end_time']}"
@@ -187,8 +202,6 @@ def _format_favorite(favorite: Favorite, *, sanitize: bool = False) -> str:
     }
     if sanitize:
         data = _sanitize_data(data)
-    else:
-        data["license_plate"] = _mask_license_plate(favorite.license_plate)
     return f"{data['id']} | {data['name']} | {data['license_plate']}"
 
 
@@ -200,11 +213,13 @@ class _DebugRecorder:
         dump_json: bool,
         dump_dir: Path | None,
         max_text: int,
+        sanitize_output: bool,
     ) -> None:
         self._enabled = enabled
         self._dump_json = dump_json
         self._dump_dir = dump_dir
         self._max_text = max_text
+        self._sanitize_output = sanitize_output
         self._counter = 0
         self._run_id = time.strftime("%Y%m%d-%H%M%S")
         if dump_dir:
@@ -226,14 +241,24 @@ class _DebugRecorder:
     ) -> str:
         self._counter += 1
         request_id = f"{self._counter:04d}"
+        if self._sanitize_output:
+            headers_value = _sanitize_headers(headers)
+            params_value = _sanitize_data(params) if params else None
+            json_value = _sanitize_data(json_payload) if json_payload is not None else None
+            data_value = _sanitize_data(data_payload) if data_payload is not None else None
+        else:
+            headers_value = _normalize_debug_value(headers)
+            params_value = _normalize_debug_value(params) if params else None
+            json_value = _normalize_debug_value(json_payload) if json_payload is not None else None
+            data_value = _normalize_debug_value(data_payload) if data_payload is not None else None
         entry = {
             "id": request_id,
             "method": method,
             "url": url,
-            "headers": _sanitize_headers(headers),
-            "params": _sanitize_data(params) if params else None,
-            "json": _sanitize_data(json_payload) if json_payload is not None else None,
-            "data": _sanitize_data(data_payload) if data_payload is not None else None,
+            "headers": headers_value,
+            "params": params_value,
+            "json": json_value,
+            "data": data_value,
             "started_at": time.monotonic(),
         }
         self._requests[request_id] = entry
@@ -258,12 +283,18 @@ class _DebugRecorder:
         elapsed_ms = None
         if "started_at" in entry:
             elapsed_ms = int((time.monotonic() - entry["started_at"]) * 1000)
+        if self._sanitize_output:
+            headers_value = _sanitize_headers(headers)
+            json_value = _sanitize_data(json_body) if json_body is not None else None
+        else:
+            headers_value = _normalize_debug_value(headers)
+            json_value = _normalize_debug_value(json_body) if json_body is not None else None
         response_entry = {
             "id": request_id,
             "status": status,
-            "headers": _sanitize_headers(headers),
+            "headers": headers_value,
             "elapsed_ms": elapsed_ms,
-            "json": _sanitize_data(json_body) if json_body is not None else None,
+            "json": json_value,
             "text": _truncate_text(text_body, self._max_text) if text_body else None,
             "error": f"{error.__class__.__name__}: {error}" if error else None,
         }
@@ -277,7 +308,8 @@ class _DebugRecorder:
 
     def _print_json(self, request_id: str, label: str, payload: dict[str, Any]) -> None:
         dumped = json.dumps(payload, indent=2, sort_keys=True)
-        print(f"[RAW] {request_id} {label} (sanitized):\n{dumped}", file=sys.stderr)
+        mode = "sanitized" if self._sanitize_output else "raw"
+        print(f"[RAW] {request_id} {label} ({mode}):\n{dumped}", file=sys.stderr)
 
     def _write_dump(self, request_id: str, label: str, payload: dict[str, Any]) -> None:
         if not self._dump_dir:
@@ -523,7 +555,7 @@ def _parse_args() -> argparse.Namespace:
         "--debug-http",
         dest="debug_http",
         action="store_true",
-        help="Print HTTP request/response summaries (sanitized).",
+        help="Print HTTP request/response summaries (sanitized with --sanitize-output).",
     )
     parser.add_argument(
         "--debug",
@@ -535,12 +567,12 @@ def _parse_args() -> argparse.Namespace:
         "--dump-json",
         dest="dump_json",
         action="store_true",
-        help="Print sanitized request/response JSON payloads.",
+        help="Print request/response JSON payloads (sanitized with --sanitize-output).",
     )
     parser.add_argument(
         "--dump-dir",
         dest="dump_dir",
-        help="Write sanitized request/response JSON run files to this directory.",
+        help="Write request/response JSON run files (sanitized with --sanitize-output).",
     )
     parser.add_argument(
         "--dump-limit",
@@ -680,6 +712,7 @@ async def _run_reservation_flow(
     if debug_enabled:
         start_utc = start_dt.astimezone(UTC)
         end_utc = end_dt.astimezone(UTC)
+        plate_value = _mask_license_plate(license_plate) if sanitize_output else license_plate
         print(
             f"Reservation window (local): {start_dt.isoformat()} -> {end_dt.isoformat()}",
             file=sys.stderr,
@@ -688,7 +721,7 @@ async def _run_reservation_flow(
             f"Reservation window (UTC): {start_utc.isoformat()} -> {end_utc.isoformat()}",
             file=sys.stderr,
         )
-        print(f"Reservation plate: {_mask_license_plate(license_plate)}", file=sys.stderr)
+        print(f"Reservation plate: {plate_value}", file=sys.stderr)
 
     try:
         created = await provider.start_reservation(
@@ -772,7 +805,8 @@ async def _run_favorite_flow(
 
     name_for_create = _build_favorite_name(license_plate, favorite_name)
     if debug_enabled:
-        print(f"Favorite plate: {_mask_license_plate(license_plate)}", file=sys.stderr)
+        plate_value = _mask_license_plate(license_plate) if sanitize_output else license_plate
+        print(f"Favorite plate: {plate_value}", file=sys.stderr)
     try:
         created = await provider.add_favorite(license_plate, name=name_for_create)
         print(
@@ -859,12 +893,16 @@ async def main() -> int:
         return 2
 
     if args.debug:
-        masked_plate = _mask_license_plate(license_plate or "")
+        plate_value = (
+            _mask_license_plate(license_plate or "") if args.sanitize_output else license_plate
+        )
+        if not plate_value:
+            plate_value = "-"
         print(
             "Debug config: "
             f"provider_id={provider_id} base_url={base_url} api_uri={api_uri} "
             f"run_reservations={run_reservations} run_favorites={run_favorites} "
-            f"license_plate={masked_plate or '-'}",
+            f"license_plate={plate_value}",
             file=sys.stderr,
         )
         key_list = ", ".join(sorted(credentials.keys())) if credentials else "-"
@@ -875,12 +913,14 @@ async def main() -> int:
         dump_json=args.dump_json,
         dump_dir=Path(args.dump_dir) if args.dump_dir else None,
         max_text=args.dump_limit,
+        sanitize_output=args.sanitize_output,
     )
     debug_session: _DebugSession | None = None
     if recorder._enabled:
         session = aiohttp.ClientSession()
         debug_session = _DebugSession(session, recorder)
-        _LOGGER.info("HTTP debug enabled (sanitized output).")
+        mode = "sanitized" if args.sanitize_output else "raw"
+        _LOGGER.info("HTTP debug enabled (%s output).", mode)
 
     try:
         async with Client(

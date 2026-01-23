@@ -10,9 +10,9 @@ Codespace and share the sanitized output for debugging.
 
 ## 1) Create a Codespace
 
-Start a new Codespace from the repository (use **New with options**).
+Start a new Codespace from the repository.
 
-![Create Codespace](images/create-codespace.png)
+[![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/sir-Unknown/pyCityVisitorParking/)
 
 ## 2) Select the branch
 

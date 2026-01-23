@@ -10,7 +10,6 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-REDACTED = "***"
 _SENSITIVE_KEYS = {
     "password",
     "token",
@@ -19,6 +18,11 @@ _SENSITIVE_KEYS = {
     "refresh_token",
     "secret",
     "pin",
+    "iban",
+    "socialsecurity",
+    "social_security",
+    "bsn",
+    "kvk",
     "permitmediacode",
     "permit_media_code",
     "permitmediatypeid",
@@ -33,6 +37,14 @@ _PII_KEYS = {
     "first_name",
     "last_name",
     "name",
+    "address",
+    "postal",
+    "zip",
+    "postcode",
+    "city",
+    "house_letter",
+    "account_holder",
+    "accountholder",
 }
 _PLATE_KEYS = {
     "license_plate",
@@ -41,52 +53,106 @@ _PLATE_KEYS = {
     "vehicle_plate",
     "plate",
 }
+_PLATE_VALUE_KEYS = {
+    "displayvalue",
+    "display_value",
+    "normalizedvalue",
+    "normalized_value",
+    "value",
+}
 _PERMIT_MEDIA_CONTAINER_KEYS = {
     "permitmedias",
     "permit_medias",
 }
+_NON_SENSITIVE_KEYS = {
+    "validfrom",
+    "validuntil",
+}
+
+
+def mask_value(value: Any) -> Any:
+    """Return a length-preserving mask for a value."""
+    if value is None:
+        return value
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, bytes):
+        return "*" * len(value)
+    if isinstance(value, str):
+        return "*" * len(value)
+    return "*" * len(str(value))
 
 
 def mask_license_plate(plate: str) -> str:
     """Return a masked representation of a license plate."""
     if not isinstance(plate, str):
-        return REDACTED
-    normalized = "".join(ch for ch in plate.upper() if ch.isascii() and ch.isalnum())
-    if not normalized:
-        return REDACTED
-    if len(normalized) <= 2:
-        return "*" * len(normalized)
-    if len(normalized) <= 4:
-        return f"{normalized[:1]}{'*' * (len(normalized) - 2)}{normalized[-1:]}"
-    masked = "*" * (len(normalized) - 4)
-    return f"{normalized[:2]}{masked}{normalized[-2:]}"
+        return mask_value(plate)
+    masked_chars: list[str] = []
+    has_maskable = False
+    for ch in plate:
+        if ch.isalnum():
+            masked_chars.append("*")
+            has_maskable = True
+        else:
+            masked_chars.append(ch)
+    if not has_maskable:
+        return plate
+    return "".join(masked_chars)
+
+
+def _mask_container(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {str(k): _mask_container(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_mask_container(item) for item in value]
+    return mask_value(value)
+
+
+def _mask_plate_value(value: Any) -> Any:
+    if isinstance(value, str):
+        return mask_license_plate(value)
+    if isinstance(value, list):
+        return [_mask_plate_value(item) for item in value]
+    if isinstance(value, dict):
+        sanitized: dict[str, Any] = {}
+        for item_key, item_value in value.items():
+            key_text = str(item_key)
+            if key_text.lower() in _PLATE_VALUE_KEYS:
+                if isinstance(item_value, str):
+                    sanitized[key_text] = mask_license_plate(item_value)
+                else:
+                    sanitized[key_text] = mask_value(item_value)
+                continue
+            sanitized[key_text] = sanitize_data(item_value, key=key_text)
+        return sanitized
+    return mask_value(value)
 
 
 def _mask_value_for_key(key: str, value: Any) -> Any:
     key_lower = key.lower()
+    if any(fragment in key_lower for fragment in _NON_SENSITIVE_KEYS):
+        return value
     if any(fragment in key_lower for fragment in _SENSITIVE_KEYS):
-        return REDACTED
+        return _mask_container(value)
     if any(fragment in key_lower for fragment in _PII_KEYS):
-        return REDACTED
+        return _mask_container(value)
     if any(fragment in key_lower for fragment in _PLATE_KEYS):
-        if isinstance(value, str):
-            return mask_license_plate(value)
-        return REDACTED
+        return _mask_plate_value(value)
     return value
 
 
 def sanitize_data(value: Any, *, key: str | None = None) -> Any:
     """Return a sanitized representation of a value."""
     if key is not None:
-        value = _mask_value_for_key(key, value)
+        masked = _mask_value_for_key(key, value)
+        if masked is not value:
+            return masked
     if isinstance(value, dict):
         return {str(k): sanitize_data(v, key=str(k)) for k, v in value.items()}
     if isinstance(value, list):
         if key is not None and key.lower() in _PERMIT_MEDIA_CONTAINER_KEYS:
             return [_sanitize_permit_media(item) for item in value]
         return [sanitize_data(item, key=key) for item in value]
-    if isinstance(value, str) and key and key.lower() in _PLATE_KEYS:
-        return mask_license_plate(value)
     if isinstance(value, datetime):
         return value.isoformat()
     if isinstance(value, bytes):
@@ -104,7 +170,7 @@ def _sanitize_permit_media(value: Any) -> Any:
     sanitized = {str(k): sanitize_data(v, key=str(k)) for k, v in value.items()}
     for item_key in list(sanitized.keys()):
         if item_key.lower() == "code":
-            sanitized[item_key] = REDACTED
+            sanitized[item_key] = mask_value(sanitized[item_key])
     return sanitized
 
 
@@ -113,7 +179,7 @@ def sanitize_headers(headers: Mapping[str, Any]) -> dict[str, Any]:
     sanitized: dict[str, Any] = {}
     for key, value in headers.items():
         if key.lower() == "authorization":
-            sanitized[key] = REDACTED
+            sanitized[key] = mask_value(value)
         else:
             sanitized[key] = sanitize_data(value, key=key)
     return sanitized
@@ -163,12 +229,12 @@ def main() -> int:
         print("Use --in-place or --output, not both.", file=sys.stderr)
         return 2
     try:
-        sanitized = sanitize_file(input_path)
+        output_data = sanitize_file(input_path)
     except ValueError as exc:
         print(str(exc), file=sys.stderr)
         return 2
     output_text = json.dumps(
-        sanitized,
+        output_data,
         indent=args.indent,
         sort_keys=True,
         ensure_ascii=True,

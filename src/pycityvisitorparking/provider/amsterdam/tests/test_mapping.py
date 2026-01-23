@@ -201,5 +201,60 @@ async def test_start_reservation_rejects_naive_datetime():
             )
 
 
+@pytest.mark.asyncio
+async def test_extract_client_product_id_handles_alternate_shapes():
+    async with aiohttp.ClientSession() as session:
+        provider = Provider(
+            session,
+            ProviderManifest(
+                id="amsterdam",
+                name="Amsterdam",
+                favorite_update_fields=(),
+                reservation_update_fields=("end_time",),
+            ),
+            base_url="https://example",
+        )
+
+    assert provider._extract_client_product_id({"clientProductId": "99"}) == "99"
+    assert provider._extract_client_product_id({"client_product_ids": [123]}) == "123"
+    assert provider._extract_client_product_id({"client_products": [{"id": "42"}]}) == "42"
+
+
+@pytest.mark.asyncio
+async def test_extract_client_product_id_from_product_list():
+    async with aiohttp.ClientSession() as session:
+        provider = Provider(
+            session,
+            ProviderManifest(
+                id="amsterdam",
+                name="Amsterdam",
+                favorite_update_fields=(),
+                reservation_update_fields=("end_time",),
+            ),
+            base_url="https://example",
+        )
+
+    data = {"data": [{"type": "client_product", "id": 55}]}
+    assert provider._extract_client_product_id_from_product_list(data) == "55"
+
+
+@pytest.mark.asyncio
+async def test_extract_client_product_id_from_permit_list():
+    async with aiohttp.ClientSession() as session:
+        provider = Provider(
+            session,
+            ProviderManifest(
+                id="amsterdam",
+                name="Amsterdam",
+                favorite_update_fields=(),
+                reservation_update_fields=("end_time",),
+            ),
+            base_url="https://example",
+        )
+
+    data = {"permit": [{"permit_id": 77}]}
+    assert provider._extract_client_product_id_from_permit_list(data) == "77"
+
+
 def test_default_api_uri():
     assert DEFAULT_API_URI == "/api"

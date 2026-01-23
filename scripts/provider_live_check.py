@@ -129,6 +129,14 @@ def _get_git_commit_id() -> str:
     return "unknown"
 
 
+def _short_commit_id(commit_id: str, *, length: int = 5) -> str:
+    if commit_id == "unknown":
+        return commit_id
+    if len(commit_id) <= length:
+        return commit_id
+    return commit_id[-length:]
+
+
 def _normalize_debug_value(value: Any) -> Any:
     if isinstance(value, Mapping):
         return {str(k): _normalize_debug_value(v) for k, v in value.items()}
@@ -966,7 +974,7 @@ async def main() -> int:
 
     provider_id = _require_value("provider_id", provider_id)
     base_url = _require_value("base_url", base_url)
-    commit_id = _get_git_commit_id()
+    commit_id = _short_commit_id(_get_git_commit_id())
     print(
         _style(
             "[RUN] "

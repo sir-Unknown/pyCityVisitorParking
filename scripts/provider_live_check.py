@@ -56,7 +56,7 @@ import traceback
 from collections.abc import Mapping
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, cast
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import aiohttp
@@ -363,8 +363,8 @@ class _DebugRecorder:
         if not self._dump_dir:
             return
         path = self._dump_dir / f"{self._run_id}.json"
-        entry = self._run_entries.get(request_id)
-        if not entry:
+        entry: dict[str, Any] | None = self._run_entries.get(request_id)
+        if entry is None:
             entry = {"id": request_id}
             self._run_entries[request_id] = entry
         entry[label] = payload
@@ -960,6 +960,7 @@ async def main() -> int:
     run_reservations = args.run_all or args.run_reservations
     run_favorites = args.run_all or args.run_favorites
     license_plate = args.license_plate or os.getenv("LICENSE_PLATE")
+    license_plate_value = license_plate or ""
 
     provider_id = _require_value("provider_id", provider_id)
     base_url = _require_value("base_url", base_url)
@@ -980,13 +981,15 @@ async def main() -> int:
         credentials = _load_credentials(credentials_json, credentials_file)
     if extras:
         credentials.update(extras)
-    if (run_reservations or run_favorites) and not license_plate:
+    if (run_reservations or run_favorites) and not license_plate_value:
         print("Missing required value: license_plate", file=sys.stderr)
         return 2
 
     if args.debug:
         plate_value = (
-            _mask_license_plate(license_plate or "") if args.sanitize_output else license_plate
+            _mask_license_plate(license_plate_value)
+            if args.sanitize_output
+            else license_plate_value
         )
         if not plate_value:
             plate_value = "-"
@@ -1016,7 +1019,7 @@ async def main() -> int:
 
     try:
         async with Client(
-            session=debug_session,
+            session=cast(aiohttp.ClientSession, debug_session) if debug_session else None,
             base_url=base_url,
             api_uri=api_uri,
         ) as client:
@@ -1044,7 +1047,7 @@ async def main() -> int:
             if run_reservations:
                 await _run_reservation_flow(
                     provider,
-                    license_plate=license_plate,
+                    license_plate=license_plate_value,
                     reservation_name=args.reservation_name,
                     start_time=args.start_time,
                     end_time=args.end_time,
@@ -1058,7 +1061,7 @@ async def main() -> int:
             if run_favorites:
                 await _run_favorite_flow(
                     provider,
-                    license_plate=license_plate,
+                    license_plate=license_plate_value,
                     favorite_name=args.favorite_name,
                     post_create_wait=args.post_create_wait,
                     traceback_enabled=args.traceback,

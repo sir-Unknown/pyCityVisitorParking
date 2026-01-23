@@ -29,6 +29,10 @@ _SENSITIVE_KEYS = {
     "permitmediatypeid",
     "permit_media_type_id",
     "identifier",
+    "client_id",
+    "client_product_id",
+    "ps_right_id",
+    "parking_session_id",
 }
 _PII_KEYS = {
     "email",
@@ -46,6 +50,7 @@ _PII_KEYS = {
     "house_letter",
     "account_holder",
     "accountholder",
+    "description",
 }
 _PLATE_KEYS = {
     "license_plate",

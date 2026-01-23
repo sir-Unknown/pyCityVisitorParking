@@ -6,7 +6,7 @@ import base64
 import json
 import logging
 from collections.abc import Mapping
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime, time, timedelta
 from email.utils import format_datetime, parsedate_to_datetime
 from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -25,6 +25,7 @@ from .const import (
     FAVORITE_DELETE_ENDPOINT,
     FAVORITE_LIST_ENDPOINT,
     LOGIN_ENDPOINT,
+    PARKING_SESSION_COST_CALCULATOR_ENDPOINT,
     PARKING_SESSION_EDIT_ENDPOINT,
     PARKING_SESSION_LIST_ENDPOINT,
     PARKING_SESSION_START_ENDPOINT,
@@ -70,6 +71,8 @@ class Provider(BaseProvider):
         self._client_product_id: str | None = None
         self._roles: tuple[str, ...] = ()
         self._logged_in = False
+        self._machine_number: int | str | None = None
+        self._zone_id: int | str | None = None
 
     async def login(self, credentials: Mapping[str, str] | None = None, **kwargs: str) -> None:
         """Authenticate against the provider."""
@@ -107,6 +110,8 @@ class Provider(BaseProvider):
             "username": username,
             "password": password,
         }
+        self._machine_number = None
+        self._zone_id = None
         self._logged_in = True
         if client_product_id is None:
             client_product_id = await self._fetch_client_product_id()
@@ -123,7 +128,20 @@ class Provider(BaseProvider):
             allow_reauth=True,
             auth_required=True,
         )
-        permit = self._map_permit(data, client_product_id=client_product_id)
+        self._cache_parking_context(data)
+        zone_validity = None
+        try:
+            zone_validity = await self._build_paid_zone_validity(days=14)
+        except ProviderError:
+            _LOGGER.debug(
+                "Provider %s could not fetch paid zone validity; falling back to permit validity",
+                self.provider_id,
+            )
+        permit = self._map_permit(
+            data,
+            client_product_id=client_product_id,
+            zone_validity=zone_validity,
+        )
         _LOGGER.debug("Provider %s get_permit completed", self.provider_id)
         return permit
 
@@ -173,6 +191,14 @@ class Provider(BaseProvider):
             "started_at": self._format_rfc1123(start_dt),
             "ended_at": self._format_rfc1123(end_dt),
         }
+        # The API requires a machine_number or zone_id; cache from permit details when available.
+        await self._ensure_parking_context()
+        if self._machine_number is not None:
+            payload["machine_number"] = self._machine_number
+        if self._zone_id is not None:
+            payload["zone_id"] = self._zone_id
+        if "machine_number" not in payload and "zone_id" not in payload:
+            raise ProviderError("Provider did not return machine_number or zone_id.")
         if self._is_visitor_role():
             payload["brand"] = "IDEAL"
         data = await self._request_json(
@@ -458,16 +484,27 @@ class Provider(BaseProvider):
             return int(value)
         return value
 
-    def _map_permit(self, data: Any, *, client_product_id: str) -> Permit:
+    def _map_permit(
+        self,
+        data: Any,
+        *,
+        client_product_id: str,
+        zone_validity: list[ZoneValidityBlock] | None = None,
+    ) -> Permit:
         if not isinstance(data, dict):
             raise ProviderError("Provider response included invalid permit data.")
-        permit_id = self._coerce_id(
-            data.get("client_product_id") or data.get("id") or client_product_id
-        )
+        # Use username as the stable permit id for Home Assistant entity identity.
+        username = self._credentials.get("username") if self._credentials else None
+        permit_id = self._coerce_id(username)
+        if not permit_id:
+            permit_id = self._coerce_id(
+                data.get("client_product_id") or data.get("id") or client_product_id
+            )
         if not permit_id:
             permit_id = client_product_id
         remaining_balance = self._extract_balance(data)
-        zone_validity = self._map_zone_validity(data)
+        if zone_validity is None:
+            zone_validity = self._map_zone_validity(data)
         return Permit(
             id=permit_id,
             remaining_balance=remaining_balance,
@@ -505,11 +542,109 @@ class Provider(BaseProvider):
                 entries.append((ZoneValidityBlock(start_time=start, end_time=end), True))
         return self._filter_chargeable_zone_validity(entries)
 
+    async def _build_paid_zone_validity(self, *, days: int) -> list[ZoneValidityBlock]:
+        """Fetch paid parking windows for today through the next given days."""
+        if days < 0:
+            raise ValidationError("Days must be zero or positive.")
+        await self._ensure_parking_context()
+        today = datetime.now(_LOCAL_TZ).date()
+        entries: list[tuple[ZoneValidityBlock, bool]] = []
+        for offset in range(days + 1):
+            target_date = today + timedelta(days=offset)
+            entries.extend(await self._fetch_paid_zone_validity_for_date(target_date))
+        return self._filter_chargeable_zone_validity(entries)
+
+    async def _fetch_paid_zone_validity_for_date(
+        self,
+        target_date: date,
+    ) -> list[tuple[ZoneValidityBlock, bool]]:
+        """Return paid parking windows for a specific local date."""
+        start_local = datetime.combine(target_date, time(0, 0), tzinfo=_LOCAL_TZ)
+        end_local = datetime.combine(target_date, time(23, 59), tzinfo=_LOCAL_TZ)
+        payload: dict[str, Any] = {
+            "client_product_id": self._coerce_client_product_id(self._require_client_product_id()),
+            "started_at": self._format_rfc1123(start_local),
+            "ended_at": self._format_rfc1123(end_local),
+        }
+        if self._machine_number is not None:
+            payload["machine_number"] = self._machine_number
+        elif self._zone_id is not None:
+            payload["zone_id"] = self._zone_id
+        else:
+            raise ProviderError("Provider did not return machine_number or zone_id.")
+        data = await self._request_json(
+            "POST",
+            PARKING_SESSION_COST_CALCULATOR_ENDPOINT,
+            json=payload,
+            allow_reauth=True,
+            auth_required=True,
+        )
+        time_frame_data = self._extract_time_frame_data(data)
+        return self._map_time_frame_data_for_date(time_frame_data, target_date)
+
+    def _extract_time_frame_data(self, data: Any) -> Any:
+        if isinstance(data, dict):
+            if "time_frame_data" in data:
+                return data.get("time_frame_data")
+            nested = data.get("parking_session_balance")
+            if isinstance(nested, dict) and "time_frame_data" in nested:
+                return nested.get("time_frame_data")
+        return None
+
+    def _map_time_frame_data_for_date(
+        self,
+        raw: Any,
+        target_date: date,
+    ) -> list[tuple[ZoneValidityBlock, bool]]:
+        if not isinstance(raw, list):
+            return []
+        weekday = target_date.weekday()
+        if weekday >= len(raw):
+            return []
+        day_blocks = raw[weekday]
+        if not isinstance(day_blocks, list):
+            return []
+        entries: list[tuple[ZoneValidityBlock, bool]] = []
+        for block in day_blocks:
+            if not isinstance(block, dict):
+                continue
+            start_clock = self._parse_time_frame_value(block.get("startTime"))
+            end_clock = self._parse_time_frame_value(block.get("endTime"))
+            if start_clock is None or end_clock is None:
+                continue
+            start_local = datetime.combine(target_date, start_clock, tzinfo=_LOCAL_TZ)
+            end_local = datetime.combine(target_date, end_clock, tzinfo=_LOCAL_TZ)
+            if end_local <= start_local:
+                end_local = end_local + timedelta(days=1)
+            entries.append(
+                (
+                    ZoneValidityBlock(
+                        start_time=self._format_utc_timestamp(start_local),
+                        end_time=self._format_utc_timestamp(end_local),
+                    ),
+                    True,
+                )
+            )
+        return entries
+
+    def _parse_time_frame_value(self, value: Any) -> time | None:
+        if not isinstance(value, str):
+            return None
+        text = value.strip()
+        if len(text) != 4 or not text.isdigit():
+            return None
+        hour = int(text[:2])
+        minute = int(text[2:])
+        if hour > 23 or minute > 59:
+            return None
+        return time(hour, minute)
+
     def _extract_balance(self, data: dict[str, Any]) -> int:
         ssp = data.get("ssp")
         if isinstance(ssp, dict):
             main_account = ssp.get("main_account")
             if isinstance(main_account, dict):
+                # Balance lives in ssp.main_account.time_balance/money_balance in client_product.
                 for key in ("time_balance", "money_balance", "balance"):
                     if key in main_account:
                         return self._parse_int(main_account.get(key))
@@ -517,6 +652,84 @@ class Provider(BaseProvider):
             if key in data:
                 return self._parse_int(data.get(key))
         return 0
+
+    def _cache_parking_context(self, data: Any) -> None:
+        if not isinstance(data, dict):
+            return
+        # client_product.ssp.favorite_machine_number is required when starting a session.
+        machine_number = self._extract_machine_number(data)
+        if machine_number is not None:
+            self._machine_number = machine_number
+        zone_id = self._extract_zone_id(data)
+        if zone_id is not None:
+            self._zone_id = zone_id
+
+    async def _ensure_parking_context(self) -> None:
+        if self._machine_number is not None or self._zone_id is not None:
+            return
+        client_product_id = self._require_client_product_id()
+        data = await self._request_json(
+            "GET",
+            CLIENT_PRODUCT_ENDPOINT.format(client_product_id=client_product_id),
+            allow_reauth=True,
+            auth_required=True,
+        )
+        self._cache_parking_context(data)
+        if self._machine_number is None and self._zone_id is None:
+            raise ProviderError("Provider did not return machine_number or zone_id.")
+
+    def _extract_machine_number(self, data: dict[str, Any]) -> int | str | None:
+        ssp = data.get("ssp")
+        if isinstance(ssp, dict):
+            for key in ("favorite_machine_number", "machine_number"):
+                value = self._coerce_optional_id(ssp.get(key))
+                if value is not None:
+                    return value
+        permit = data.get("permit")
+        if isinstance(permit, dict):
+            for key in ("favorite_machine_number", "machine_number"):
+                value = self._coerce_optional_id(permit.get(key))
+                if value is not None:
+                    return value
+        for key in ("favorite_machine_number", "machine_number"):
+            value = self._coerce_optional_id(data.get(key))
+            if value is not None:
+                return value
+        return None
+
+    def _extract_zone_id(self, data: dict[str, Any]) -> int | str | None:
+        for key in ("zone_id", "zoneId"):
+            value = self._coerce_optional_id(data.get(key))
+            if value is not None:
+                return value
+        permit = data.get("permit")
+        if isinstance(permit, dict):
+            for key in ("zone_id", "zoneId"):
+                value = self._coerce_optional_id(permit.get(key))
+                if value is not None:
+                    return value
+        return None
+
+    def _coerce_optional_id(self, value: Any) -> int | str | None:
+        if value is None or isinstance(value, bool):
+            return None
+        if isinstance(value, int):
+            return value if value != 0 else None
+        if isinstance(value, str):
+            text = value.strip()
+            if not text:
+                return None
+            if text.isdigit():
+                number = int(text)
+                return number if number != 0 else None
+            return text
+        text = str(value).strip()
+        if not text:
+            return None
+        if text.isdigit():
+            number = int(text)
+            return number if number != 0 else None
+        return text
 
     def _map_reservations(self, data: Any) -> list[Reservation]:
         items: list[Any]
@@ -554,6 +767,7 @@ class Provider(BaseProvider):
             item.get("parking_session_id") or item.get("id"),
             "reservation id",
         )
+        # parking_session list uses vrn/started_at/ended_at.
         plate_raw = item.get("vrn") or item.get("license_plate") or ""
         normalized_plate = self._normalize_license_plate(str(plate_raw))
         name = item.get("permit_name") or item.get("zone_description") or item.get("name")
@@ -625,6 +839,7 @@ class Provider(BaseProvider):
             item.get("favorite_vrn_id") or item.get("id"),
             "favorite id",
         )
+        # favorite_vrn list/add uses vrn/description.
         plate_raw = item.get("vrn") or item.get("license_plate") or ""
         normalized_plate = self._normalize_license_plate(str(plate_raw))
         name = item.get("description") or item.get("name")

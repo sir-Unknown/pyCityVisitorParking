@@ -10,6 +10,7 @@ PERMIT_OVERVIEW_PRODUCT_LIST_ENDPOINT: str = "/v1/permit_overview/product_list"
 
 PARKING_SESSION_LIST_ENDPOINT: str = "/v1/ssp/parking_session/list"
 PARKING_SESSION_START_ENDPOINT: str = "/v1/ssp/parking_session/start"
+PARKING_SESSION_COST_CALCULATOR_ENDPOINT: str = "/v1/ssp/parking_session/cost_calculator"
 PARKING_SESSION_EDIT_ENDPOINT: str = "/v1/ssp/parking_session/{reservation_id}/edit"
 
 FAVORITE_LIST_ENDPOINT: str = "/v1/ssp/favorite_vrn/list"
@@ -29,6 +30,7 @@ __all__ = [
     "FAVORITE_DELETE_ENDPOINT",
     "FAVORITE_LIST_ENDPOINT",
     "LOGIN_ENDPOINT",
+    "PARKING_SESSION_COST_CALCULATOR_ENDPOINT",
     "PARKING_SESSION_EDIT_ENDPOINT",
     "PARKING_SESSION_LIST_ENDPOINT",
     "PARKING_SESSION_START_ENDPOINT",

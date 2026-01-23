@@ -64,6 +64,15 @@ USERNAME=... PASSWORD=... LICENSE_PLATE=AB12CD \
 python scripts/provider_live_check.py --run-all --dump-json --dump-dir .tmp/http-trace --sanitize-output
 ```
 
+Paid-parking windows (provider support required). This fetches paid windows for
+today and future days via the provider cost calculator (Amsterdam supports this):
+
+```bash
+PYTHONPATH=src PROVIDER_ID=amsterdam BASE_URL=https://api.parkeervergunningen.egisparkingservices.nl \
+USERNAME=... PASSWORD=... \
+python scripts/provider_live_check.py --check-paid-windows --paid-window-days 14
+```
+
 Notes and behavior details:
 
 - `--start-time` and `--end-time` accept ISO 8601 strings with offset or `Z`.
@@ -73,6 +82,8 @@ Notes and behavior details:
 - Extra credentials can be supplied with `--extra key=value`.
 - Credentials can also be supplied via `--credentials-json` or
   `--credentials-file` (or `CREDENTIALS_JSON`/`CREDENTIALS_FILE` env vars).
+- `--check-paid-windows` with `--paid-window-days 14` runs the cost calculator
+  for today + 14 days and prints the paid windows per day.
 - The output includes provider capabilities (`favorite_update_fields` and
   `reservation_update_fields`) from `ProviderInfo` so you can confirm supported
   updates before calling mutation methods.
@@ -85,7 +96,7 @@ leaking secrets:
 - `--dump-json` prints sanitized request/response JSON payloads to the terminal,
   useful when you need to see the exact data returned by the provider.
 - `--dump-dir <path>` writes sanitized request/response JSON to a single run file
-  inside the given directory, making it easy to share one artifact per run.
+  inside the given directory, including `http_log` summaries per request id.
 - `--traceback` prints full Python tracebacks so you can pinpoint the failing
   call path when an error occurs.
 - `--sanitize-output` sanitizes privacy-sensitive values in standard output

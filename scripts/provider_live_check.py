@@ -36,6 +36,11 @@ Run live reservation/favorite flows (requires LICENSE_PLATE):
     USERNAME=... PASSWORD=... LICENSE_PLATE=AB12CD \
     python scripts/provider_live_check.py --run-all --post-create-wait 5
 
+Run paid-parking window checks (requires provider support):
+  PYTHONPATH=src PROVIDER_ID=amsterdam BASE_URL=... \
+    USERNAME=... PASSWORD=... \
+    python scripts/provider_live_check.py --check-paid-windows --paid-window-days 14
+
 Note: the default reservation window is next-day 02:00-03:00 in the selected
 timezone. For The Hague, this often falls outside paid parking windows and can
 return PV00076 (no paid parking at this time). Use `--start-time`/`--end-time`
@@ -284,6 +289,7 @@ class _DebugRecorder:
             self._run_id = f"{self._run_id}-{os.getpid()}"
         self._requests: dict[str, dict[str, Any]] = {}
         self._run_entries: dict[str, dict[str, Any]] = {}
+        self._http_log: list[str] = []
         if self._dump_dir:
             self._dump_dir.mkdir(parents=True, exist_ok=True)
 
@@ -322,6 +328,8 @@ class _DebugRecorder:
         self._requests[request_id] = entry
         if self._enabled:
             print(f"[HTTP] -> {method} {url}", file=sys.stderr)
+        if self._dump_dir:
+            self._http_log.append(f"[HTTP] {request_id} -> {method} {url}")
         if self._dump_json:
             self._print_json(request_id, "request", entry)
         self._write_dump(request_id, "request", entry)
@@ -360,6 +368,10 @@ class _DebugRecorder:
             status_text = f"{status}" if status is not None else "unknown"
             duration = f"{elapsed_ms}ms" if elapsed_ms is not None else "n/a"
             print(f"[HTTP] <- {status_text} ({duration})", file=sys.stderr)
+        if self._dump_dir:
+            status_text = f"{status}" if status is not None else "unknown"
+            duration = f"{elapsed_ms}ms" if elapsed_ms is not None else "n/a"
+            self._http_log.append(f"[HTTP] {request_id} <- {status_text} ({duration})")
         if self._dump_json:
             self._print_json(request_id, "response", response_entry)
         self._write_dump(request_id, "response", response_entry)
@@ -379,7 +391,12 @@ class _DebugRecorder:
             self._run_entries[request_id] = entry
         entry[label] = payload
         entries = [self._run_entries[key] for key in sorted(self._run_entries)]
-        output = {"run_id": self._run_id, "commit": self._commit_id, "entries": entries}
+        output = {
+            "run_id": self._run_id,
+            "commit": self._commit_id,
+            "entries": entries,
+            "http_log": self._http_log,
+        }
         path.write_text(json.dumps(output, indent=2, sort_keys=True), encoding="utf-8")
 
 
@@ -600,6 +617,19 @@ def _parse_args() -> argparse.Namespace:
         help="Timezone for generated local times (e.g. Europe/Amsterdam).",
     )
     parser.add_argument(
+        "--check-paid-windows",
+        dest="check_paid_windows",
+        action="store_true",
+        help="Check paid parking windows for today and future days (provider-specific).",
+    )
+    parser.add_argument(
+        "--paid-window-days",
+        dest="paid_window_days",
+        type=int,
+        default=14,
+        help="How many days ahead to query paid parking windows (default: 14).",
+    )
+    parser.add_argument(
         "--credentials-json",
         dest="credentials_json",
         help="Credentials JSON string.",
@@ -741,6 +771,54 @@ def _build_reservation_window(
     ) + timedelta(days=1)
     end_dt = start_dt + timedelta(hours=1)
     return start_dt, end_dt
+
+
+async def _run_paid_window_check(
+    provider: Any,
+    *,
+    timezone_name: str,
+    days: int,
+    traceback_enabled: bool,
+    sanitize_output: bool,
+) -> None:
+    if days < 0:
+        raise ValidationError("paid_window_days must be zero or positive.")
+    fetcher = getattr(provider, "_fetch_paid_zone_validity_for_date", None)
+    if not callable(fetcher):
+        _log_step_abort("Paid window check", "provider does not support cost calculator")
+        return
+    try:
+        tz = ZoneInfo(timezone_name)
+    except ZoneInfoNotFoundError as exc:
+        raise ValidationError(f"Timezone '{timezone_name}' is unavailable.") from exc
+    check_started_at = _log_step_start("Paid window check")
+    today = datetime.now(tz).date()
+    for offset in range(days + 1):
+        target_date = today + timedelta(days=offset)
+        try:
+            entries = await _run_step(
+                f"Paid windows {target_date.isoformat()}",
+                fetcher(target_date),
+                trace=traceback_enabled,
+            )
+        except Exception:
+            continue
+        block_count = len(entries)
+        print(
+            _format_action(
+                f"Paid windows {target_date.isoformat()}",
+                str(block_count),
+                color="cyan",
+            )
+        )
+        for block, _is_chargeable in entries:
+            start = block.start_time
+            end = block.end_time
+            if sanitize_output:
+                start = _sanitize_data(start)
+                end = _sanitize_data(end)
+            print(f"- {start} -> {end}")
+    _log_step_done("Paid window check", check_started_at)
 
 
 async def _run_reservation_flow(
@@ -969,6 +1047,7 @@ async def main() -> int:
     extras = _parse_extra(args.extra or [])
     run_reservations = args.run_all or args.run_reservations
     run_favorites = args.run_all or args.run_favorites
+    run_paid_windows = args.check_paid_windows
     license_plate = args.license_plate or os.getenv("LICENSE_PLATE")
     license_plate_value = license_plate or ""
 
@@ -1055,6 +1134,14 @@ async def main() -> int:
                 provider.list_favorites(),
                 trace=args.traceback,
             )
+            if run_paid_windows:
+                await _run_paid_window_check(
+                    provider,
+                    timezone_name=args.timezone,
+                    days=args.paid_window_days,
+                    traceback_enabled=args.traceback,
+                    sanitize_output=args.sanitize_output,
+                )
             if run_reservations:
                 await _run_reservation_flow(
                     provider,

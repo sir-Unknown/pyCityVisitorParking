@@ -1,0 +1,8 @@
+{
+  "id": "amsterdam",
+  "name": "Amsterdam (EGIS Parking Services)",
+  "capabilities": {
+    "favorite_update_fields": [],
+    "reservation_update_fields": ["end_time"]
+  }
+}

@@ -80,6 +80,7 @@ _ANSI_STYLES = {
     "magenta": "\x1b[35m",
 }
 _COLOR_ENABLED = False
+_ERROR_REPORTED = False
 
 
 def _require_value(name: str, value: str | None) -> str:
@@ -126,10 +127,38 @@ def _normalize_debug_value(value: Any) -> Any:
 
 
 def _print_exception(label: str, exc: Exception, *, trace: bool) -> None:
+    global _ERROR_REPORTED
     styled_label = _style(label, "red", bold=True)
     print(f"{styled_label}: {exc.__class__.__name__}: {exc}", file=sys.stderr)
+    _ERROR_REPORTED = True
     if trace:
         traceback.print_exc()
+
+
+def _log_step_start(label: str) -> float:
+    print(_style(f"[STEP] {label}...", "blue", bold=True), file=sys.stderr)
+    return time.monotonic()
+
+
+def _log_step_done(label: str, started_at: float) -> None:
+    elapsed_ms = int((time.monotonic() - started_at) * 1000)
+    print(_style(f"[STEP] {label} ok ({elapsed_ms}ms)", "green", bold=True), file=sys.stderr)
+
+
+def _log_step_abort(label: str, reason: str | None = None) -> None:
+    suffix = f" ({reason})" if reason else ""
+    print(_style(f"[STEP] {label} aborted{suffix}", "yellow", bold=True), file=sys.stderr)
+
+
+async def _run_step(label: str, coro: Any, *, trace: bool) -> Any:
+    started_at = _log_step_start(label)
+    try:
+        result = await coro
+    except Exception as exc:
+        _print_exception(f"{label} failed", exc, trace=trace)
+        raise
+    _log_step_done(label, started_at)
+    return result
 
 
 def _normalize_plate_for_compare(value: str) -> str:
@@ -699,6 +728,7 @@ async def _run_reservation_flow(
     debug_enabled: bool,
     sanitize_output: bool,
 ) -> None:
+    flow_started_at = _log_step_start("Reservation flow")
     try:
         start_dt, end_dt = _build_reservation_window(
             start_time,
@@ -707,6 +737,7 @@ async def _run_reservation_flow(
         )
     except ValidationError as exc:
         print(f"Reservation time error: {exc}", file=sys.stderr)
+        _log_step_abort("Reservation flow", "invalid time window")
         return
 
     if debug_enabled:
@@ -724,11 +755,15 @@ async def _run_reservation_flow(
         print(f"Reservation plate: {plate_value}", file=sys.stderr)
 
     try:
-        created = await provider.start_reservation(
-            license_plate,
-            start_dt,
-            end_dt,
-            name=reservation_name,
+        created = await _run_step(
+            "Reservation create",
+            provider.start_reservation(
+                license_plate,
+                start_dt,
+                end_dt,
+                name=reservation_name,
+            ),
+            trace=traceback_enabled,
         )
         print(
             _format_action(
@@ -737,22 +772,30 @@ async def _run_reservation_flow(
                 color="green",
             )
         )
-    except Exception as exc:
-        _print_exception("Reservation create failed", exc, trace=traceback_enabled)
+    except Exception:
+        _log_step_abort("Reservation flow", "create failed")
         return
     if post_create_wait > 0:
         await asyncio.sleep(post_create_wait)
     try:
-        active = await provider.list_reservations()
+        active = await _run_step(
+            "Reservation list (post-create)",
+            provider.list_reservations(),
+            trace=traceback_enabled,
+        )
         print(_format_action("Reservations after create", str(len(active)), color="cyan"))
         for reservation in active:
             print(f"- {_format_reservation(reservation, sanitize=sanitize_output)}")
-    except Exception as exc:
-        _print_exception("Reservation list failed", exc, trace=traceback_enabled)
+    except Exception:
+        pass
 
     updated_end = end_dt + timedelta(minutes=extend_minutes)
     try:
-        updated = await provider.update_reservation(created.id, end_time=updated_end)
+        updated = await _run_step(
+            "Reservation update",
+            provider.update_reservation(created.id, end_time=updated_end),
+            trace=traceback_enabled,
+        )
         print(
             _format_action(
                 "Reservation updated",
@@ -764,10 +807,14 @@ async def _run_reservation_flow(
         end_dt = updated_end
     except ProviderError as exc:
         print(_format_action("Reservation update skipped", str(exc), color="yellow"))
-    except Exception as exc:
-        _print_exception("Reservation update failed", exc, trace=traceback_enabled)
+    except Exception:
+        pass
     try:
-        ended = await provider.end_reservation(created.id, end_dt)
+        ended = await _run_step(
+            "Reservation end",
+            provider.end_reservation(created.id, end_dt),
+            trace=traceback_enabled,
+        )
         print(
             _format_action(
                 "Reservation ended",
@@ -775,8 +822,9 @@ async def _run_reservation_flow(
                 color="green",
             )
         )
-    except Exception as exc:
-        _print_exception("Reservation end failed", exc, trace=traceback_enabled)
+    except Exception:
+        pass
+    _log_step_done("Reservation flow", flow_started_at)
 
 
 async def _run_favorite_flow(
@@ -789,15 +837,16 @@ async def _run_favorite_flow(
     debug_enabled: bool,
     sanitize_output: bool,
 ) -> None:
+    flow_started_at = _log_step_start("Favorite flow")
+
     async def _print_favorites(label: str) -> None:
         try:
-            favorites = await provider.list_favorites()
-        except Exception as exc:
-            _print_exception(
-                f"Favorite list failed ({label})",
-                exc,
+            favorites = await _run_step(
+                f"Favorite list ({label})",
+                provider.list_favorites(),
                 trace=traceback_enabled,
             )
+        except Exception:
             return
         print(_format_action(f"Favorites {label}", str(len(favorites)), color="cyan"))
         for favorite in favorites:
@@ -808,7 +857,11 @@ async def _run_favorite_flow(
         plate_value = _mask_license_plate(license_plate) if sanitize_output else license_plate
         print(f"Favorite plate: {plate_value}", file=sys.stderr)
     try:
-        created = await provider.add_favorite(license_plate, name=name_for_create)
+        created = await _run_step(
+            "Favorite create",
+            provider.add_favorite(license_plate, name=name_for_create),
+            trace=traceback_enabled,
+        )
         print(
             _format_action(
                 "Favorite created",
@@ -816,8 +869,8 @@ async def _run_favorite_flow(
                 color="green",
             )
         )
-    except Exception as exc:
-        _print_exception("Favorite create failed", exc, trace=traceback_enabled)
+    except Exception:
+        _log_step_abort("Favorite flow", "create failed")
         return
     if post_create_wait > 0:
         await asyncio.sleep(post_create_wait)
@@ -826,10 +879,14 @@ async def _run_favorite_flow(
     updated_name = f"{created.name or favorite_name or 'Favorite'} (updated)"
     if getattr(provider, "favorite_update_possible", False):
         try:
-            updated = await provider.update_favorite(
-                created.id,
-                license_plate=created.license_plate,
-                name=updated_name,
+            updated = await _run_step(
+                "Favorite update",
+                provider.update_favorite(
+                    created.id,
+                    license_plate=created.license_plate,
+                    name=updated_name,
+                ),
+                trace=traceback_enabled,
             )
             print(
                 _format_action(
@@ -839,8 +896,8 @@ async def _run_favorite_flow(
                 )
             )
             created = updated
-        except Exception as exc:
-            _print_exception("Favorite update failed", exc, trace=traceback_enabled)
+        except Exception:
+            pass
     else:
         print(
             _format_action("Favorite update skipped", "updates are not supported", color="yellow")
@@ -848,11 +905,16 @@ async def _run_favorite_flow(
     await _print_favorites("after update")
 
     try:
-        await provider.remove_favorite(created.id)
+        await _run_step(
+            "Favorite remove",
+            provider.remove_favorite(created.id),
+            trace=traceback_enabled,
+        )
         print(_format_action("Favorite removed", created.id, color="green"))
-    except Exception as exc:
-        _print_exception("Favorite remove failed", exc, trace=traceback_enabled)
+    except Exception:
+        pass
     await _print_favorites("after remove")
+    _log_step_done("Favorite flow", flow_started_at)
 
 
 async def main() -> int:
@@ -882,6 +944,14 @@ async def main() -> int:
 
     provider_id = _require_value("provider_id", provider_id)
     base_url = _require_value("base_url", base_url)
+    print(
+        _style(
+            f"[RUN] provider={provider_id} base_url={base_url} api_uri={api_uri or '-'}",
+            "magenta",
+            bold=True,
+        ),
+        file=sys.stderr,
+    )
     if username and password:
         credentials = {"username": username, "password": password}
     else:
@@ -928,11 +998,27 @@ async def main() -> int:
             base_url=base_url,
             api_uri=api_uri,
         ) as client:
-            provider = await client.get_provider(provider_id)
-            await provider.login(credentials=credentials)
-            permit = await provider.get_permit()
-            reservations = await provider.list_reservations()
-            favorites = await provider.list_favorites()
+            provider = await _run_step(
+                "Provider load",
+                client.get_provider(provider_id),
+                trace=args.traceback,
+            )
+            await _run_step(
+                "Login",
+                provider.login(credentials=credentials),
+                trace=args.traceback,
+            )
+            permit = await _run_step("Permit fetch", provider.get_permit(), trace=args.traceback)
+            reservations = await _run_step(
+                "Reservation list",
+                provider.list_reservations(),
+                trace=args.traceback,
+            )
+            favorites = await _run_step(
+                "Favorite list",
+                provider.list_favorites(),
+                trace=args.traceback,
+            )
             if run_reservations:
                 await _run_reservation_flow(
                     provider,
@@ -958,7 +1044,8 @@ async def main() -> int:
                     sanitize_output=args.sanitize_output,
                 )
     except Exception as exc:
-        _print_exception("Error", exc, trace=args.traceback)
+        if not _ERROR_REPORTED:
+            _print_exception("Error", exc, trace=args.traceback)
         return 1
     finally:
         if debug_session:

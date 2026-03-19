@@ -3,8 +3,8 @@
     "ms-python.python",
     "ms-python.vscode-pylance",
     "charliermarsh.ruff",
-    "editorconfig.editorconfig",
+    "ms-python.debugpy",
     "github.vscode-github-actions",
-    "openai.chatgpt"
+    "anthropic.claude-code"
   ]
 }

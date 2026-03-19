@@ -1,20 +1,31 @@
 {
   "name": "pyCityVisitorParking",
-  "image": "mcr.microsoft.com/devcontainers/python:1-3.13",
+  "image": "mcr.microsoft.com/devcontainers/base:debian",
   "features": {
-    "ghcr.io/devcontainers/features/git:1": {},
-    "ghcr.io/devcontainers/features/github-cli:1": {}
+    "ghcr.io/devcontainers/features/github-cli:1": {},
+    "ghcr.io/astral-sh/uv:latest": {}
   },
-  "postCreateCommand": "python -m pip install --upgrade pip==25.3 && pip install -e '.[dev]' && pre-commit install",
+  "postCreateCommand": "bash .devcontainer/setup.sh",
   "customizations": {
     "vscode": {
+      "settings": {
+        "python.defaultInterpreterPath": "${containerWorkspaceFolder}/.venv/bin/python",
+        "terminal.integrated.env.linux": {
+          "VIRTUAL_ENV": "${containerWorkspaceFolder}/.venv",
+          "PATH": "${containerWorkspaceFolder}/.venv/bin:${env:PATH}"
+        },
+        "editor.formatOnSave": true,
+        "[python]": {
+          "editor.defaultFormatter": "charliermarsh.ruff"
+        }
+      },
       "extensions": [
         "ms-python.python",
         "ms-python.vscode-pylance",
         "charliermarsh.ruff",
-        "editorconfig.editorconfig",
+        "ms-python.debugpy",
         "github.vscode-github-actions",
-        "openai.chatgpt"
+        "anthropic.claude-code"
       ]
     }
   },

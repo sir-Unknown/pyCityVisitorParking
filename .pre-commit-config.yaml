@@ -1,24 +1,40 @@
 repos:
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.14.10
+    rev: v0.15.1
     hooks:
-      - id: ruff
-        args: [--fix]
+      - id: ruff-check
+        args:
+          - --fix
       - id: ruff-format
+  - repo: https://github.com/codespell-project/codespell
+    rev: v2.4.1
+    hooks:
+      - id: codespell
+        args:
+          - --skip="./.*,*.csv,*.json"
+          - --quiet-level=2
+        exclude_types: [csv, json, html]
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: check-json
+        exclude: (.vscode|.devcontainer)
+      - id: no-commit-to-branch
+        args:
+          - --branch=main
+  - repo: https://github.com/adrienverge/yamllint.git
+    rev: v1.38.0
+    hooks:
+      - id: yamllint
   - repo: local
     hooks:
-      - id: hatch-lint-check
-        name: hatch run lint:check
-        entry: hatch run lint:check
+      - id: pyright
+        name: pyright
+        entry: pyright
         language: system
         pass_filenames: false
-      - id: hatch-lint-format-check
-        name: hatch run lint:format-check
-        entry: hatch run lint:format-check
-        language: system
-        pass_filenames: false
-      - id: hatch-test-run
-        name: hatch run test:run
+      - id: pytest
+        name: pytest
         entry: hatch run test:run
         language: system
         pass_filenames: false

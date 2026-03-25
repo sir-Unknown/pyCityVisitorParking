@@ -1,0 +1,8 @@
+{
+  "id": "2park",
+  "name": "2park",
+  "capabilities": {
+    "favorite_update_fields": [],
+    "reservation_update_fields": []
+  }
+}

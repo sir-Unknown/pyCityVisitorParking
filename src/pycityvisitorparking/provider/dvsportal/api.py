@@ -478,10 +478,10 @@ class Provider(BaseProvider):
         return permit
 
     def _select_permit_media(self, permit: dict[str, Any]) -> dict[str, Any]:
-        medias = permit.get("PermitMedias")
-        if not isinstance(medias, list) or not medias:
+        media_items = permit.get("PermitMedias")
+        if not isinstance(media_items, list) or not media_items:
             raise ProviderError("Provider response did not include permit media.")
-        media = medias[0]
+        media = media_items[0]
         if not isinstance(media, dict):
             raise ProviderError("Provider response included invalid permit media.")
         return media

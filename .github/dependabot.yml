@@ -7,6 +7,8 @@ updates:
       day: "monday"
       time: "06:00"
       timezone: "Europe/Amsterdam"
+    cooldown:
+      default-days: 7
     open-pull-requests-limit: 5
     labels:
       - "dependencies"
@@ -15,6 +17,17 @@ updates:
       github-actions:
         patterns:
           - "*"
+  - package-ecosystem: "pre-commit"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "Europe/Amsterdam"
+    cooldown:
+      default-days: 7
+    labels:
+      - "dependencies"
   - package-ecosystem: "pip"
     directory: "/"
     schedule:
@@ -22,6 +35,11 @@ updates:
       day: "monday"
       time: "06:00"
       timezone: "Europe/Amsterdam"
+    cooldown:
+      default-days: 7
+      semver-major-days: 30
+      semver-minor-days: 7
+      semver-patch-days: 3
     open-pull-requests-limit: 5
     labels:
       - "dependencies"

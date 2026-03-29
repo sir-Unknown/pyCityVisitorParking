@@ -570,7 +570,7 @@ class Provider(BaseProvider):
     async def _error_message_from_response(self, response: aiohttp.ClientResponse) -> str | None:
         try:
             data = await response.json()
-        except (aiohttp.ContentTypeError, ValueError):
+        except aiohttp.ContentTypeError, ValueError:
             return None
         if not isinstance(data, dict):
             return None

@@ -1,73 +1,68 @@
 name: CI
 
 on:
+  workflow_dispatch:
   pull_request:
   push:
     branches: ["main"]
     tags:
       - "v*"
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
 jobs:
   test:
+    name: Test, lint, type-check, and build
     runs-on: ubuntu-latest
+    timeout-minutes: 15
 
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-
-      - name: Set up Python
-        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
         with:
-          python-version-file: ".python-version"
-          cache: "pip"
+          persist-credentials: false
 
-      - name: Install Hatch
-        run: |
-          python -m pip install --upgrade pip==25.3
-          python -m pip install hatch==1.16.2
+      - name: Set up uv
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
+        with:
+          enable-cache: false
 
       - name: Lint (ruff)
         run: |
-          hatch run lint:check
-          hatch run lint:format-check
+          uv run --group lint ruff check .
+          uv run --group lint ruff format --check .
 
       - name: Type check (pyright)
-        run: |
-          hatch run typecheck:run
+        run: uv run --group typecheck pyright
 
       - name: Tests
-        run: |
-          hatch run test:run
+        run: uv run --group test pytest
 
       - name: Build (sdist + wheel)
-        run: |
-          hatch build
+        run: uv build
 
       - name: Verify dist metadata
-        run: |
-          python -m pip install twine==6.2.0
-          python -m twine check dist/*
+        run: uvx twine check dist/*
 
   schema:
+    name: Validate provider manifests
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-
-      - name: Set up Python
-        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
         with:
-          python-version-file: ".python-version"
-          cache: "pip"
+          persist-credentials: false
 
-      - name: Install Hatch
-        run: |
-          python -m pip install --upgrade pip==25.3
-          python -m pip install hatch==1.16.2
+      - name: Set up uv
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
+        with:
+          enable-cache: false
 
       - name: Validate provider manifests
-        run: |
-          hatch run schema:validate
+        run: uv run --group schema python -m pytest -o addopts=-q tests/test_manifest_schema.py

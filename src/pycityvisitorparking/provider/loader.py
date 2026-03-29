@@ -18,8 +18,6 @@ from ..models import ProviderInfo
 MANIFEST_FILENAME = "manifest.json"
 SCHEMA_FILENAME = "manifest.schema.json"
 _DEFAULT_CACHE_TTL_SECONDS = 300.0
-_MANIFEST_CACHE: tuple[ProviderManifest, ...] | None = None
-_MANIFEST_CACHE_EXPIRES_AT: float | None = None
 _FAVORITE_UPDATE_FIELDS = {"license_plate", "name"}
 _RESERVATION_UPDATE_FIELDS = {"start_time", "end_time", "name"}
 _LOGGER = logging.getLogger(__name__)
@@ -31,6 +29,15 @@ class ProviderManifest:
     name: str
     favorite_update_fields: tuple[str, ...]
     reservation_update_fields: tuple[str, ...]
+
+
+@dataclass(slots=True)
+class _ManifestCacheState:
+    manifests: tuple[ProviderManifest, ...] | None = None
+    expires_at: float | None = None
+
+
+_MANIFEST_CACHE_STATE = _ManifestCacheState()
 
 
 def _normalize_update_fields(
@@ -126,21 +133,19 @@ def load_manifests(
     cache_ttl: float | None = _DEFAULT_CACHE_TTL_SECONDS,
 ) -> list[ProviderManifest]:
     """Load provider manifests using a cache with an optional TTL."""
-    global _MANIFEST_CACHE
-    global _MANIFEST_CACHE_EXPIRES_AT
     if cache_ttl is not None and cache_ttl < 0:
         raise ProviderError("cache_ttl must be non-negative.")
-    if not refresh and _MANIFEST_CACHE is not None:
+    if not refresh and _MANIFEST_CACHE_STATE.manifests is not None:
         if cache_ttl is None:
             _LOGGER.debug("Manifest cache hit (no ttl)")
-            return list(_MANIFEST_CACHE)
+            return list(_MANIFEST_CACHE_STATE.manifests)
         now = time.monotonic()
-        if _MANIFEST_CACHE_EXPIRES_AT is not None and now < _MANIFEST_CACHE_EXPIRES_AT:
+        if _MANIFEST_CACHE_STATE.expires_at is not None and now < _MANIFEST_CACHE_STATE.expires_at:
             _LOGGER.debug("Manifest cache hit")
-            return list(_MANIFEST_CACHE)
+            return list(_MANIFEST_CACHE_STATE.manifests)
     if cache_ttl is None:
-        _MANIFEST_CACHE = None
-        _MANIFEST_CACHE_EXPIRES_AT = None
+        _MANIFEST_CACHE_STATE.manifests = None
+        _MANIFEST_CACHE_STATE.expires_at = None
     manifests: list[ProviderManifest] = []
     try:
         for folder_name, manifest_path in iter_manifest_files():
@@ -150,17 +155,17 @@ def load_manifests(
                 raise ProviderError("Provider manifest is not valid JSON.") from exc
             manifests.append(_build_manifest(data, folder_name))
     except (ModuleNotFoundError, PackageNotFoundError) as exc:
-        _MANIFEST_CACHE = None
-        _MANIFEST_CACHE_EXPIRES_AT = None
+        _MANIFEST_CACHE_STATE.manifests = None
+        _MANIFEST_CACHE_STATE.expires_at = None
         raise ProviderError("Provider package was not found.") from exc
     if cache_ttl is None:
         _LOGGER.debug("Loaded %s provider manifests (no cache)", len(manifests))
         return manifests
     now = time.monotonic()
-    _MANIFEST_CACHE = tuple(manifests)
-    _MANIFEST_CACHE_EXPIRES_AT = now + cache_ttl
+    _MANIFEST_CACHE_STATE.manifests = tuple(manifests)
+    _MANIFEST_CACHE_STATE.expires_at = now + cache_ttl
     _LOGGER.debug("Loaded %s provider manifests", len(manifests))
-    return list(_MANIFEST_CACHE)
+    return list(_MANIFEST_CACHE_STATE.manifests)
 
 
 async def async_load_manifests(
@@ -174,10 +179,8 @@ async def async_load_manifests(
 
 def clear_manifest_cache() -> None:
     """Clear cached provider manifests (used in tests)."""
-    global _MANIFEST_CACHE
-    global _MANIFEST_CACHE_EXPIRES_AT
-    _MANIFEST_CACHE = None
-    _MANIFEST_CACHE_EXPIRES_AT = None
+    _MANIFEST_CACHE_STATE.manifests = None
+    _MANIFEST_CACHE_STATE.expires_at = None
 
 
 def list_providers(

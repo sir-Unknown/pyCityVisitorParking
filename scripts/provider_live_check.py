@@ -787,7 +787,7 @@ async def _run_reservation_flow(
         for reservation in active:
             print(f"- {_format_reservation(reservation, sanitize=sanitize_output)}")
     except Exception:
-        pass
+        _log_step_abort("Reservation list (post-create)", "continuing without list output")
 
     updated_end = end_dt + timedelta(minutes=extend_minutes)
     try:
@@ -808,7 +808,7 @@ async def _run_reservation_flow(
     except ProviderError as exc:
         print(_format_action("Reservation update skipped", str(exc), color="yellow"))
     except Exception:
-        pass
+        _log_step_abort("Reservation update", "continuing to end reservation")
     try:
         ended = await _run_step(
             "Reservation end",
@@ -823,7 +823,7 @@ async def _run_reservation_flow(
             )
         )
     except Exception:
-        pass
+        _log_step_abort("Reservation end", "cleanup may be required")
     _log_step_done("Reservation flow", flow_started_at)
 
 
@@ -897,7 +897,7 @@ async def _run_favorite_flow(
             )
             created = updated
         except Exception:
-            pass
+            _log_step_abort("Favorite update", "continuing to removal")
     else:
         print(
             _format_action("Favorite update skipped", "updates are not supported", color="yellow")
@@ -912,7 +912,7 @@ async def _run_favorite_flow(
         )
         print(_format_action("Favorite removed", created.id, color="green"))
     except Exception:
-        pass
+        _log_step_abort("Favorite remove", "cleanup may be required")
     await _print_favorites("after remove")
     _log_step_done("Favorite flow", flow_started_at)
 

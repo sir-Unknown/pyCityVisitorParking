@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## 0.5.15
+
+- Add 2park provider: `get_permit`, `list_reservations`, `start_reservation`, `update_reservation` (end_time only), `end_reservation`, `list_favorites`, `add_favorite`, and `remove_favorite`. Thanks [@syphernl](https://github.com/syphernl) for the initial implementation ([#5](https://github.com/sir-Unknown/pyCityVisitorParking/pull/5)).
+- DVS Portal / The Hague: align `_request_json`, `_request_text`, and `_request` signatures with `BaseProvider` (`**kwargs`).
+
 ## 0.5.14
 
 - Publish releases directly on tag pushes to ensure PyPI publishing runs.

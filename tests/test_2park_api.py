@@ -773,3 +773,12 @@ def test_parse_balance_amount_float_truncates() -> None:
 def test_parse_balance_amount_invalid_returns_zero() -> None:
     balance = {"ble_parameters": [{"prr_label": "AMOUNT", "prr_value": "n/a"}]}
     assert _parse_balance_amount(balance) == 0
+
+
+def test_extract_nickname_returns_value() -> None:
+    member = {"mbr_parameters": [{"prr_label": "NICKNAME", "prr_value": "Family car"}]}
+    assert _extract_nickname(member) == "Family car"
+
+
+def test_extract_nickname_returns_none_when_absent() -> None:
+    assert _extract_nickname({"mbr_parameters": []}) is None

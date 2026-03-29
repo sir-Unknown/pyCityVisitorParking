@@ -545,6 +545,7 @@ class Provider(BaseProvider):
                     await self._reauthenticate()
                     continue
                 raise
+        raise ProviderError("Request failed.")
 
     async def _do_post_form(self, url: str, form_data: dict[str, Any]) -> Any:
         async def handle_response(

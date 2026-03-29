@@ -61,7 +61,8 @@ def validate_reservation_times(
     end_time: datetime,
     *,
     require_both: Literal[True],
-) -> tuple[datetime, datetime]: ...
+) -> tuple[datetime, datetime]:
+    pass
 
 
 @overload
@@ -70,7 +71,8 @@ def validate_reservation_times(
     end_time: datetime | None,
     *,
     require_both: Literal[False],
-) -> tuple[datetime | None, datetime | None]: ...
+) -> tuple[datetime | None, datetime | None]:
+    pass
 
 
 def validate_reservation_times(

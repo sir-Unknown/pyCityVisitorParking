@@ -1,13 +1,12 @@
 import pytest
 
 import pycityvisitorparking.client as client_module
-from pycityvisitorparking.client import Client
 from pycityvisitorparking.exceptions import ProviderError
 
 
 @pytest.mark.asyncio
 async def test_list_providers_includes_manifest() -> None:
-    async with Client() as client:
+    async with client_module.Client() as client:
         providers = await client.list_providers()
     provider_ids = {provider.id for provider in providers}
     assert "dvsportal" in provider_ids
@@ -17,7 +16,7 @@ async def test_list_providers_includes_manifest() -> None:
 
 @pytest.mark.asyncio
 async def test_get_provider_missing() -> None:
-    async with Client() as client:
+    async with client_module.Client() as client:
         with pytest.raises(ProviderError):
             await client.get_provider("missing")
 
@@ -32,7 +31,7 @@ async def test_list_providers_uses_to_thread(monkeypatch: pytest.MonkeyPatch) ->
 
     monkeypatch.setattr(client_module.asyncio, "to_thread", fake_to_thread)
 
-    async with Client() as client:
+    async with client_module.Client() as client:
         await client.list_providers()
 
     assert calls["count"] == 1
@@ -48,7 +47,7 @@ async def test_get_provider_uses_to_thread(monkeypatch: pytest.MonkeyPatch) -> N
 
     monkeypatch.setattr(client_module.asyncio, "to_thread", fake_to_thread)
 
-    async with Client(base_url="https://example") as client:
+    async with client_module.Client(base_url="https://example") as client:
         provider = await client.get_provider("dvsportal")
 
     assert calls["count"] == 1

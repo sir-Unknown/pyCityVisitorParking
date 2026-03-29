@@ -37,12 +37,12 @@ pass the `product_id` of the product you want to use.
 | `get_permit`           | Yes       |
 | `list_reservations`    | Yes       |
 | `start_reservation`    | Yes       |
-| `update_reservation`   | No        |
+| `update_reservation`   | Yes (`end_time` only) |
 | `end_reservation`      | Yes       |
-| `list_favorites`       | Yes (read-only) |
-| `add_favorite`         | No        |
+| `list_favorites`       | Yes       |
+| `add_favorite`         | Yes       |
 | `update_favorite`      | No        |
-| `remove_favorite`      | No        |
+| `remove_favorite`      | Yes       |
 
 `zone_validity` is not provided by this API and is always an empty list.
 

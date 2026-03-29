@@ -14,7 +14,7 @@ import aiohttp
 
 from ...exceptions import AuthError, ProviderError, ValidationError
 from ...models import Favorite, Permit, Reservation
-from ...util import format_utc_timestamp
+from ...util import format_utc_timestamp, parse_timestamp
 from ..base import BaseProvider
 from ..loader import ProviderManifest
 from .const import (
@@ -25,6 +25,8 @@ from .const import (
     CATEGORIES_ENDPOINT,
     DEFAULT_API_URI,
     DEFAULT_HEADERS,
+    EXTEND_ACTION_ENDPOINT,
+    HANDLE_FAVORITE_ENDPOINT,
     LOCALE,
     MEMBER_TYPE_LPN,
     PARAM_LOCATION,
@@ -32,6 +34,7 @@ from .const import (
     PARAM_NICKNAME,
     PARAM_TIMEEND,
     PARAM_TIMESTART,
+    PARAM_VALID_UNTIL,
     PRODUCT_DETAILS_ENDPOINT,
     START_ACTION_ENDPOINT,
     STOP_ACTION_ENDPOINT,
@@ -200,8 +203,48 @@ class Provider(BaseProvider):
         end_time: datetime | None = None,
         name: str | None = None,
     ) -> Reservation:
-        """Update a reservation."""
-        raise ProviderError("Reservation updates are not supported.")
+        """Update a reservation end time."""
+        _LOGGER.debug("Provider %s update_reservation started", self.provider_id)
+        if start_time is not None or name is not None:
+            raise ValidationError("Only end_time can be updated.")
+        if end_time is None:
+            raise ValidationError("end_time is required.")
+        reservation_id_value = self._require_id(reservation_id, "reservation_id")
+
+        existing = self._find_by_id(await self.list_reservations(), reservation_id_value)
+        if existing is None:
+            raise ValidationError("reservation_id was not found.")
+
+        try:
+            existing_start_dt = parse_timestamp(existing.start_time)
+        except ValidationError as exc:
+            raise ProviderError("Provider returned invalid reservation data.") from exc
+        end_dt = self._normalize_datetime(end_time)
+        self._validate_reservation_times(existing_start_dt, end_dt, require_both=True)
+
+        valid_until_str = self._format_provider_timestamp(end_dt)
+        data = await self._post_form(
+            EXTEND_ACTION_ENDPOINT,
+            {
+                "action_id": reservation_id_value,
+                "locale": LOCALE,
+                "product_id": self._product_id or "",
+                PARAM_VALID_UNTIL: valid_until_str,
+            },
+        )
+        major = data.get("status", {}).get("code", {}).get("major")
+        if major != "OK":
+            message = data.get("status", {}).get("message", "Unknown error")
+            raise ProviderError(f"Failed to update reservation: {message}")
+
+        _LOGGER.debug("Provider %s update_reservation completed", self.provider_id)
+        return Reservation(
+            id=existing.id,
+            name=existing.name,
+            license_plate=existing.license_plate,
+            start_time=existing.start_time,
+            end_time=format_utc_timestamp(end_dt),
+        )
 
     async def end_reservation(
         self,
@@ -255,7 +298,45 @@ class Provider(BaseProvider):
 
     async def add_favorite(self, license_plate: str, name: str | None = None) -> Favorite:
         """Add a favorite."""
-        raise ProviderError("Adding favorites is not supported.")
+        _LOGGER.debug("Provider %s add_favorite started", self.provider_id)
+        normalized_plate = self._normalize_license_plate(license_plate)
+        for existing in await self.list_favorites():
+            if existing.license_plate == normalized_plate:
+                _LOGGER.debug(
+                    "Provider %s add_favorite failed: duplicate license_plate",
+                    self.provider_id,
+                )
+                raise ValidationError("license_plate is already a favorite.")
+        name_value = name or normalized_plate
+        data = await self._post_form(
+            HANDLE_FAVORITE_ENDPOINT,
+            {
+                "data": _json.dumps(
+                    {
+                        "favorite": {
+                            "fav_parameters": [
+                                {"prr_label": PARAM_NICKNAME, "prr_value": name_value}
+                            ],
+                            "action": "add",
+                            "mbr_ident": normalized_plate,
+                        }
+                    }
+                ),
+                "locale": LOCALE,
+                "product_id": self._product_id or "",
+            },
+        )
+        major = data.get("status", {}).get("code", {}).get("major")
+        if major != "OK":
+            message = data.get("status", {}).get("message", "Unknown error")
+            raise ProviderError(f"Failed to add favorite: {message}")
+
+        favorites = await self.list_favorites()
+        favorite = next((f for f in favorites if f.license_plate == normalized_plate), None)
+        if favorite is None:
+            raise ProviderError("Favorite was not returned by the provider.")
+        _LOGGER.debug("Provider %s add_favorite completed", self.provider_id)
+        return favorite
 
     async def _update_favorite_native(
         self,
@@ -268,7 +349,36 @@ class Provider(BaseProvider):
 
     async def remove_favorite(self, favorite_id: str) -> None:
         """Remove a favorite."""
-        raise ProviderError("Removing favorites is not supported.")
+        _LOGGER.debug("Provider %s remove_favorite started", self.provider_id)
+        favorite_id_value = self._require_id(favorite_id, "favorite_id")
+
+        existing = self._find_by_id(await self.list_favorites(), favorite_id_value)
+        if existing is None:
+            raise ValidationError("favorite_id was not found.")
+
+        data = await self._post_form(
+            HANDLE_FAVORITE_ENDPOINT,
+            {
+                "data": _json.dumps(
+                    {
+                        "favorite": {
+                            "fav_parameters": [
+                                {"prr_label": PARAM_NICKNAME, "prr_value": existing.name}
+                            ],
+                            "action": "remove",
+                            "mbr_ident": existing.license_plate,
+                        }
+                    }
+                ),
+                "locale": LOCALE,
+                "product_id": self._product_id or "",
+            },
+        )
+        major = data.get("status", {}).get("code", {}).get("major")
+        if major != "OK":
+            message = data.get("status", {}).get("message", "Unknown error")
+            raise ProviderError(f"Failed to remove favorite: {message}")
+        _LOGGER.debug("Provider %s remove_favorite completed", self.provider_id)
 
     async def _detect_product(self, product_id: str | None) -> tuple[str, str | None]:
         """Fetch categories and return (product_id, location) for the selected product."""
@@ -390,9 +500,7 @@ class Provider(BaseProvider):
                 raise ProviderError("Provider returned invalid favorite data.") from exc
             member_id = self._coerce_id(member.get("mbr_id")) or plate
             nickname = _extract_nickname(member)
-            favorites.append(
-                Favorite(id=member_id, name=nickname or plate, license_plate=plate)
-            )
+            favorites.append(Favorite(id=member_id, name=nickname or plate, license_plate=plate))
         return favorites
 
     def _parse_provider_timestamp(self, value: str) -> str:
@@ -437,7 +545,6 @@ class Provider(BaseProvider):
                     await self._reauthenticate()
                     continue
                 raise
-        raise ProviderError("Request failed.")
 
     async def _do_post_form(self, url: str, form_data: dict[str, Any]) -> Any:
         async def handle_response(
@@ -448,9 +555,7 @@ class Provider(BaseProvider):
             if response.status in (401, 403):
                 raise AuthError("Authentication failed.")
             if not 200 <= response.status < 300:
-                raise ProviderError(
-                    f"Provider request failed with status {response.status}."
-                )
+                raise ProviderError(f"Provider request failed with status {response.status}.")
             try:
                 return await response.json(content_type=None)
             except (aiohttp.ContentTypeError, ValueError) as exc:
@@ -470,7 +575,7 @@ def _parse_balance_amount(balance: dict[str, Any]) -> int:
             raw = param.get("prr_value")
             try:
                 return int(float(raw))
-            except (TypeError, ValueError):
+            except TypeError, ValueError:
                 return 0
     return 0
 
@@ -482,7 +587,9 @@ def _extract_location(product: dict[str, Any]) -> str | None:
     e.g. ``BDABZRG_1317$...`` -> ``BDA1317``.
     """
     for group in product.get("pdt_parameter_groups", []):
-        for param in group.get("pgr_parameters", []):
+        if group.get("pgp_label") != "START":
+            continue
+        for param in group.get("pgp_parameters", []):
             if param.get("prr_label") == PARAM_LOCATION:
                 value = param.get("prr_value")
                 if value:

@@ -26,15 +26,16 @@ concurrency:
 #   contents: write
 #
 # https://docs.github.com/en/enterprise-cloud@latest/code-security/supply-chain-security/understanding-your-software-supply-chain/using-the-dependency-submission-api
-permissions:
-  contents: read
-  # Write permissions for pull-requests are required for using the `comment-summary-in-pr` option, comment out if you aren't using this option
-  pull-requests: write
+permissions: {}
 
 jobs:
   dependency-review:
+    name: Review dependency changes
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: write # Required because `comment-summary-in-pr: on-failure` posts a PR comment.
     steps:
       - name: 'Checkout repository'
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2

@@ -32,6 +32,8 @@ concurrency:
   group: codeql-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
+permissions: {}
+
 jobs:
   analyze:
     name: Analyze (${{ matrix.language }})
@@ -43,8 +45,8 @@ jobs:
     runs-on: ${{ (matrix.language == 'swift' && 'macos-latest') || 'ubuntu-latest' }}
     timeout-minutes: 45
     permissions:
-      security-events: write
-      packages: read
+      security-events: write # Required for CodeQL and SARIF uploads.
+      packages: read # Required for private-action and package metadata reads during analysis.
       contents: read
 
     strategy:

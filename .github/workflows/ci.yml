@@ -17,6 +17,7 @@ permissions:
 
 jobs:
   test:
+    name: Test, lint, type-check, and build
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
@@ -49,6 +50,7 @@ jobs:
         run: uvx twine check dist/*
 
   schema:
+    name: Validate provider manifests
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:

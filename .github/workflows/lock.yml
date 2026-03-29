@@ -16,8 +16,8 @@ jobs:
     name: Lock inactive threads
     runs-on: ubuntu-latest
     permissions:
-      issues: write
-      pull-requests: write
+      issues: write # Required to lock closed issues after the inactivity threshold.
+      pull-requests: write # Required to lock closed pull requests after the inactivity threshold.
     steps:
       - name: Lock closed issues and PRs
         uses: dessant/lock-threads@1bf7ec25051fe7c00bdd17e6a7cf3d7bfb7dc771 # v5.0.1

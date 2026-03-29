@@ -23,10 +23,13 @@ jobs:
     steps:
       - name: Resolve tag
         id: vars
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+          REF_NAME: ${{ github.ref_name }}
         run: |
-          tag="${{ inputs.tag }}"
+          tag="$INPUT_TAG"
           if [ -z "$tag" ]; then
-            tag="${{ github.ref_name }}"
+            tag="$REF_NAME"
           fi
           if [ -z "$tag" ]; then
             echo "Tag is required to publish."
@@ -41,21 +44,24 @@ jobs:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
+          persist-credentials: false
           ref: ${{ steps.vars.outputs.tag }}
 
-      - name: Set up Python
-        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+      - name: Set up uv
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
         with:
-          python-version-file: ".python-version"
-          cache: "pip"
+          enable-cache: false
 
       - name: Validate tag matches package version
+        env:
+          RELEASE_TAG: ${{ steps.vars.outputs.tag }}
         run: |
           python - <<'PY'
           from pathlib import Path
+          import os
           import re
           import sys
-          tag = "${{ steps.vars.outputs.tag }}"
+          tag = os.environ["RELEASE_TAG"]
           version_file = Path("src/pycityvisitorparking/_version.py").read_text(encoding="utf-8")
           match = re.search(r'__version__\s*=\s*"([^"]+)"', version_file)
           if not match:
@@ -68,15 +74,10 @@ jobs:
           print(f"Tag {tag} matches package version {version}.")
           PY
 
-      - name: Install build tooling
-        run: |
-          python -m pip install --upgrade pip==25.3
-          python -m pip install hatch==1.16.2 twine==6.2.0
-
       - name: Build
         run: |
-          hatch build
-          python -m twine check dist/*
+          uv build
+          uvx twine check dist/*
 
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@ec4db0b4ddc65acdf4bff5fa45ac92d78b56bdf0 # v1.9.0

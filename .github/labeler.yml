@@ -1,0 +1,26 @@
+documentation:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "**/*.md"
+          - "docs/**"
+          - "CHANGELOG.md"
+
+tests:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "tests/**"
+
+maintenance:
+  - changed-files:
+      - any-glob-to-any-file:
+          - ".github/**"
+          - "pyproject.toml"
+          - ".python-version"
+          - "hatch.toml"
+
+schema:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "src/**/schema*"
+          - "src/**/*schema*"
+          - "src/**/*.json"

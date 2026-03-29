@@ -1,0 +1,65 @@
+name: Bug report
+description: Report a problem with the pyCityVisitorParking library
+labels: ["bug"]
+assignees: ["sir-Unknown"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please fill in as much detail as possible to help us reproduce and fix the issue.
+
+  - type: input
+    id: library_version
+    attributes:
+      label: Library version
+      placeholder: "0.5.14"
+    validations:
+      required: true
+
+  - type: input
+    id: python_version
+    attributes:
+      label: Python version
+      placeholder: "3.14.0"
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: A clear description of what the bug is.
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Minimal code snippet that reproduces the issue.
+      render: python
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+
+  - type: input
+    id: provider
+    attributes:
+      label: Provider (if applicable)
+      description: Which municipality provider is involved?
+      placeholder: "amsterdam, rotterdam, ..."
+    validations:
+      required: false

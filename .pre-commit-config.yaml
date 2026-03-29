@@ -1,11 +1,20 @@
 repos:
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.15.1
+    rev: v0.15.8
     hooks:
       - id: ruff-check
         args:
+          - --cache-dir
+          - /tmp/ruff-cache
           - --fix
       - id: ruff-format
+        args:
+          - --cache-dir
+          - /tmp/ruff-cache
+  - repo: https://github.com/zizmorcore/zizmor-pre-commit
+    rev: v1.23.1
+    hooks:
+      - id: zizmor
   - repo: https://github.com/codespell-project/codespell
     rev: v2.4.1
     hooks:
@@ -30,11 +39,11 @@ repos:
     hooks:
       - id: pyright
         name: pyright
-        entry: pyright
+        entry: bash scripts/run-uv-tool.sh pyright
         language: system
         pass_filenames: false
       - id: pytest
         name: pytest
-        entry: hatch run test:run
+        entry: bash scripts/run-uv-tool.sh pytest
         language: system
         pass_filenames: false

@@ -690,17 +690,20 @@ class Provider(BaseProvider):
         *,
         json: Any | None = None,
         headers: dict[str, str] | None = None,
-        allow_reauth: bool,
+        allow_reauth: bool = False,
+        **kwargs: Any,
     ) -> Any:
         url = self._build_url(path)
         merged_headers = {**DEFAULT_HEADERS, **(headers or {})}
+        request_kwargs = dict(kwargs)
+        request_kwargs["json"] = json
+        request_kwargs["headers"] = merged_headers
+        request_kwargs["allow_reauth"] = allow_reauth
         return await self._request(
             method,
             url,
             expect_json=True,
-            json=json,
-            headers=merged_headers,
-            allow_reauth=allow_reauth,
+            **request_kwargs,
         )
 
     async def _request(
@@ -709,10 +712,15 @@ class Provider(BaseProvider):
         url: str,
         *,
         expect_json: bool,
-        json: Any,
-        headers: dict[str, str],
-        allow_reauth: bool,
+        json: Any = None,
+        headers: dict[str, str] | None = None,
+        allow_reauth: bool = False,
+        **kwargs: Any,
     ) -> Any:
+        request_headers = dict(headers or DEFAULT_HEADERS)
+        request_kwargs = dict(kwargs)
+        request_kwargs["json"] = json
+        request_kwargs["headers"] = request_headers
         attempts = 2 if allow_reauth else 1
         for attempt in range(attempts):
             try:
@@ -720,14 +728,17 @@ class Provider(BaseProvider):
                     method,
                     url,
                     expect_json=expect_json,
-                    json=json,
-                    headers=headers,
+                    **request_kwargs,
                 )
             except AuthError:
                 if allow_reauth and attempt == 0:
                     _LOGGER.warning("Provider %s reauth triggered", self.provider_id)
                     await self._reauthenticate()
-                    headers = {**DEFAULT_HEADERS, AUTH_HEADER: self._auth_header_value or ""}
+                    request_headers = {
+                        **DEFAULT_HEADERS,
+                        AUTH_HEADER: self._auth_header_value or "",
+                    }
+                    request_kwargs["headers"] = request_headers
                     continue
                 raise
         raise ProviderError("Request failed.")

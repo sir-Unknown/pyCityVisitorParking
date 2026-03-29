@@ -11,8 +11,8 @@ parking product and location from the account after login. All municipalities us
 Known municipalities (non-exhaustive):
 
 Amstelveen, Assen, Bergen op Zoom, Breda, Deventer, Dordrecht, Eindhoven, Emmen,
-Etten-Leur, Hardenberg, Harderwijk, Hilversum, Maastricht, Oosterhout, Oss,
-Roosendaal, Terneuzen, Tiel, Veenendaal, Vlaardingen
+Etten-Leur, Gorinchem, Hardenberg, Harderwijk, Maastricht, Oosterhout, Oss,
+Roosendaal, Sluis, Terneuzen, Tiel, Veenendaal, Vlaardingen
 
 Check [mijn.2park.nl](https://mijn.2park.nl) for the current list of supported municipalities.
 

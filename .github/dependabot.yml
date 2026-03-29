@@ -1,40 +1,35 @@
 version: 2
-updates:
-  - package-ecosystem: "github-actions"
-    directory: "/"
+multi-ecosystem-groups:
+  dependencies:
     schedule:
       interval: "weekly"
       day: "monday"
       time: "06:00"
       timezone: "Europe/Amsterdam"
+    labels:
+      - "dependencies"
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    patterns:
+      - "*"
     cooldown:
       default-days: 7
     open-pull-requests-limit: 5
     labels:
-      - "dependencies"
       - "github-actions"
-    groups:
-      github-actions:
-        patterns:
-          - "*"
+    multi-ecosystem-group: "dependencies"
   - package-ecosystem: "pre-commit"
     directory: "/"
-    schedule:
-      interval: "weekly"
-      day: "monday"
-      time: "06:00"
-      timezone: "Europe/Amsterdam"
+    patterns:
+      - "*"
     cooldown:
       default-days: 7
-    labels:
-      - "dependencies"
+    multi-ecosystem-group: "dependencies"
   - package-ecosystem: "pip"
     directory: "/"
-    schedule:
-      interval: "weekly"
-      day: "monday"
-      time: "06:00"
-      timezone: "Europe/Amsterdam"
+    patterns:
+      - "*"
     cooldown:
       default-days: 7
       semver-major-days: 30
@@ -42,9 +37,5 @@ updates:
       semver-patch-days: 3
     open-pull-requests-limit: 5
     labels:
-      - "dependencies"
       - "python"
-    groups:
-      python:
-        patterns:
-          - "*"
+    multi-ecosystem-group: "dependencies"

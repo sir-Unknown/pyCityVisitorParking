@@ -34,8 +34,8 @@ For exact `base_url` and `api_uri` values, see the provider READMEs.
   Vlissingen, Waadhoeke, Waalwijk, Weert, Zaanstad, Zevenaar, Zutphen, Zwolle
 - The Hague: The Hague
 - 2park: Amstelveen, Assen, Bergen op Zoom, Breda, Deventer, Dordrecht, Eindhoven,
-  Emmen, Etten-Leur, Hardenberg, Harderwijk, Hilversum, Maastricht, Oosterhout, Oss,
-  Roosendaal, Terneuzen, Tiel, Veenendaal, Vlaardingen
+  Emmen, Etten-Leur, Gorinchem, Hardenberg, Harderwijk, Maastricht, Oosterhout, Oss,
+  Roosendaal, Sluis, Terneuzen, Tiel, Veenendaal, Vlaardingen
   (non-exhaustive — check [mijn.2park.nl](https://mijn.2park.nl) for the current list)
 
 ## Installation

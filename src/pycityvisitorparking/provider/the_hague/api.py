@@ -437,6 +437,7 @@ class Provider(BaseProvider):
         *,
         json: Any | None = None,
         allow_reauth: bool,
+        **_kwargs: Any,
     ) -> Any:
         if allow_reauth:
             await self._ensure_authenticated()
@@ -456,6 +457,7 @@ class Provider(BaseProvider):
         *,
         allow_reauth: bool,
         auth: aiohttp.BasicAuth | None = None,
+        **_kwargs: Any,
     ) -> str:
         if allow_reauth:
             await self._ensure_authenticated()

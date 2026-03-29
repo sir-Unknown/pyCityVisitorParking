@@ -7,17 +7,23 @@ on:
 
 permissions: {}
 
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: true
+
 jobs:
   sync:
     name: Sync Python version
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
-      contents: write
-      pull-requests: write
+      contents: write # Required to push the version-bump branch back to the repository.
+      pull-requests: write # Required to open or inspect the pull request for the bump branch.
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
 
       - name: Fetch HA core Python version
         id: ha_core
@@ -25,8 +31,7 @@ jobs:
           parse_minor() {
             awk -F. '{ if (NF >= 2) print $1 "." $2; else print $1 }' <<<"$1"
           }
-          VERSION=$(curl -sf \
-            -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+          VERSION=$(curl -fsSL \
             "https://raw.githubusercontent.com/home-assistant/core/dev/.python-version" \
             | tr -d '[:space:]')
           MINOR="$(parse_minor "$VERSION")"

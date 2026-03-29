@@ -16,8 +16,8 @@ jobs:
     name: Mark stale issues and PRs
     runs-on: ubuntu-latest
     permissions:
-      issues: write
-      pull-requests: write
+      issues: write # Required to mark issues stale and close them when they remain inactive.
+      pull-requests: write # Required to mark pull requests stale and close them when they remain inactive.
     steps:
       - name: Mark stale PRs (60 days)
         uses: actions/stale@b5d41d4e1d5dceea10e7104786b73624c18a190f # v10.2.0

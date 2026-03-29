@@ -11,14 +11,20 @@ on:
         required: false
         default: "v0.0.0"
 
-permissions:
-  id-token: write
-  contents: read
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref_name || inputs.tag }}
+  cancel-in-progress: true
 
 jobs:
   publish:
+    name: Build and publish
     runs-on: ubuntu-latest
     environment: pypi
+    permissions:
+      contents: read
+      id-token: write # Required for trusted publishing to PyPI via GitHub OIDC.
 
     steps:
       - name: Resolve tag

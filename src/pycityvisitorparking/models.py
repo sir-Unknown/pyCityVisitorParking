@@ -23,6 +23,7 @@ class Permit:
     id: str
     remaining_balance: int
     zone_validity: list[ZoneValidityBlock]
+    balance_unit: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

@@ -21,6 +21,7 @@ from .const import (
     API_TIMEZONE,
     AUTH_ENDPOINT,
     BALANCE_AMOUNT_LABEL,
+    BALANCE_CURRENCY_LABEL,
     BALANCE_ENDPOINT,
     CATEGORIES_ENDPOINT,
     DEFAULT_API_URI,
@@ -425,8 +426,9 @@ class Provider(BaseProvider):
     def _map_permit(self, data: Any) -> Permit:
         balance = data.get("data", {}).get("balance", {}) if isinstance(data, dict) else {}
         amount = _parse_balance_amount(balance)
+        balance_unit = _parse_balance_currency(balance)
         permit_id = self._coerce_id(self._product_id) or "permit"
-        return Permit(id=permit_id, remaining_balance=amount, zone_validity=[])
+        return Permit(id=permit_id, remaining_balance=amount, zone_validity=[], balance_unit=balance_unit)
 
     def _map_reservation_list(self, details: Any) -> list[Reservation]:
         if not isinstance(details, dict):
@@ -581,9 +583,17 @@ def _parse_balance_amount(balance: dict[str, Any]) -> int:
             raw = param.get("prr_value")
             try:
                 return int(float(raw))
-            except TypeError, ValueError:
+            except (TypeError, ValueError):
                 return 0
     return 0
+
+
+def _parse_balance_currency(balance: dict[str, Any]) -> str | None:
+    for param in balance.get("ble_parameters", []):
+        if param.get("prr_label") == BALANCE_CURRENCY_LABEL:
+            value = param.get("prr_value")
+            return str(value) if value else None
+    return None
 
 
 def _extract_location(product: dict[str, Any]) -> str | None:

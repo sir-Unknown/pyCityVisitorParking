@@ -392,8 +392,6 @@ class Provider(BaseProvider):
                 pdt_id = product.get("pdt_id", "")
                 if product_id is not None and pdt_id != product_id:
                     continue
-                if product_id is None and product.get("pdt_is_blocked"):
-                    continue
                 location = _extract_location(product)
                 return pdt_id, location
         raise ProviderError("No suitable 2park product found for this account.")
@@ -576,7 +574,7 @@ def _parse_balance_amount(balance: dict[str, Any]) -> int:
             raw = param.get("prr_value")
             try:
                 return int(float(raw))
-            except TypeError, ValueError:
+            except (TypeError, ValueError):
                 return 0
     return 0
 

@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.5.16
+
+- Fix empty PyPI wheel: remove conflicting `sources` and `include` from hatch wheel build config. The 0.5.15 wheel contained only dist-info metadata due to `sources = ["src"]` conflicting with `packages`-based discovery when building via `uv build` (PEP 517). PyPI does not allow re-uploading the same version, so this fix ships as 0.5.16 ([#20](https://github.com/sir-Unknown/pyCityVisitorParking/issues/20), [#27](https://github.com/sir-Unknown/pyCityVisitorParking/pull/27)).
+
 ## 0.5.15
 
 - Add 2park provider: `get_permit`, `list_reservations`, `start_reservation`, `update_reservation` (end_time only), `end_reservation`, `list_favorites`, `add_favorite`, and `remove_favorite`. Thanks [@syphernl](https://github.com/syphernl) for the initial implementation ([#5](https://github.com/sir-Unknown/pyCityVisitorParking/pull/5)).

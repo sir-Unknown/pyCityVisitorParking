@@ -5,6 +5,7 @@
 ## 0.5.16
 
 - Fix empty PyPI wheel: remove conflicting `sources` and `include` from hatch wheel build config. The 0.5.15 wheel contained only dist-info metadata due to `sources = ["src"]` conflicting with `packages`-based discovery when building via `uv build` (PEP 517). PyPI does not allow re-uploading the same version, so this fix ships as 0.5.16 ([#20](https://github.com/sir-Unknown/pyCityVisitorParking/issues/20), [#27](https://github.com/sir-Unknown/pyCityVisitorParking/pull/27)).
+- Pin `gh-action-pypi-publish` to a commit hash and update to v1.13.0 to avoid supply chain risk from floating action tags.
 
 ## 0.5.15
 

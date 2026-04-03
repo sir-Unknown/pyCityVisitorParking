@@ -387,15 +387,20 @@ class Provider(BaseProvider):
             {"locale": LOCALE},
             allow_reauth=False,
         )
+        candidates: list[dict[str, Any]] = []
         for category in data.get("data", {}).get("categories", []):
             for product in category.get("cty_products", []):
                 pdt_id = product.get("pdt_id", "")
                 if product_id is not None and pdt_id != product_id:
                     continue
-                if product_id is None and product.get("pdt_is_blocked"):
-                    continue
-                location = _extract_location(product)
-                return pdt_id, location
+                candidates.append(product)
+        # Prefer non-blocked products. pdt_is_blocked is a string "true"/"false".
+        # Delegated accounts always have pdt_is_blocked="true", so fall back to the
+        # first blocked product when no non-blocked candidate exists.
+        candidates.sort(key=lambda p: str(p.get("pdt_is_blocked", "true")).lower() != "false")
+        if candidates:
+            best = candidates[0]
+            return best.get("pdt_id", ""), _extract_location(best)
         raise ProviderError("No suitable 2park product found for this account.")
 
     async def _fetch_product_details(self) -> dict[str, Any]:

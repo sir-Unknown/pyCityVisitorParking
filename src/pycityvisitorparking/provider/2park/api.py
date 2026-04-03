@@ -597,7 +597,7 @@ def _extract_location(product: dict[str, Any]) -> str | None:
             continue
         for param in group.get("pgp_parameters", []):
             if param.get("prr_label") == PARAM_LOCATION:
-                value = param.get("prr_value")
+                value = param.get("prr_value") or param.get("prr_default_value")
                 if value:
                     return value
     match = _LOCATION_RE.match(product.get("pdt_id", ""))

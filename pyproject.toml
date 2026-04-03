@@ -50,21 +50,8 @@ Issues = "https://github.com/sir-Unknown/pyCityVisitorParking/issues"
 # ----------------------------
 # Hatch build configuration
 # ----------------------------
-[tool.hatch.build]
-sources = ["src"]
-
 [tool.hatch.build.targets.wheel]
 packages = ["src/pycityvisitorparking"]
-include = [
-  # Typing marker
-  "src/pycityvisitorparking/py.typed",
-  # Provider manifests + schema
-  "src/pycityvisitorparking/provider/manifest.schema.json",
-  "src/pycityvisitorparking/provider/**/manifest.json",
-  # Per-provider docs (kept inside the package)
-  "src/pycityvisitorparking/provider/**/README.md",
-  "src/pycityvisitorparking/provider/**/CHANGELOG.md",
-]
 
 [tool.hatch.build.targets.sdist]
 include = [

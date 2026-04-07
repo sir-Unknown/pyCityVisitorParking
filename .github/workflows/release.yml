@@ -58,27 +58,13 @@ jobs:
         with:
           enable-cache: false
 
-      - name: Validate tag matches package version
+      - name: Set version from tag
         env:
           RELEASE_TAG: ${{ steps.vars.outputs.tag }}
         run: |
-          python - <<'PY'
-          from pathlib import Path
-          import os
-          import re
-          import sys
-          tag = os.environ["RELEASE_TAG"]
-          version_file = Path("src/pycityvisitorparking/_version.py").read_text(encoding="utf-8")
-          match = re.search(r'__version__\s*=\s*"([^"]+)"', version_file)
-          if not match:
-            print("Could not read __version__ from _version.py")
-            sys.exit(1)
-          version = match.group(1)
-          if tag != f"v{version}":
-            print(f"Tag {tag} does not match package version {version}.")
-            sys.exit(1)
-          print(f"Tag {tag} matches package version {version}.")
-          PY
+          version="${RELEASE_TAG#v}"
+          echo "__version__ = \"$version\"" > src/pycityvisitorparking/_version.py
+          echo "Set package version to $version"
 
       - name: Build
         run: |

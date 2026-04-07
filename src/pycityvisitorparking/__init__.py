@@ -16,7 +16,16 @@ from .exceptions import (
     TimeoutError,
     ValidationError,
 )
-from .models import Favorite, Permit, ProviderInfo, Reservation, ZoneValidityBlock
+from .models import (
+    BALANCE_UNIT_EURO,
+    BALANCE_UNIT_MINUTE,
+    BALANCE_UNIT_TIMES,
+    Favorite,
+    Permit,
+    ProviderInfo,
+    Reservation,
+    ZoneValidityBlock,
+)
 
 try:
     __version__ = version("pycityvisitorparking")
@@ -24,6 +33,9 @@ except PackageNotFoundError:  # pragma: no cover - not installed
     __version__ = "0.0.0"
 
 __all__ = [
+    "BALANCE_UNIT_EURO",
+    "BALANCE_UNIT_MINUTE",
+    "BALANCE_UNIT_TIMES",
     "AuthError",
     "Client",
     "ConfigError",

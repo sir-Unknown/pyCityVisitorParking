@@ -14,7 +14,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 import aiohttp
 
 from ...exceptions import AuthError, ProviderError, ValidationError
-from ...models import Favorite, Permit, Reservation, ZoneValidityBlock
+from ...models import BALANCE_UNIT_MINUTE, Favorite, Permit, Reservation, ZoneValidityBlock
 from ...util import format_utc_timestamp, parse_timestamp
 from ..base import BaseProvider
 from ..loader import ProviderManifest
@@ -507,6 +507,7 @@ class Provider(BaseProvider):
             id=permit_id,
             remaining_balance=remaining_balance,
             zone_validity=zone_validity,
+            balance_unit=BALANCE_UNIT_MINUTE,
         )
 
     def _map_zone_validity(self, block_times: Any) -> list[ZoneValidityBlock]:

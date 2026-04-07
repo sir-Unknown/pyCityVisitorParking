@@ -428,7 +428,9 @@ class Provider(BaseProvider):
         amount = _parse_balance_amount(balance)
         balance_unit = _parse_balance_currency(balance)
         permit_id = self._coerce_id(self._product_id) or "permit"
-        return Permit(id=permit_id, remaining_balance=amount, zone_validity=[], balance_unit=balance_unit)
+        return Permit(
+            id=permit_id, remaining_balance=amount, zone_validity=[], balance_unit=balance_unit
+        )
 
     def _map_reservation_list(self, details: Any) -> list[Reservation]:
         if not isinstance(details, dict):
@@ -577,15 +579,15 @@ class Provider(BaseProvider):
         )
 
 
-def _parse_balance_amount(balance: dict[str, Any]) -> int:
+def _parse_balance_amount(balance: dict[str, Any]) -> float:
     for param in balance.get("ble_parameters", []):
         if param.get("prr_label") == BALANCE_AMOUNT_LABEL:
             raw = param.get("prr_value")
             try:
-                return int(float(raw))
-            except (TypeError, ValueError):
-                return 0
-    return 0
+                return float(raw)
+            except TypeError, ValueError:
+                return 0.0
+    return 0.0
 
 
 def _parse_balance_currency(balance: dict[str, Any]) -> str | None:

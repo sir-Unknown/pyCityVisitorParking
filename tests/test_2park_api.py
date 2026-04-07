@@ -108,7 +108,7 @@ _BALANCE = {
         "balance": {
             "ble_parameters": [
                 {"prr_label": "AMOUNT", "prr_value": "120"},
-                {"prr_label": "CURRENCY_CODE", "prr_value": "MIN"},
+                {"prr_label": "CURRENCY_CODE", "prr_value": "MINUTE"},
             ]
         }
     }
@@ -245,6 +245,7 @@ async def test_get_permit_returns_balance() -> None:
     assert permit.id == "BDABZRG_1317$abc"
     assert permit.remaining_balance == 120
     assert permit.zone_validity == []
+    assert permit.balance_unit == "MINUTE"
 
 
 # --- list_reservations ---
@@ -662,6 +663,43 @@ def test_map_permit_extracts_amount() -> None:
     assert permit.id == "BDABZRG_1317$abc"
     assert permit.remaining_balance == 240
     assert permit.zone_validity == []
+    assert permit.balance_unit is None
+
+
+def test_map_permit_times_balance() -> None:
+    p = _bare_provider()
+    p._product_id = "BDABZRG_1317$abc"
+    data = {
+        "data": {
+            "balance": {
+                "ble_parameters": [
+                    {"prr_label": "AMOUNT", "prr_value": "5"},
+                    {"prr_label": "CURRENCY_CODE", "prr_value": "TIMES"},
+                ]
+            }
+        }
+    }
+    permit = p._map_permit(data)
+    assert permit.remaining_balance == 5
+    assert permit.balance_unit == "TIMES"
+
+
+def test_map_permit_euro_balance_preserves_precision() -> None:
+    p = _bare_provider()
+    p._product_id = "BDABZRG_1317$abc"
+    data = {
+        "data": {
+            "balance": {
+                "ble_parameters": [
+                    {"prr_label": "AMOUNT", "prr_value": "12.50"},
+                    {"prr_label": "CURRENCY_CODE", "prr_value": "EURO"},
+                ]
+            }
+        }
+    }
+    permit = p._map_permit(data)
+    assert permit.remaining_balance == 12.5
+    assert permit.balance_unit == "EURO"
 
 
 def test_map_reservation_list_skips_non_lpn() -> None:
@@ -772,9 +810,9 @@ def test_extract_location_no_match() -> None:
     assert _extract_location({"pdt_id": "unknown", "pdt_parameter_groups": []}) is None
 
 
-def test_parse_balance_amount_float_truncates() -> None:
+def test_parse_balance_amount_float_preserves_precision() -> None:
     balance = {"ble_parameters": [{"prr_label": "AMOUNT", "prr_value": "120.9"}]}
-    assert _parse_balance_amount(balance) == 120
+    assert _parse_balance_amount(balance) == 120.9
 
 
 def test_parse_balance_amount_invalid_returns_zero() -> None:

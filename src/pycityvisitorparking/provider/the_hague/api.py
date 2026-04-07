@@ -11,7 +11,7 @@ from typing import Any
 import aiohttp
 
 from ...exceptions import AuthError, ProviderError, ValidationError
-from ...models import Favorite, Permit, Reservation, ZoneValidityBlock
+from ...models import BALANCE_UNIT_MINUTE, Favorite, Permit, Reservation, ZoneValidityBlock
 from ..base import BaseProvider
 from ..loader import ProviderManifest
 from .const import (
@@ -309,6 +309,7 @@ class Provider(BaseProvider):
             id=account_id,
             remaining_balance=remaining_balance,
             zone_validity=zone_validity,
+            balance_unit=BALANCE_UNIT_MINUTE,
         )
 
     def _map_zone_validity(

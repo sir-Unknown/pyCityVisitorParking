@@ -731,7 +731,14 @@ def test_extract_location_from_start_group() -> None:
         "pdt_parameter_groups": [
             {
                 "pgp_label": "START",
-                "pgp_parameters": [{"prr_label": "LOCATION", "prr_value": "BDA1317"}],
+                "pgp_parameters": [
+                    {
+                        "prr_label": "LOCATION",
+                        "prr_value": "BDA1317",
+                        "prr_default_value": "DEFAULT",
+                        "prr_options": "OPTIONAL|READONLY",
+                    }
+                ],
             }
         ],
     }

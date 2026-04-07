@@ -3,6 +3,7 @@
   "name": "The Hague",
   "capabilities": {
     "favorite_update_fields": ["license_plate", "name"],
-    "reservation_update_fields": ["end_time"]
+    "reservation_update_fields": ["end_time"],
+    "balance_units": ["MINUTE"]
   }
 }

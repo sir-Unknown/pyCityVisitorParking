@@ -30,6 +30,15 @@
             "enum": ["start_time", "end_time", "name"]
           },
           "uniqueItems": true
+        },
+        "balance_units": {
+          "type": "array",
+          "description": "Units in which remaining_balance is expressed. A single entry means the provider always uses that unit; multiple entries mean the unit is account-specific and returned per Permit at runtime. EURO balances may be stored in cents depending on the provider.",
+          "items": {
+            "type": "string",
+            "enum": ["TIMES", "MINUTE", "EURO"]
+          },
+          "uniqueItems": true
         }
       },
       "additionalProperties": false

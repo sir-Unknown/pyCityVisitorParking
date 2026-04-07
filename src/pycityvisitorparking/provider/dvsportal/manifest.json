@@ -3,6 +3,7 @@
   "name": "DVS Portal",
   "capabilities": {
     "favorite_update_fields": [],
-    "reservation_update_fields": ["end_time"]
+    "reservation_update_fields": ["end_time"],
+    "balance_units": ["MINUTE"]
   }
 }

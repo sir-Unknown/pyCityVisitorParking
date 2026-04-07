@@ -13,13 +13,14 @@ from importlib.metadata import PackageNotFoundError
 from importlib.resources.abc import Traversable
 
 from ..exceptions import ProviderError
-from ..models import ProviderInfo
+from ..models import BALANCE_UNIT_EURO, BALANCE_UNIT_MINUTE, BALANCE_UNIT_TIMES, ProviderInfo
 
 MANIFEST_FILENAME = "manifest.json"
 SCHEMA_FILENAME = "manifest.schema.json"
 _DEFAULT_CACHE_TTL_SECONDS = 300.0
 _FAVORITE_UPDATE_FIELDS = {"license_plate", "name"}
 _RESERVATION_UPDATE_FIELDS = {"start_time", "end_time", "name"}
+_BALANCE_UNITS = {BALANCE_UNIT_TIMES, BALANCE_UNIT_MINUTE, BALANCE_UNIT_EURO}
 _LOGGER = logging.getLogger(__name__)
 
 
@@ -29,6 +30,7 @@ class ProviderManifest:
     name: str
     favorite_update_fields: tuple[str, ...]
     reservation_update_fields: tuple[str, ...]
+    balance_units: tuple[str, ...] = ()
 
 
 @dataclass(slots=True)
@@ -40,7 +42,7 @@ class _ManifestCacheState:
 _MANIFEST_CACHE_STATE = _ManifestCacheState()
 
 
-def _normalize_update_fields(
+def _normalize_string_list(
     value: object,
     *,
     allowed: set[str],
@@ -99,21 +101,27 @@ def _build_manifest(data: dict, folder_name: str) -> ProviderManifest:
         raise ProviderError(
             "Provider manifest capabilities must include reservation_update_fields."
         )
-    favorite_update_fields = _normalize_update_fields(
+    favorite_update_fields = _normalize_string_list(
         capabilities["favorite_update_fields"],
         allowed=_FAVORITE_UPDATE_FIELDS,
         field_name="favorite_update_fields",
     )
-    reservation_update_fields = _normalize_update_fields(
+    reservation_update_fields = _normalize_string_list(
         capabilities["reservation_update_fields"],
         allowed=_RESERVATION_UPDATE_FIELDS,
         field_name="reservation_update_fields",
+    )
+    balance_units = _normalize_string_list(
+        capabilities.get("balance_units", []),
+        allowed=_BALANCE_UNITS,
+        field_name="balance_units",
     )
     return ProviderManifest(
         id=provider_id,
         name=name,
         favorite_update_fields=favorite_update_fields,
         reservation_update_fields=reservation_update_fields,
+        balance_units=balance_units,
     )
 
 
@@ -194,6 +202,7 @@ def list_providers(
             id=manifest.id,
             favorite_update_fields=manifest.favorite_update_fields,
             reservation_update_fields=manifest.reservation_update_fields,
+            balance_units=manifest.balance_units,
         )
         for manifest in load_manifests(refresh=refresh, cache_ttl=cache_ttl)
     ]

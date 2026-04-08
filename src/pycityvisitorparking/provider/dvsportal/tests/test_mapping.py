@@ -308,6 +308,89 @@ async def test_login_requires_username():
 
 
 @pytest.mark.asyncio
+async def test_login_payload_uses_minimal_pascal_case_fields(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async with aiohttp.ClientSession() as session:
+        provider = Provider(
+            session,
+            ProviderManifest(
+                id="dvsportal",
+                name="DVS Portal",
+                favorite_update_fields=(),
+                reservation_update_fields=("end_time",),
+            ),
+            base_url="https://example",
+        )
+        captured: dict[str, Any] = {}
+
+        async def _fake_fetch_login_config() -> tuple[int, int]:
+            return (1, 2)
+
+        async def _fake_request_json(method: str, path: str, **kwargs: Any) -> dict[str, Any]:
+            captured["method"] = method
+            captured["path"] = path
+            captured["json"] = kwargs.get("json")
+            return {"LoginStatus": 1, "Token": "token"}
+
+        monkeypatch.setattr(provider, "_fetch_login_config", _fake_fetch_login_config)
+        monkeypatch.setattr(provider, "_request_json", _fake_request_json)
+
+        await provider.login(credentials={"username": "user-123", "password": "secret"})
+
+    payload = captured["json"]
+    assert captured["method"] == "POST"
+    assert captured["path"] == LOGIN_ENDPOINT
+    assert payload["Identifier"] == "user-123"
+    assert payload["Password"] == "secret"
+    assert "LoginMethod" not in payload
+    assert "PermitMediaTypeID" not in payload
+
+
+@pytest.mark.asyncio
+async def test_login_retries_with_minimal_payload_on_http_400(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async with aiohttp.ClientSession() as session:
+        provider = Provider(
+            session,
+            ProviderManifest(
+                id="dvsportal",
+                name="DVS Portal",
+                favorite_update_fields=(),
+                reservation_update_fields=("end_time",),
+            ),
+            base_url="https://example",
+        )
+        calls: list[dict[str, Any]] = []
+
+        async def _fake_fetch_login_config() -> tuple[int, int]:
+            return (1, 2)
+
+        async def _fake_request_json(_method: str, _path: str, **kwargs: Any) -> dict[str, Any]:
+            payload = kwargs.get("json")
+            if not isinstance(payload, dict):
+                raise AssertionError("Expected JSON payload dictionary.")
+            calls.append(payload)
+            if len(calls) == 1:
+                raise ProviderError("Provider request failed with status 400.")
+            return {"LoginStatus": 1, "Token": "token"}
+
+        monkeypatch.setattr(provider, "_fetch_login_config", _fake_fetch_login_config)
+        monkeypatch.setattr(provider, "_request_json", _fake_request_json)
+
+        await provider.login(credentials={"username": "user-123", "password": "secret"})
+
+    assert calls[0] == {"Identifier": "user-123", "Password": "secret"}
+    assert calls[1] == {
+        "Identifier": "user-123",
+        "LoginMethod": 2,
+        "Password": "secret",
+        "PermitMediaTypeID": 1,
+    }
+
+
+@pytest.mark.asyncio
 async def test_default_api_uri_is_applied():
     async with aiohttp.ClientSession() as session:
         provider = Provider(

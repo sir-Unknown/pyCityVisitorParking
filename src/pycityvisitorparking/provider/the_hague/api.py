@@ -497,7 +497,17 @@ class Provider(BaseProvider):
                 )
             except AuthError:
                 if allow_reauth and attempt == 0:
-                    _LOGGER.warning("Provider %s reauth triggered", self.provider_id)
+                    context, target, package_version = self._request_log_details()
+                    _LOGGER.warning(
+                        (
+                            "Provider %s reauth triggered "
+                            "(context=%s, target=%s, package_version=%s)"
+                        ),
+                        self.provider_id,
+                        context,
+                        target,
+                        package_version,
+                    )
                     await self._reauthenticate()
                     headers = self._build_headers()
                     request_kwargs["headers"] = headers

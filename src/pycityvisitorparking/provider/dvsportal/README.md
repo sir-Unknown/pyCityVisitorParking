@@ -37,37 +37,38 @@ listed `base_url` and `api_uri` values:
 
 | Municipality          | base_url                                                                             | api_uri              |
 | --------------------- | ------------------------------------------------------------------------------------ | -------------------- |
-| Apeldoorn             | [https://parkeren.apeldoorn.nl](https://parkeren.apeldoorn.nl)                       | /DVSWebAPI/api |
+| Apeldoorn             | [https://parkeren.apeldoorn.nl](https://parkeren.apeldoorn.nl)                       | /DVSPortal/api |
 | Bloemendaal           | [https://parkeren.bloemendaal.nl](https://parkeren.bloemendaal.nl)                   | /DVSWebAPI/api |
 | Delft                 | [https://vergunningen.parkerendelft.com](https://vergunningen.parkerendelft.com)     | /DVSWebAPI/api |
-| Den Bosch             | [https://parkeren.s-hertogenbosch.nl](https://parkeren.s-hertogenbosch.nl)           | /DVSWebAPI/api |
+| Den Bosch             | [https://parkeren.s-hertogenbosch.nl](https://parkeren.s-hertogenbosch.nl)           | /DVSPortal/api |
 | Doetinchem (via Buha) | [https://parkeren.buha.nl](https://parkeren.buha.nl)                                 | /DVSWebAPI/api |
-| Groningen             | [https://aanvraagparkeren.groningen.nl](https://aanvraagparkeren.groningen.nl)       | /DVSWebAPI/api |
+| Groningen             | [https://aanvraagparkeren.groningen.nl](https://aanvraagparkeren.groningen.nl)       | /DVSPortal/api |
 | Haarlem               | [https://parkeren.haarlem.nl](https://parkeren.haarlem.nl)                           | /DVSWebAPI/api |
 | Harlingen             | [https://parkeervergunningen.harlingen.nl](https://parkeervergunningen.harlingen.nl) | /DVSWebAPI/api |
 | Heemstede             | [https://parkeren.heemstede.nl](https://parkeren.heemstede.nl)                       | /DVSWebAPI/api |
 | Heerenveen            | [https://parkeren.heerenveen.nl](https://parkeren.heerenveen.nl)                     | /DVSWebAPI/api |
-| Heerlen               | [https://parkeren.heerlen.nl](https://parkeren.heerlen.nl)                           | /DVSWebAPI/api |
+| Heerlen               | [https://parkeren.heerlen.nl](https://parkeren.heerlen.nl)                           | /DVSPortal/api |
 | Hengelo               | [https://parkeren.hengelo.nl](https://parkeren.hengelo.nl)                           | /DVSWebAPI/api |
 | Katwijk               | [https://parkeren.katwijk.nl](https://parkeren.katwijk.nl)                           | /DVSWebAPI/api |
 | Leiden                | [https://parkeren.leiden.nl](https://parkeren.leiden.nl)                             | /DVSWebAPI/api |
-| Leidschendam-Voorburg | [https://parkeren.lv.nl](https://parkeren.lv.nl)                                     | /DVSWebAPI/api |
+| Leidschendam-Voorburg | [https://parkeren.lv.nl](https://parkeren.lv.nl)                                     | /DVSPortal/api |
 | Middelburg            | [https://parkeren.middelburg.nl](https://parkeren.middelburg.nl)                     | /DVSWebAPI/api |
+| Nijmegen              | [https://parkeerproducten.nijmegen.nl](https://parkeerproducten.nijmegen.nl)         | /DVSPortal/api |
 | Nissewaard            | [https://parkeren.nissewaard.nl](https://parkeren.nissewaard.nl)                     | /DVSWebAPI/api |
 | Oldenzaal             | [https://parkeren.oldenzaal.nl](https://parkeren.oldenzaal.nl)                       | /DVSWebAPI/api |
 | Rijswijk              | [https://parkeren.rijswijk.nl](https://parkeren.rijswijk.nl)                         | /DVSWebAPI/api |
 | Roermond              | [https://parkeren.roermond.nl](https://parkeren.roermond.nl)                         | /DVSWebAPI/api |
 | Schouwen-Duiveland    | [https://parkeren.schouwen-duiveland.nl](https://parkeren.schouwen-duiveland.nl)     | /DVSWebAPI/api |
-| Sittard-Geleen        | [https://parkeren.sittard-geleen.nl](https://parkeren.sittard-geleen.nl)             | /DVSWebAPI/api |
-| Smallingerland        | [https://parkeren.smallingerland.nl](https://parkeren.smallingerland.nl)             | /DVSWebAPI/api |
+| Sittard-Geleen        | [https://parkeren.sittard-geleen.nl](https://parkeren.sittard-geleen.nl)             | /DVSPortal/api |
+| Smallingerland        | [https://parkeren.smallingerland.nl](https://parkeren.smallingerland.nl)             | /DVSPortal/api |
 | Súdwest-Fryslân       | [https://parkeren.sudwestfryslan.nl](https://parkeren.sudwestfryslan.nl)             | /DVSWebAPI/api |
 | Veere                 | [https://parkeren.veere.nl](https://parkeren.veere.nl)                               | /DVSWebAPI/api |
 | Venlo                 | [https://parkeren.venlo.nl](https://parkeren.venlo.nl)                               | /DVSWebAPI/api |
-| Vlissingen            | [https://parkeren.vlissingen.nl](https://parkeren.vlissingen.nl)                     | /DVSWebAPI/api |
-| Waadhoeke             | [https://parkeren.waadhoeke.nl](https://parkeren.waadhoeke.nl)                       | /DVSWebAPI/api |
+| Vlissingen            | [https://parkeren.vlissingen.nl](https://parkeren.vlissingen.nl)                     | /DVSPortal/api |
+| Waadhoeke             | [https://parkeren.waadhoeke.nl](https://parkeren.waadhoeke.nl)                       | /DVSPortal/api |
 | Waalwijk              | [https://parkeren.waalwijk.nl](https://parkeren.waalwijk.nl)                         | /DVSWebAPI/api |
-| Weert                 | [https://parkeerloket.weert.nl](https://parkeerloket.weert.nl)                       | /DVSWebAPI/api |
-| Zaanstad              | [https://parkeren.zaanstad.nl](https://parkeren.zaanstad.nl)                         | /DVSWebAPI/api |
+| Weert                 | [https://parkeerloket.weert.nl](https://parkeerloket.weert.nl)                       | /DVSPortal/api |
+| Zaanstad              | [https://parkeren.zaanstad.nl](https://parkeren.zaanstad.nl)                         | /DVSPortal/api |
 | Zevenaar              | [https://parkeren.zevenaar.nl](https://parkeren.zevenaar.nl)                         | /DVSWebAPI/api |
 | Zutphen               | [https://parkeren.zutphen.nl](https://parkeren.zutphen.nl)                           | /DVSWebAPI/api |
 | Zwolle                | [https://parkeerloket.zwolle.nl](https://parkeerloket.zwolle.nl)                     | /DVSWebAPI/api |

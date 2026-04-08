@@ -7,9 +7,11 @@ from abc import ABC, abstractmethod
 from collections.abc import Awaitable, Callable, Iterable, Mapping
 from datetime import datetime
 from typing import Any, Literal, TypeVar, overload
+from urllib.parse import urlparse
 
 import aiohttp
 
+from .._version import __version__ as PACKAGE_VERSION
 from ..exceptions import AuthError, NetworkError, ProviderError, ValidationError
 from ..models import Favorite, Permit, ProviderInfo, Reservation, ZoneValidityBlock
 from ..util import (
@@ -51,6 +53,36 @@ class BaseProvider(ABC):
         self._api_uri = self._normalize_api_uri(api_uri)
         self._timeout = timeout or _DEFAULT_TIMEOUT
         self._retry_count = max(0, retry_count)
+        self._request_context_name: str | None = None
+
+    def set_request_context(self, context_name: str | None) -> None:
+        """Set a human-readable context label for request diagnostics."""
+        if context_name is None:
+            self._request_context_name = None
+            return
+        value = context_name.strip()
+        self._request_context_name = value or None
+
+    def _request_target_label(self) -> str:
+        """Return a stable target label for diagnostics and logs."""
+        if self._base_url is None:
+            return "unknown"
+        parsed = urlparse(self._base_url)
+        return parsed.netloc or self._base_url
+
+    def _request_context_label(self) -> str:
+        """Return city/context label for diagnostics and logs."""
+        if self._request_context_name:
+            return self._request_context_name
+        return self._request_target_label()
+
+    def _request_log_details(self) -> tuple[str, str, str]:
+        """Return (context, target, package_version) for consistent error logging."""
+        return (
+            self._request_context_label(),
+            self._request_target_label(),
+            PACKAGE_VERSION,
+        )
 
     @property
     def provider_id(self) -> str:
@@ -252,9 +284,12 @@ class BaseProvider(ABC):
             except (aiohttp.ClientError, TimeoutError) as exc:
                 last_error = exc
                 _LOGGER.warning(
-                    "Provider %s request error: %s",
+                    ("Provider %s request error: %s (context=%s, target=%s, package_version=%s)"),
                     self.provider_id,
                     exc.__class__.__name__,
+                    self._request_context_label(),
+                    self._request_target_label(),
+                    PACKAGE_VERSION,
                 )
                 if attempt >= attempts - 1:
                     raise NetworkError("Network request failed.") from exc
@@ -300,9 +335,15 @@ class BaseProvider(ABC):
         if 200 <= response.status < 300:
             return
         _LOGGER.warning(
-            "Provider %s request failed with status %s",
+            (
+                "Provider %s request failed with status %s "
+                "(context=%s, target=%s, package_version=%s)"
+            ),
             self.provider_id,
             response.status,
+            self._request_context_label(),
+            self._request_target_label(),
+            PACKAGE_VERSION,
         )
         if response.status in (401, 403):
             raise AuthError("Authentication failed.")

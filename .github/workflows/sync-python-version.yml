@@ -41,16 +41,16 @@ jobs:
       - name: Read current Python version
         id: current
         run: |
-          parse_minor() {
-            awk -F. '{ if (NF >= 2) print $1 "." $2; else print $1 }' <<<"$1"
-          }
-          VERSION=$(cat .python-version | tr -d '[:space:]')
-          MINOR="$(parse_minor "$VERSION")"
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          MINOR=$(sed -n 's/^requires-python = \">=\\([0-9]\\+\\.[0-9]\\+\\)\"$/\\1/p' pyproject.toml)
+          if [ -z "$MINOR" ]; then
+            echo "Could not read requires-python from pyproject.toml"
+            exit 1
+          fi
+          echo "version=$MINOR" >> "$GITHUB_OUTPUT"
           echo "minor=$MINOR" >> "$GITHUB_OUTPUT"
 
       - name: Open PR if version changed
-        if: steps.ha_core.outputs.version != steps.current.outputs.version
+        if: steps.ha_core.outputs.minor != steps.current.outputs.minor
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NEW_VERSION: ${{ steps.ha_core.outputs.version }}
@@ -68,17 +68,17 @@ jobs:
           else
             git checkout -b "$BRANCH"
           fi
-
-          echo "$NEW_VERSION" > .python-version
-
           # Update tooling targets if major.minor changed (e.g. 3.14 → 3.15)
           if [ "$NEW_MINOR" != "$OLD_MINOR" ]; then
             NEW_RUFF_MINOR="${NEW_MINOR//./}"
+            sed -E -i "s/^(requires-python = \">=)[0-9]+\.[0-9]+(\")$/\1${NEW_MINOR}\2/" pyproject.toml
+            sed -E -i "s/^(  \"Programming Language :: Python :: )[0-9]+\.[0-9]+(\",?)$/\1${NEW_MINOR}\2/" pyproject.toml
             sed -E -i "s/^(target-version = \"py)[0-9]+(\")$/\1${NEW_RUFF_MINOR}\2/" pyproject.toml
             sed -E -i "s/^(pythonVersion = \")[0-9]+\.[0-9]+(\")$/\1${NEW_MINOR}\2/" pyproject.toml
+            sed -E -i "s/^(py-version = \")[0-9]+\.[0-9]+(\")$/\1${NEW_MINOR}\2/" pyproject.toml
           fi
 
-          git add .python-version pyproject.toml
+          git add pyproject.toml
           if ! git diff --cached --quiet; then
             git commit -m "Bump Python version to ${NEW_VERSION}"
             git push origin "$BRANCH"
@@ -102,14 +102,16 @@ jobs:
             --body "$(cat <<EOF
           ## Sync Python version from HA Core
 
-          Home Assistant Core bumped from \`${OLD_VERSION}\` to \`${NEW_VERSION}\`.
+          Home Assistant Core bumped from Python \`${OLD_VERSION}\` to \`${NEW_VERSION}\`.
 
           **Source:** [\`home-assistant/core\` dev branch](https://github.com/home-assistant/core/blob/dev/.python-version)
 
           ### Changes
-          - \`.python-version\`: \`${OLD_VERSION}\` → \`${NEW_VERSION}\`$([ "$NEW_MINOR" != "$OLD_MINOR" ] && echo "
+          - \`pyproject.toml\`: \`project.requires-python\` \`>=${OLD_MINOR}\` → \`>=${NEW_MINOR}\`$([ "$NEW_MINOR" != "$OLD_MINOR" ] && echo "
+          - \`pyproject.toml\`: `Programming Language :: Python :: ${OLD_MINOR}` → `Programming Language :: Python :: ${NEW_MINOR}`
           - \`pyproject.toml\`: \`tool.ruff.target-version\` \`py${OLD_MINOR//./}\` → \`py${NEW_MINOR//./}\`
-          - \`pyproject.toml\`: \`tool.pyright.pythonVersion\` \`${OLD_MINOR}\` → \`${NEW_MINOR}\`" || echo "")
+          - \`pyproject.toml\`: \`tool.pyright.pythonVersion\` \`${OLD_MINOR}\` → \`${NEW_MINOR}\`
+          - \`pyproject.toml\`: \`tool.pylint.py-version\` \`${OLD_MINOR}\` → \`${NEW_MINOR}\`" || echo "")
 
           ### Checklist
           - [ ] CI passes
@@ -120,7 +122,7 @@ jobs:
             --base main
 
       - name: Already up to date
-        if: steps.ha_core.outputs.version == steps.current.outputs.version
+        if: steps.ha_core.outputs.minor == steps.current.outputs.minor
         env:
           CURRENT_VERSION: ${{ steps.current.outputs.version }}
-        run: echo "Python version is already $CURRENT_VERSION; nothing to do."
+        run: echo "Python version is already aligned at $CURRENT_VERSION; nothing to do."

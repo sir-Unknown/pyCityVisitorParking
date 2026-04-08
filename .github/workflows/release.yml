@@ -1,20 +1,14 @@
 name: Release
 
 on:
-  push:
-    tags:
-      - "v*"
-  workflow_dispatch:
-    inputs:
-      tag:
-        description: "Tag to publish (e.g., v0.5.14)"
-        required: false
-        default: "v0.0.0"
+  release:
+    types:
+      - published
 
 permissions: {}
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref_name || inputs.tag }}
+  group: ${{ github.workflow }}-${{ github.event.release.tag_name }}
   cancel-in-progress: true
 
 jobs:
@@ -27,44 +21,42 @@ jobs:
       id-token: write # Required for trusted publishing to PyPI via GitHub OIDC.
 
     steps:
-      - name: Resolve tag
-        id: vars
+      - name: Validate release tag
         env:
-          INPUT_TAG: ${{ inputs.tag }}
-          REF_NAME: ${{ github.ref_name }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
         run: |
-          tag="$INPUT_TAG"
-          if [ -z "$tag" ]; then
-            tag="$REF_NAME"
-          fi
-          if [ -z "$tag" ]; then
-            echo "Tag is required to publish."
+          if [[ -z "$RELEASE_TAG" ]]; then
+            echo "Missing release tag name."
             exit 1
           fi
-          if [ "$tag" = "v0.0.0" ]; then
-            echo "Default tag v0.0.0 is not allowed. Provide an explicit tag."
+          if [[ ! "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Release tag must match vX.Y.Z, got: $RELEASE_TAG"
             exit 1
           fi
-          echo "tag=$tag" >> "$GITHUB_OUTPUT"
 
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           persist-credentials: false
-          ref: ${{ steps.vars.outputs.tag }}
+          ref: ${{ github.event.release.tag_name }}
 
       - name: Set up uv
         uses: astral-sh/setup-uv@cec208311dfd045dd5311c1add060b2062131d57 # v8.0.0
         with:
           enable-cache: false
 
-      - name: Set version from tag
+      - name: Confirm checked out tag
         env:
-          RELEASE_TAG: ${{ steps.vars.outputs.tag }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
         run: |
-          version="${RELEASE_TAG#v}"
-          echo "__version__ = \"$version\"" > src/pycityvisitorparking/_version.py
-          echo "Set package version to $version"
+          if ! git tag --points-at HEAD | grep -Fx "$RELEASE_TAG" >/dev/null; then
+            echo "Expected checkout to include tag $RELEASE_TAG, but it was not found on HEAD"
+            exit 1
+          fi
+
+      - name: Log resolved package version
+        run: |
+          uv run python -c "from importlib.metadata import version; print(version('pycityvisitorparking'))"
 
       - name: Build
         run: |

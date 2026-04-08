@@ -67,22 +67,19 @@ Do not push tags before running build + twine checks locally.
   - `git push --follow-tags`
 
 ✅ **Publish to PyPI from GitHub Actions**
-- Push a tag `vX.Y.Z` to trigger the release workflow on tag pushes.
-- Annotated tags are required for `git push --follow-tags`; otherwise push the tag explicitly.
+- Publish a GitHub release for tag `vX.Y.Z` to trigger the release workflow.
+- Creating or editing a draft release does not publish to PyPI; the workflow runs when you click `Publish release`.
 - Ensure the workflow:
   - builds `sdist` and `wheel`
   - verifies artifacts (`twine check`)
   - publishes using `pypa/gh-action-pypi-publish` with OIDC
- - If a tag push did not trigger the workflow, run the `Release` workflow manually and pass the tag.
 
 ✅ **Validate tag and version alignment**
-- The release workflow checks `vX.Y.Z` against `src/pycityvisitorparking/_version.py`.
-- If they do not match, bump the version with Hatch and re-tag.
+- The package version is derived from the git tag via `hatch-vcs`.
+- Create the GitHub release from the intended `vX.Y.Z` tag on the release commit; the build will use that tag as the package version.
 
 ✅ **Use TestPyPI for a dry run**
-- Trigger the publish workflow manually with `workflow_dispatch`.
-- Choose `testpypi` as the target.
-- Verify installation from TestPyPI in a clean environment before publishing to PyPI.
+- Use a separate test repository or temporary publishing workflow if you want to validate the full GitHub release flow without touching the production PyPI project.
 
 ✅ **Configure Trusted Publishing (OIDC) on PyPI/TestPyPI**
 - Open PyPI/TestPyPI → project settings → trusted publishers.

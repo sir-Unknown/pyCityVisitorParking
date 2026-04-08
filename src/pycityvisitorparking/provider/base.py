@@ -6,12 +6,12 @@ import logging
 from abc import ABC, abstractmethod
 from collections.abc import Awaitable, Callable, Iterable, Mapping
 from datetime import datetime
+from importlib.metadata import PackageNotFoundError, version
 from typing import Any, Literal, Protocol, TypeVar, overload
 from urllib.parse import urlparse
 
 import aiohttp
 
-from .._version import __version__ as PACKAGE_VERSION
 from ..exceptions import AuthError, NetworkError, ProviderError, ValidationError
 from ..models import Favorite, Permit, ProviderInfo, Reservation, ZoneValidityBlock
 from ..util import (
@@ -27,6 +27,11 @@ from .loader import ProviderManifest
 _DEFAULT_TIMEOUT = aiohttp.ClientTimeout(total=30)
 _LOGGER = logging.getLogger(__name__)
 _T = TypeVar("_T")
+
+try:
+    PACKAGE_VERSION = version("pycityvisitorparking")
+except PackageNotFoundError:  # pragma: no cover - source tree fallback
+    PACKAGE_VERSION = "0.0.0"
 
 
 class _HttpSession(Protocol):

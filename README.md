@@ -92,8 +92,9 @@ asyncio.run(main())
 
 ## Releases
 
-Releases publish from GitHub Actions on tag pushes. Use annotated tags
-(`git tag -a vX.Y.Z -m "Release vX.Y.Z"`) or push the tag explicitly so CI runs.
+Releases publish from GitHub Actions when a GitHub release is published.
+Create a draft release for tag `vX.Y.Z`, then publish it to trigger PyPI
+publishing.
 
 ## Async behavior
 
@@ -330,6 +331,14 @@ plates.
 - `zone_validity` must include only chargeable windows.
 
 ## Development
+
+Before running checks or opening diagnostics in VS Code, sync the dev
+environment in the local project venv:
+
+```bash
+cd /workspaces/pyCityVisitorParking
+uv sync --group dev
+```
 
 Run checks with Hatch:
 

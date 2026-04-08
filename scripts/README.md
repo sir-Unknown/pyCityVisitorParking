@@ -13,6 +13,14 @@ public library API and should not be used in production integrations.
 
 ## Usage
 
+Before running scripts (and before relying on VS Code diagnostics), sync the
+project dev environment:
+
+```bash
+cd /workspaces/pyCityVisitorParking
+uv sync --group dev
+```
+
 From the repository root, set `PYTHONPATH=src` so the scripts can import the
 local package.
 
@@ -43,6 +51,20 @@ PYTHONPATH=src python scripts/provider_live_check.py \
   --username ... \
   --password ...
 ```
+
+Bulk login check across multiple providers using `--multi-file`. Each entry
+needs `provider_id`, `base_url`, `credentials`, and optionally `label` and
+`api_uri`. The script attempts login + permit fetch for each entry and prints
+a pass/fail summary:
+
+```bash
+PYTHONPATH=src python scripts/provider_live_check.py \
+  --multi-file scripts/login_check_example.json \
+  --sanitize-output
+```
+
+Use `login_check_example.json` as a template — replace the fake credentials
+with real ones per provider.
 
 Live reservation/favorite flows (requires a license plate). These flows create
 and update real reservations/favorites, so use them carefully:

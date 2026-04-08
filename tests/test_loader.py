@@ -29,7 +29,7 @@ async def test_list_providers_uses_to_thread(monkeypatch: pytest.MonkeyPatch) ->
         calls["count"] += 1
         return func(*args, **kwargs)
 
-    monkeypatch.setattr(client_module.asyncio, "to_thread", fake_to_thread)
+    monkeypatch.setattr(client_module.asyncio, "to_thread", fake_to_thread)  # type: ignore[attr-defined]
 
     async with client_module.Client() as client:
         await client.list_providers()
@@ -45,7 +45,7 @@ async def test_get_provider_uses_to_thread(monkeypatch: pytest.MonkeyPatch) -> N
         calls["count"] += 1
         return func(*args, **kwargs)
 
-    monkeypatch.setattr(client_module.asyncio, "to_thread", fake_to_thread)
+    monkeypatch.setattr(client_module.asyncio, "to_thread", fake_to_thread)  # type: ignore[attr-defined]
 
     async with client_module.Client(base_url="https://example") as client:
         provider = await client.get_provider("dvsportal")

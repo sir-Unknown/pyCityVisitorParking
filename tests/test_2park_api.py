@@ -4,6 +4,7 @@ from __future__ import annotations
 import importlib
 import json
 from datetime import UTC, datetime
+from typing import Any
 
 import pytest
 
@@ -50,7 +51,7 @@ class _SequenceSession:
     def __init__(self, responses: list[object]) -> None:
         self._responses = responses
         self.calls = 0
-        self.requests: list[dict[str, object]] = []
+        self.requests: list[dict[str, Any]] = []
 
     def request(self, method: str, url: str, **kwargs) -> _FakeRequestContext:
         self.requests.append({"method": method, "url": url, "kwargs": kwargs})
@@ -58,6 +59,7 @@ class _SequenceSession:
         response = self._responses[self.calls - 1]
         if isinstance(response, Exception):
             raise response
+        assert isinstance(response, _FakeResponse)
         return _FakeRequestContext(response)
 
 

@@ -15,8 +15,6 @@ maintenance:
       - any-glob-to-any-file:
           - ".github/**"
           - "pyproject.toml"
-          - ".python-version"
-          - "hatch.toml"
 
 schema:
   - changed-files:

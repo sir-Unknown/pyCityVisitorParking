@@ -64,6 +64,7 @@ class _SequenceSession:
         self._index += 1
         if isinstance(response, Exception):
             raise response
+        assert isinstance(response, _FakeResponse)
         return _FakeRequestContext(response)
 
 

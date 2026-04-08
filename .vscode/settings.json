@@ -1,19 +1,10 @@
 {
-  "python.testing.pytestEnabled": true,
-  "python.testing.pytestArgs": ["tests"],
-
-  "editor.formatOnSave": true,
-  "editor.defaultFormatter": "charliermarsh.ruff",
-
-  "editor.codeActionsOnSave": {
-    "source.fixAll.ruff": "explicit",
-    "source.organizeImports.ruff": "explicit"
-  },
-
-  "files.insertFinalNewline": true,
-  "files.trimTrailingWhitespace": true,
-
-  "python.analysis.typeCheckingMode": "basic",
-  "python.analysis.autoSearchPaths": true,
-  "python.analysis.extraPaths": ["src"]
+  "python.defaultInterpreterPath": "/workspaces/pyCityVisitorParking/.venv/bin/python",
+  "pylint.enabled": true,
+  "pylint.args": ["--rcfile=pyproject.toml"],
+  "pylint.importStrategy": "fromEnvironment",
+  "[python]": {
+    "editor.defaultFormatter": "charliermarsh.ruff",
+    "editor.formatOnSave": true
+  }
 }

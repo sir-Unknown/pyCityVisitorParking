@@ -53,7 +53,7 @@ def test_load_manifests_cache_expires(monkeypatch: pytest.MonkeyPatch) -> None:
         return next(times)
 
     monkeypatch.setattr(loader_module, "iter_manifest_files", wrapped)
-    monkeypatch.setattr(loader_module.time, "monotonic", fake_monotonic)
+    monkeypatch.setattr(loader_module.time, "monotonic", fake_monotonic)  # type: ignore[attr-defined]
 
     loader_module.load_manifests(cache_ttl=1.0)
     loader_module.load_manifests(cache_ttl=1.0)
@@ -70,7 +70,7 @@ async def test_async_load_manifests_uses_to_thread(monkeypatch: pytest.MonkeyPat
         calls["count"] += 1
         return func(*args, **kwargs)
 
-    monkeypatch.setattr(loader_module.asyncio, "to_thread", fake_to_thread)
+    monkeypatch.setattr(loader_module.asyncio, "to_thread", fake_to_thread)  # type: ignore[attr-defined]
 
     await loader_module.async_load_manifests()
 

@@ -34,7 +34,7 @@ def test_ensure_utc_timestamp() -> None:
 
 def test_ensure_utc_timestamp_rejects_naive_datetime() -> None:
     with pytest.raises(ValidationError):
-        ensure_utc_timestamp(datetime(2024, 1, 1, 12, 0))
+        ensure_utc_timestamp(datetime(2024, 1, 1, 12, 0))  # type: ignore[arg-type]
 
 
 def test_ensure_utc_timestamp_rejects_naive_string() -> None:
@@ -69,7 +69,7 @@ def test_validate_reservation_times_accepts_datetime() -> None:
 def test_validate_reservation_times_rejects_string() -> None:
     with pytest.raises(ValidationError):
         validate_reservation_times(
-            "2024-01-01T10:00:00Z",
+            "2024-01-01T10:00:00Z",  # type: ignore[arg-type]
             datetime(2024, 1, 1, 12, 0, tzinfo=UTC),
             require_both=True,
         )

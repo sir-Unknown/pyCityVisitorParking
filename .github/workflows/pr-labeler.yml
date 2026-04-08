@@ -1,4 +1,5 @@
-name: PR labeler
+name: PR labels
+# yamllint disable-line rule:truthy
 
 on:
   pull_request_target: # zizmor: ignore[dangerous-triggers] This workflow only applies labels and does not check out or run PR code.
@@ -16,13 +17,13 @@ permissions:
 
 jobs:
   label:
-    name: Apply labels
+    name: Label pull requests
     runs-on: ubuntu-latest
     permissions:
       contents: read
       pull-requests: write # Required to apply and synchronize labels on the pull request.
     steps:
-      - name: Label pull request
+      - name: Run labeler
         uses: actions/labeler@634933edcd8ababfe52f92936142cc22ac488b1b # v5
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}

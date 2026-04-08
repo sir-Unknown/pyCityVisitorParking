@@ -37,7 +37,9 @@ except PackageNotFoundError:  # pragma: no cover - source tree fallback
 class _HttpSession(Protocol):
     """Minimal interface required from an HTTP session."""
 
-    def request(self, method: str, url: str, **kwargs: Any) -> Any: ...
+    def request(self, method: str, url: str, **kwargs: Any) -> Any:
+        """Make an HTTP request."""
+        pass
 
 
 class BaseProvider(ABC):

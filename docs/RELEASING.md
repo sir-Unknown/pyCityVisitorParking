@@ -1,18 +1,18 @@
 # RELEASING.md — Release & Publish Guide (pyCityVisitorParking)
 
-✅ **Publish via CI using Trusted Publishing (OIDC)**
-- Publish releases from GitHub Actions using OIDC.
-- ❌ Avoid publishing from local machines when CI publishing is available.
-- ❌ Avoid PyPI API tokens when OIDC is available.
+✅ **Use the current release source of truth**
+- The package version is derived from git tags via `hatch-vcs`.
+- Do not edit a version string in the repository for releases.
+- The release tag must match `vX.Y.Z`.
 
 ✅ **Use SemVer and keep changelogs accurate**
-- Use SemVer for the package version.
+- Use SemVer for release tags.
 - Bump MINOR for provider additions.
 - Bump PATCH for bug fixes.
-- Maintain an “Unreleased” section in:
+- Maintain an `Unreleased` section in:
   - root `CHANGELOG.md`
   - each provider `CHANGELOG.md`
-- Move “Unreleased” entries into a versioned section on release.
+- Move `Unreleased` entries into a versioned section before tagging a release.
 
 ✅ **Update documentation before releasing**
 - Update root `README.md` when public behavior changes.
@@ -20,104 +20,96 @@
 - Update provider `README.md` and provider `CHANGELOG.md` for provider changes:
   - auth flow changes
   - endpoint changes
-  - mapping changes (UTC conversion, zone_validity filtering)
+  - mapping changes (UTC conversion, `zone_validity` filtering)
   - limitations or known issues
 
-✅ **Run all checks locally using Hatch**
-- Run formatting checks:
-  - `hatch run lint:format-check`
+✅ **Validate the release locally with the current toolchain**
+- Set up the project environment with `uv`.
 - Run lint:
-  - `hatch run lint:check`
+  - `uv run --group lint ruff check .`
+  - `uv run --group lint ruff format --check .`
+- Run type checking:
+  - `uv run --group typecheck pyright`
 - Run tests:
-  - `hatch run test:run`
-- Build artifacts (clean):
-  - `hatch build -c`
+  - `uv run --group test pytest`
+- Validate provider manifests:
+  - `uv run --group schema python -m pytest -o addopts=-q tests/test_manifest_schema.py`
+- Build artifacts:
+  - `uv build`
 - Validate artifacts:
-  - `python -m twine check dist/*`
+  - `uvx twine check dist/*`
 
-✅ **Bump the version using Hatch**
-- Bump patch/minor/major:
-  - `hatch version patch`
-  - `hatch version minor`
-  - `hatch version major`
-- Or set an explicit version:
-  - `hatch version X.Y.Z`
+Do not push release tags before the local checks and artifact validation pass.
 
-✅ **Recommended local release order**
-1) Update docs and changelogs.
-2) `hatch run lint:format-check`
-3) `hatch run lint:check`
-4) `hatch run test:run`
-5) `hatch build -c`
-6) `python -m twine check dist/*`
-7) `rm -rf dist` (optional cleanup after checks)
-8) `hatch version X.Y.Z`
-9) `git commit -am "Release X.Y.Z"`
-10) `git tag -a vX.Y.Z -m "Release vX.Y.Z"`
-11) `git push --follow-tags`
+✅ **Use Release Drafter as a draft aid, not as the release source of truth**
+- Release Drafter keeps a draft GitHub release up to date from merged pull requests.
+- Review and edit the generated notes before publishing.
+- The final published release must still be created from the real git tag you intend to publish.
+- If the draft release points at the wrong commit, retarget it to the release tag before publishing.
 
-Do not push tags before running build + twine checks locally.
+✅ **Current release flow**
+1. Update docs and changelogs on the release commit.
+2. Run the local validation steps listed above.
+3. Commit the release changes.
+4. Create an annotated tag:
+   - `git tag -a vX.Y.Z -m "Release vX.Y.Z"`
+5. Push the release commit and tag:
+   - `git push`
+   - `git push origin vX.Y.Z`
+6. Confirm the `CI` workflow passes for the tag.
+7. Publish the GitHub release for tag `vX.Y.Z`.
+8. The `Release` workflow will build from that tag and publish to PyPI using OIDC.
 
-✅ **Commit and tag the release**
-- Commit release changes:
-  - `git commit -am "Release vX.Y.Z"`
-- Create a version tag:
-  - `git tag -a vX.Y.Z -m "Release vX.Y.Z"`
-- Push commits and tags:
-  - `git push --follow-tags`
-
-✅ **Publish to PyPI from GitHub Actions**
-- Publish a GitHub release for tag `vX.Y.Z` to trigger the release workflow.
-- Creating or editing a draft release does not publish to PyPI; the workflow runs when you click `Publish release`.
-- Ensure the workflow:
+✅ **Understand what GitHub Actions does**
+- `CI` runs on pull requests, pushes to `main`, manual dispatch, and tags matching `v*`.
+- `Release Drafter` updates the draft release on `main` pushes and PR updates.
+- `Release` runs only when a GitHub release is published.
+- The publish workflow:
+  - validates that the published release tag matches `vX.Y.Z`
+  - checks out the repository at that exact tag
+  - logs the resolved package version
   - builds `sdist` and `wheel`
-  - verifies artifacts (`twine check`)
-  - publishes using `pypa/gh-action-pypi-publish` with OIDC
+  - runs `twine check`
+  - publishes to PyPI using `pypa/gh-action-pypi-publish`
 
 ✅ **Validate tag and version alignment**
-- The package version is derived from the git tag via `hatch-vcs`.
-- Create the GitHub release from the intended `vX.Y.Z` tag on the release commit; the build will use that tag as the package version.
+- Because the version comes from VCS metadata, the tag is the version source of truth.
+- Create the GitHub release from the intended `vX.Y.Z` tag on the release commit.
+- Do not publish a GitHub release from an untagged commit or from the wrong tag.
 
-✅ **Use TestPyPI for a dry run**
-- Use a separate test repository or temporary publishing workflow if you want to validate the full GitHub release flow without touching the production PyPI project.
+✅ **Configure Trusted Publishing (OIDC)**
+- Configure the PyPI project to trust this repository and workflow.
+- Ensure the GitHub Actions environment used for publishing is authorized in PyPI.
+- The publish workflow requires:
+  - `id-token: write`
 
-✅ **Configure Trusted Publishing (OIDC) on PyPI/TestPyPI**
-- Open PyPI/TestPyPI → project settings → trusted publishers.
-- Add:
-  - GitHub owner/repo
-  - workflow name
-  - optional environment restrictions
-- Ensure GitHub Actions has:
-  - `permissions: id-token: write`
-
-✅ **Verify release contents (sdist)**
-- Confirm the `sdist` contains:
+✅ **Verify release contents**
+- Confirm the built distribution contains:
   - all provider `manifest.json` files
   - `manifest.schema.json`
   - provider `README.md` and provider `CHANGELOG.md`
   - root `README.md` and root `CHANGELOG.md`
-
-✅ **Enforce schema validation in CI**
-- Keep the manifest schema validation test enabled.
-- Fail CI if any provider manifest violates the schema.
+  - `docs/RELEASING.md`
 
 ✅ **Troubleshoot publishing issues systematically**
-- Fix lint/test failures first.
-- Fix packaging inclusion issues next (missing files in `sdist`).
+- Fix lint, type-check, and test failures first.
+- Fix packaging inclusion issues next.
 - Re-run:
-  - `hatch build`
-  - `python -m twine check dist/*`
-- Prefer releasing a new PATCH version over re-tagging.
+  - `uv build`
+  - `uvx twine check dist/*`
+- Prefer releasing a new PATCH version over deleting or reusing a broken tag.
 
 ❌ **Avoid these anti-patterns**
-- Do not publish directly from a laptop if CI publish exists.
+- Do not publish directly from a laptop when CI publishing is available.
 - Do not skip changelog updates.
+- Do not create a GitHub release before the intended tag exists on GitHub.
+- Do not retag an existing version after publication.
 - Do not introduce new runtime dependencies without reviewing Home Assistant compatibility.
-- Do not break the “provider PR scope rule” (provider changes should remain provider-folder-only).
+- Do not break the provider PR scope rule unnecessarily.
 
 ✅ **Rollback safely using PyPI yanks**
-- Use a **yank** when a release is broken but you want to keep the version recorded.
-- Prefer yanking over deleting, because deleting can break reproducibility for users.
+- Yank a release when the published package is broken but should remain part of the public record.
+- Prefer yanking over deleting because deletion harms reproducibility.
 
 ✅ **Choose the right recovery strategy**
 - Yank a release when:
@@ -127,23 +119,17 @@ Do not push tags before running build + twine checks locally.
 - Publish a new PATCH release when:
   - you have a fix ready
   - you want users to move forward automatically
-- Avoid deleting releases unless PyPI policy requires it.
 
 ✅ **Perform a yank on PyPI**
 - Open the project on PyPI.
-- Open the specific release/version.
-- Mark the release files as **yanked**.
-- Add a clear yank reason that tells users what to do next (e.g. “Use vX.Y.(Z+1)”).
+- Open the affected release.
+- Mark the release files as yanked.
+- Add a clear yank reason that tells users what to do next, for example `Use vX.Y.(Z+1)`.
 
 ✅ **Publish a follow-up PATCH release**
 - Fix the issue on `main`.
 - Update root `CHANGELOG.md` and the affected provider `CHANGELOG.md`.
-- Bump the version with Hatch:
-  - `hatch version patch`
-- Tag and push:
-  - `git tag vX.Y.(Z+1)`
-  - `git push --follow-tags`
-- Let CI publish the new version via OIDC.
+- Repeat the same tag-driven release flow with the next PATCH version.
 
 ✅ **Communicate the rollback**
 - Add a short note to root `CHANGELOG.md` explaining:
@@ -153,5 +139,5 @@ Do not push tags before running build + twine checks locally.
 - Add provider-specific notes in the provider `CHANGELOG.md` when applicable.
 
 ✅ **Prevent recurrence**
-- Add or extend tests for the failure mode (mapping, parsing, schema, etc.).
+- Add or extend tests for the failure mode.
 - Keep provider fixtures updated to cover the problematic payload.

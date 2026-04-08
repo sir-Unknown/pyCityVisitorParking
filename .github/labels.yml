@@ -1,0 +1,103 @@
+- name: "breaking-change"
+  color: ee0701
+  description: "A breaking change for existing users."
+
+- name: "bug"
+  color: ee0701
+  description: "A reported bug or user-facing problem."
+
+- name: "bugfix"
+  color: ee0701
+  description: "A fix for a user-facing bug or behavioral issue."
+
+- name: "documentation"
+  color: 0052cc
+  description: "Solely about the documentation of the project."
+
+- name: "enhancement"
+  color: 1d76db
+  description: "Enhancement of the code, not introducing new features."
+
+- name: "feature"
+  color: 0e8a16
+  description: "A feature-related change."
+
+- name: "new-feature"
+  color: 0e8a16
+  description: "New features or options."
+
+- name: "refactor"
+  color: 1d76db
+  description: "Improvement of existing code, not introducing new features."
+
+- name: "performance"
+  color: 1d76db
+  description: "Improving performance, not introducing new features."
+
+- name: "maintenance"
+  color: 2af79e
+  description: "Generic maintenance tasks."
+
+- name: "ci"
+  color: 1d76db
+  description: "Work that improves the continuous integration setup."
+
+- name: "dependencies"
+  color: 1d76db
+  description: "Upgrade or downgrade of project dependencies."
+
+- name: "github-actions"
+  color: 1d76db
+  description: "Changes related to GitHub Actions workflows or automation."
+
+- name: "python"
+  color: 5319e7
+  description: "Changes primarily related to Python dependencies or tooling."
+
+- name: "tests"
+  color: bfdadc
+  description: "Adds or updates tests."
+
+- name: "schema"
+  color: c2e0c6
+  description: "Changes provider manifests or schema validation."
+
+- name: "major"
+  color: ee0701
+  description: "Marks a change that should trigger a major release."
+
+- name: "in-progress"
+  color: fbca04
+  description: "Issue or pull request is currently being worked on."
+
+- name: "stale"
+  color: fef2c0
+  description: "There has not been activity on this issue or PR for quite some time."
+
+- name: "no-stale"
+  color: fef2c0
+  description: "This issue or PR is exempted from stale automation."
+
+- name: "needs-more-information"
+  color: fef2c0
+  description: "More information is needed before this can be triaged further."
+
+- name: "security"
+  color: ee0701
+  description: "Marks a security issue that needs to be resolved quickly."
+
+- name: "incomplete"
+  color: fef2c0
+  description: "Marks a PR or issue that is missing information."
+
+- name: "invalid"
+  color: fef2c0
+  description: "Marks a PR or issue that is not actionable in its current form."
+
+- name: "beginner-friendly"
+  color: 0e8a16
+  description: "Good first issue for people wanting to contribute to the project."
+
+- name: "help-wanted"
+  color: 0e8a16
+  description: "Extra help or expertise is welcome to resolve this."

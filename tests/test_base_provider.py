@@ -55,6 +55,7 @@ class _SequenceSession:
         result = self._results[self.calls - 1]
         if isinstance(result, Exception):
             raise result
+        assert isinstance(result, _FakeResponse)
         return _FakeRequestContext(result)
 
 
@@ -149,7 +150,7 @@ def test_normalize_api_uri() -> None:
     assert provider._normalize_api_uri(None) == ""
     assert provider._normalize_api_uri(" /api/v1/ ") == "/api/v1"
     with pytest.raises(ValidationError):
-        provider._normalize_api_uri(123)
+        provider._normalize_api_uri(123)  # type: ignore[arg-type]
 
 
 def test_merge_credentials() -> None:

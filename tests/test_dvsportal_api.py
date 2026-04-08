@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import base64
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
 import aiohttp
 import pytest
@@ -54,7 +55,7 @@ class _SequenceSession:
     def __init__(self, responses: list[object]) -> None:
         self._responses = responses
         self.calls = 0
-        self.requests: list[dict[str, object]] = []
+        self.requests: list[dict[str, Any]] = []
 
     def request(self, method: str, url: str, **kwargs) -> _FakeRequestContext:
         self.requests.append({"method": method, "url": url, "kwargs": kwargs})
@@ -62,6 +63,7 @@ class _SequenceSession:
         response = self._responses[self.calls - 1]
         if isinstance(response, Exception):
             raise response
+        assert isinstance(response, _FakeResponse)
         return _FakeRequestContext(response)
 
 
@@ -146,7 +148,7 @@ async def test_handle_rate_limit_raises_for_post() -> None:
     provider = _provider(_SequenceSession([]))
     response = _FakeResponse(status=429, headers={RETRY_AFTER_HEADER: "0"})
     with pytest.raises(ProviderError):
-        await provider._handle_rate_limit(response, "POST", attempt=0, attempts=2)
+        await provider._handle_rate_limit(response, "POST", attempt=0, attempts=2)  # type: ignore[arg-type]
 
 
 @pytest.mark.asyncio

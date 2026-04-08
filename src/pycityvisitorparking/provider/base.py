@@ -6,7 +6,7 @@ import logging
 from abc import ABC, abstractmethod
 from collections.abc import Awaitable, Callable, Iterable, Mapping
 from datetime import datetime
-from typing import Any, Literal, TypeVar, overload
+from typing import Any, Literal, Protocol, TypeVar, overload
 from urllib.parse import urlparse
 
 import aiohttp
@@ -29,6 +29,12 @@ _LOGGER = logging.getLogger(__name__)
 _T = TypeVar("_T")
 
 
+class _HttpSession(Protocol):
+    """Minimal interface required from an HTTP session."""
+
+    def request(self, method: str, url: str, **kwargs: Any) -> Any: ...
+
+
 class BaseProvider(ABC):
     """Base class for provider implementations."""
 
@@ -37,7 +43,7 @@ class BaseProvider(ABC):
 
     def __init__(
         self,
-        session: aiohttp.ClientSession,
+        session: _HttpSession,
         manifest: ProviderManifest,
         *,
         base_url: str | None = None,

@@ -74,6 +74,7 @@ class Client:
         *,
         base_url: str | None = None,
         api_uri: str | None = None,
+        request_context: str | None = None,
     ) -> BaseProvider:
         _LOGGER.debug("Loading provider %s", provider_id)
         manifest, provider_cls = await asyncio.to_thread(_load_provider_data, provider_id)
@@ -84,7 +85,7 @@ class Client:
             manifest.favorite_update_fields,
             manifest.reservation_update_fields,
         )
-        return provider_cls(
+        provider = provider_cls(
             session,
             manifest,
             base_url=base_url if base_url is not None else self._base_url,
@@ -92,6 +93,8 @@ class Client:
             timeout=self._timeout,
             retry_count=self._retry_count,
         )
+        provider.set_request_context(request_context)
+        return provider
 
     def _ensure_session(self) -> aiohttp.ClientSession:
         if self._session is None:

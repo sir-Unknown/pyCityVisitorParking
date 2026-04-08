@@ -49,9 +49,8 @@ jobs:
         env:
           RELEASE_TAG: ${{ github.event.release.tag_name }}
         run: |
-          CHECKED_OUT_TAG="$(git describe --tags --exact-match)"
-          if [[ "$CHECKED_OUT_TAG" != "$RELEASE_TAG" ]]; then
-            echo "Expected checkout at tag $RELEASE_TAG, got $CHECKED_OUT_TAG"
+          if ! git tag --points-at HEAD | grep -Fx "$RELEASE_TAG" >/dev/null; then
+            echo "Expected checkout to include tag $RELEASE_TAG, but it was not found on HEAD"
             exit 1
           fi
 

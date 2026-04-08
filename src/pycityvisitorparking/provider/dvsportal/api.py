@@ -96,7 +96,11 @@ class Provider(BaseProvider):
                 try:
                     login_method_int = int(raw_lm)
                 except ValueError, TypeError:
-                    pass
+                    _LOGGER.debug(
+                        "Provider %s received invalid login_method_int=%r; using fallback.",
+                        self.provider_id,
+                        raw_lm,
+                    )
             if permit_media_type_id is None:
                 permit_media_type_id = self._permit_media_type_id
             if login_method_int is None:
@@ -520,7 +524,12 @@ class Provider(BaseProvider):
             try:
                 login_method_int = methods.index(LOGIN_METHOD_PAS) + 1
             except ValueError:
-                pass
+                _LOGGER.debug(
+                    "Provider %s login methods did not include %r; using fallback index %s.",
+                    self.provider_id,
+                    LOGIN_METHOD_PAS,
+                    login_method_int,
+                )
         return permit_media_type_id, login_method_int
 
     async def _fetch_permit_media_type_id(self) -> str | int:

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import logging
 import re
 from collections.abc import Mapping
 from datetime import datetime
@@ -45,7 +44,6 @@ _ERROR_MESSAGES = {
     "ilp": "Enter the license plate number without punctuation marks please",
     "npvs_offline": "The parking registry is not available at this time.",
 }
-_LOGGER = logging.getLogger(__name__)
 
 
 class Provider(BaseProvider):
@@ -76,9 +74,13 @@ class Provider(BaseProvider):
         self._permit_media_type_id: str | None = None
         self._logged_in = False
 
-    async def login(self, credentials: Mapping[str, str] | None = None, **kwargs: str) -> None:
+    async def login(
+        self,
+        credentials: Mapping[str, object] | None = None,
+        **kwargs: object,
+    ) -> None:
         """Authenticate against the provider."""
-        _LOGGER.debug("Provider %s login started", self.provider_id)
+        self._log_operation_started("login")
         merged = self._merge_credentials(credentials, **kwargs)
         username = merged.get("username")
         password = merged.get("password")
@@ -106,26 +108,22 @@ class Provider(BaseProvider):
             self._credentials["permit_media_type_id"] = permit_media_type_id
         self._permit_media_type_id = permit_media_type_id
         self._logged_in = True
-        _LOGGER.debug("Provider %s login completed", self.provider_id)
+        self._log_operation_completed("login")
 
     async def get_permit(self) -> Permit:
         """Return the active permit for the account."""
-        _LOGGER.debug("Provider %s get_permit started", self.provider_id)
+        self._log_operation_started("get_permit")
         account = await self._request_json("GET", ACCOUNT_ENDPOINT, allow_reauth=True)
         permit = self._map_permit(account)
-        _LOGGER.debug("Provider %s get_permit completed", self.provider_id)
+        self._log_operation_completed("get_permit")
         return permit
 
     async def list_reservations(self) -> list[Reservation]:
         """Return active reservations."""
-        _LOGGER.debug("Provider %s list_reservations started", self.provider_id)
+        self._log_operation_started("list_reservations")
         data = await self._request_json("GET", RESERVATION_ENDPOINT, allow_reauth=True)
         reservations = self._map_reservation_list(data)
-        _LOGGER.debug(
-            "Provider %s list_reservations completed count=%s",
-            self.provider_id,
-            len(reservations),
-        )
+        self._log_operation_completed("list_reservations", count=len(reservations))
         return reservations
 
     async def start_reservation(
@@ -136,7 +134,7 @@ class Provider(BaseProvider):
         name: str | None = None,
     ) -> Reservation:
         """Start a reservation for a license plate."""
-        _LOGGER.debug("Provider %s start_reservation started", self.provider_id)
+        self._log_operation_started("start_reservation")
         start_dt, end_dt = self._validate_reservation_times(
             start_time,
             end_time,
@@ -161,7 +159,7 @@ class Provider(BaseProvider):
             allow_reauth=True,
         )
         reservation = self._map_reservation(data)
-        _LOGGER.debug("Provider %s start_reservation completed", self.provider_id)
+        self._log_operation_completed("start_reservation")
         return reservation
 
     async def update_reservation(
@@ -172,7 +170,7 @@ class Provider(BaseProvider):
         name: str | None = None,
     ) -> Reservation:
         """Update a reservation."""
-        _LOGGER.debug("Provider %s update_reservation started", self.provider_id)
+        self._log_operation_started("update_reservation")
         if not self.reservation_update_possible:
             raise ProviderError("Reservation updates are not supported.")
         if start_time is not None or name is not None:
@@ -190,7 +188,7 @@ class Provider(BaseProvider):
             allow_reauth=True,
         )
         reservation = self._map_reservation(data)
-        _LOGGER.debug("Provider %s update_reservation completed", self.provider_id)
+        self._log_operation_completed("update_reservation")
         return reservation
 
     async def end_reservation(
@@ -199,7 +197,7 @@ class Provider(BaseProvider):
         end_time: datetime,
     ) -> Reservation:
         """End a reservation."""
-        _LOGGER.debug("Provider %s end_reservation started", self.provider_id)
+        self._log_operation_started("end_reservation")
         reservation_id_value = self._require_id(reservation_id, "reservation_id")
         end_dt = self._normalize_datetime(end_time)
         normalized_end_time = self._format_utc_timestamp(end_dt)
@@ -218,24 +216,20 @@ class Provider(BaseProvider):
             start_time=existing.start_time,
             end_time=normalized_end_time,
         )
-        _LOGGER.debug("Provider %s end_reservation completed", self.provider_id)
+        self._log_operation_completed("end_reservation")
         return reservation
 
     async def list_favorites(self) -> list[Favorite]:
         """Return stored favorites."""
-        _LOGGER.debug("Provider %s list_favorites started", self.provider_id)
+        self._log_operation_started("list_favorites")
         data = await self._request_json("GET", FAVORITE_ENDPOINT, allow_reauth=True)
         favorites = self._map_favorite_list(data)
-        _LOGGER.debug(
-            "Provider %s list_favorites completed count=%s",
-            self.provider_id,
-            len(favorites),
-        )
+        self._log_operation_completed("list_favorites", count=len(favorites))
         return favorites
 
     async def add_favorite(self, license_plate: str, name: str | None = None) -> Favorite:
         """Add a favorite."""
-        _LOGGER.debug("Provider %s add_favorite started", self.provider_id)
+        self._log_operation_started("add_favorite")
         normalized_plate = self._normalize_license_plate(license_plate)
         favorites = await self.list_favorites()
         for favorite in favorites:
@@ -250,7 +244,7 @@ class Provider(BaseProvider):
             allow_reauth=True,
         )
         favorite = self._map_favorite(data)
-        _LOGGER.debug("Provider %s add_favorite completed", self.provider_id)
+        self._log_operation_completed("add_favorite")
         return favorite
 
     async def _update_favorite_native(
@@ -260,7 +254,7 @@ class Provider(BaseProvider):
         name: str | None = None,
     ) -> Favorite:
         """Native favorite update implementation."""
-        _LOGGER.debug("Provider %s update_favorite started", self.provider_id)
+        self._log_operation_started("update_favorite")
         favorite_id_value = self._require_id(favorite_id, "favorite_id")
         if license_plate is None and name is None:
             raise ValidationError("license_plate or name is required.")
@@ -282,19 +276,19 @@ class Provider(BaseProvider):
             allow_reauth=True,
         )
         favorite = self._map_favorite(data)
-        _LOGGER.debug("Provider %s update_favorite completed", self.provider_id)
+        self._log_operation_completed("update_favorite")
         return favorite
 
     async def remove_favorite(self, favorite_id: str) -> None:
         """Remove a favorite."""
-        _LOGGER.debug("Provider %s remove_favorite started", self.provider_id)
+        self._log_operation_started("remove_favorite")
         favorite_id_value = self._require_id(favorite_id, "favorite_id")
         await self._request_text(
             "DELETE",
             f"{FAVORITE_ENDPOINT}/{favorite_id_value}",
             allow_reauth=True,
         )
-        _LOGGER.debug("Provider %s remove_favorite completed", self.provider_id)
+        self._log_operation_completed("remove_favorite")
 
     def _map_permit(self, account: Any) -> Permit:
         if not isinstance(account, dict):
@@ -486,34 +480,24 @@ class Provider(BaseProvider):
         request_kwargs: dict[str, Any] = {"headers": headers, "auth": auth}
         if json is not None:
             request_kwargs["json"] = json
-        attempts = 2 if allow_reauth else 1
-        for attempt in range(attempts):
-            try:
-                return await self._request(
-                    method,
-                    url,
-                    expect_json=expect_json,
-                    **request_kwargs,
-                )
-            except AuthError:
-                if allow_reauth and attempt == 0:
-                    context, target, package_version = self._request_log_details()
-                    _LOGGER.warning(
-                        (
-                            "Provider %s reauth triggered "
-                            "(context=%s, target=%s, package_version=%s)"
-                        ),
-                        self.provider_id,
-                        context,
-                        target,
-                        package_version,
-                    )
-                    await self._reauthenticate()
-                    headers = self._build_headers()
-                    request_kwargs["headers"] = headers
-                    continue
-                raise
-        raise ProviderError("Request failed.")
+
+        async def perform_request() -> Any:
+            return await self._request(
+                method,
+                url,
+                expect_json=expect_json,
+                **request_kwargs,
+            )
+
+        async def handle_reauth() -> None:
+            await self._reauthenticate()
+            request_kwargs["headers"] = self._build_headers()
+
+        return await self._request_with_optional_reauth(
+            allow_reauth=allow_reauth,
+            request=perform_request,
+            on_reauth=handle_reauth,
+        )
 
     async def _request(self, method: str, url: str, *, expect_json: bool, **kwargs: Any) -> Any:
         async def handle_response(
@@ -525,11 +509,13 @@ class Provider(BaseProvider):
                 message = await self._error_message_from_response(response)
                 if message:
                     raise ProviderError(message)
+            self._log_response_status(response.status)
             self._raise_for_status(response)
             if expect_json:
                 try:
                     return await response.json()
                 except (aiohttp.ContentTypeError, ValueError) as exc:
+                    self._log_invalid_json(await response.text())
                     raise ProviderError("Response did not contain valid JSON.") from exc
             return await response.text()
 
@@ -551,6 +537,7 @@ class Provider(BaseProvider):
         self._logged_in = False
         if not self._credentials:
             raise AuthError("Authentication required.")
+        self._log_reauthenticating()
         await self.login(self._credentials)
 
     def _normalize_permit_media_type_id(self, value: Any) -> str | None:

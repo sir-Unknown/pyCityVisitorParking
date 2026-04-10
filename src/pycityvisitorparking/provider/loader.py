@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import logging
 import time
 from collections.abc import Iterable
 from dataclasses import dataclass
@@ -14,6 +13,7 @@ from importlib.resources.abc import Traversable
 
 from ..exceptions import ProviderError
 from ..models import BALANCE_UNIT_EURO, BALANCE_UNIT_MINUTE, BALANCE_UNIT_TIMES, ProviderInfo
+from .logger import get_provider_logger
 
 MANIFEST_FILENAME = "manifest.json"
 SCHEMA_FILENAME = "manifest.schema.json"
@@ -21,7 +21,7 @@ _DEFAULT_CACHE_TTL_SECONDS = 300.0
 _FAVORITE_UPDATE_FIELDS = {"license_plate", "name"}
 _RESERVATION_UPDATE_FIELDS = {"start_time", "end_time", "name"}
 _BALANCE_UNITS = {BALANCE_UNIT_TIMES, BALANCE_UNIT_MINUTE, BALANCE_UNIT_EURO}
-_LOGGER = logging.getLogger(__name__)
+_LOGGER = get_provider_logger(__name__)
 
 
 @dataclass(frozen=True, slots=True)

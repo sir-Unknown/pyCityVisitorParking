@@ -11,7 +11,7 @@ RESERVATION_END_ENDPOINT = "/reservation/end"
 FAVORITE_UPSERT_ENDPOINT = "/permitmedialicenseplate/upsert"
 FAVORITE_REMOVE_ENDPOINT = "/permitmedialicenseplate/remove"
 
-LOGIN_METHOD_PAS = "Pas"
+LOGIN_METHOD_PAS = 2
 
 AUTH_HEADER = "Authorization"
 AUTH_PREFIX = "Token "

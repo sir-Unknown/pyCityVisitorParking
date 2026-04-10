@@ -65,6 +65,7 @@ class Provider(BaseProvider):
         )
         self._token: str | None = None
         self._auth_header_value: str | None = None
+        self._session_authenticated = False
         self._credentials: dict[str, str] | None = None
         self._permit_media_type_id: str | int | None = None
         self._permit_media_code: str | None = None
@@ -120,9 +121,9 @@ class Provider(BaseProvider):
             if isinstance(status_value, str) and status_value.isdigit():
                 status_value = int(status_value)
             token = data.get("Token")
-            if status_value == 2 or not token:
-                error_message = data.get("ErrorMessage")
-                requires_otp = data.get("RequiresOtp")
+            error_message = data.get("ErrorMessage")
+            requires_otp = data.get("RequiresOtp")
+            if status_value == 2 or error_message:
                 self._log_with_metadata(
                     logging.WARNING,
                     (
@@ -137,14 +138,28 @@ class Provider(BaseProvider):
                 )
                 raise AuthError("Authentication failed.")
 
-            self._token = str(token)
-            self._auth_header_value = self._build_auth_header(self._token)
+            self._token = str(token) if token else None
+            self._auth_header_value = (
+                self._build_auth_header(self._token) if self._token is not None else None
+            )
+            self._session_authenticated = True
             self._permit_media_type_id = permit_media_type_id
             self._credentials = {
                 "username": username,
                 "password": password,
                 "permit_media_type_id": str(permit_media_type_id),
             }
+            # Some DVS deployments authenticate via a session cookie and omit Token from
+            # the login payload. In that case, perform a lightweight follow-up fetch to
+            # verify the session and cache permit defaults for later requests.
+            if token:
+                permit = (
+                    self._extract_permit(data) if self._response_includes_permit(data) else None
+                )
+                if permit is not None:
+                    self._cache_defaults(permit)
+            else:
+                await self._fetch_base()
             self._log_operation_completed(
                 "login",
                 login_status=status_value,
@@ -444,7 +459,7 @@ class Provider(BaseProvider):
         return permit
 
     async def _ensure_authenticated(self) -> None:
-        if self._token is None:
+        if self._token is None and not self._session_authenticated:
             if not self._credentials:
                 raise AuthError("Authentication required.")
             await self.login(self._credentials)
@@ -465,6 +480,14 @@ class Provider(BaseProvider):
         if not isinstance(permit, dict):
             raise ProviderError("Provider response did not include permit data.")
         return permit
+
+    def _response_includes_permit(self, data: dict[str, Any]) -> bool:
+        """Return whether a provider response already includes permit details."""
+        permit = data.get("Permit")
+        if isinstance(permit, dict):
+            return True
+        permits = data.get("Permits")
+        return isinstance(permits, list) and any(isinstance(item, dict) for item in permits)
 
     def _select_permit_media(self, permit: dict[str, Any]) -> dict[str, Any]:
         media_items = permit.get("PermitMedias")
@@ -658,7 +681,9 @@ class Provider(BaseProvider):
 
     async def _request_json_auth(self, method: str, path: str, *, json: Any | None = None) -> Any:
         await self._ensure_authenticated()
-        headers = {AUTH_HEADER: self._auth_header_value or ""}
+        headers = {}
+        if self._auth_header_value is not None:
+            headers[AUTH_HEADER] = self._auth_header_value
         return await self._request_json(
             method,
             path,
@@ -711,12 +736,9 @@ class Provider(BaseProvider):
         async def handle_reauth() -> None:
             await self._reauthenticate()
             request_headers.clear()
-            request_headers.update(
-                {
-                    **DEFAULT_HEADERS,
-                    AUTH_HEADER: self._auth_header_value or "",
-                }
-            )
+            request_headers.update(DEFAULT_HEADERS)
+            if self._auth_header_value is not None:
+                request_headers[AUTH_HEADER] = self._auth_header_value
 
         return await self._request_with_optional_reauth(
             allow_reauth=allow_reauth,
@@ -790,6 +812,7 @@ class Provider(BaseProvider):
     async def _reauthenticate(self) -> None:
         self._token = None
         self._auth_header_value = None
+        self._session_authenticated = False
         if not self._credentials:
             raise AuthError("Authentication required.")
         self._log_reauthenticating()

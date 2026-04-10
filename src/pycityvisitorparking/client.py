@@ -75,6 +75,8 @@ class Client:
         base_url: str | None = None,
         api_uri: str | None = None,
         request_context: str | None = None,
+        ha_cvp_version: str | None = None,
+        pycvp_version: str | None = None,
     ) -> BaseProvider:
         _LOGGER.debug("Loading provider %s", provider_id)
         manifest, provider_cls = await asyncio.to_thread(_load_provider_data, provider_id)
@@ -94,6 +96,10 @@ class Client:
             retry_count=self._retry_count,
         )
         provider.set_request_context(request_context)
+        provider.set_runtime_versions(
+            ha_cvp_version=ha_cvp_version,
+            pycvp_version=pycvp_version,
+        )
         return provider
 
     def _ensure_session(self) -> aiohttp.ClientSession:

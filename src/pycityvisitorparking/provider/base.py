@@ -23,9 +23,11 @@ from ..util import (
     validate_reservation_times,
 )
 from .loader import ProviderManifest
+from .logger import get_provider_logger
 
 _DEFAULT_TIMEOUT = aiohttp.ClientTimeout(total=30)
-_LOGGER = logging.getLogger(__name__)
+_MAX_LOG_BODY_CHARS = 240
+_LOGGER = get_provider_logger(__name__)
 _T = TypeVar("_T")
 
 try:
@@ -67,6 +69,8 @@ class BaseProvider(ABC):
         self._timeout = timeout or _DEFAULT_TIMEOUT
         self._retry_count = max(0, retry_count)
         self._request_context_name: str | None = None
+        self._ha_cvp_version = "unknown"
+        self._pycvp_version = PACKAGE_VERSION
 
     def set_request_context(self, context_name: str | None) -> None:
         """Set a human-readable context label for request diagnostics."""
@@ -75,6 +79,20 @@ class BaseProvider(ABC):
             return
         value = context_name.strip()
         self._request_context_name = value or None
+
+    def set_runtime_versions(
+        self,
+        *,
+        ha_cvp_version: str | None = None,
+        pycvp_version: str | None = None,
+    ) -> None:
+        """Set runtime version metadata for provider logging."""
+        if ha_cvp_version is not None:
+            value = ha_cvp_version.strip()
+            self._ha_cvp_version = value or "unknown"
+        if pycvp_version is not None:
+            value = pycvp_version.strip()
+            self._pycvp_version = value or "unknown"
 
     def _request_target_label(self) -> str:
         """Return a stable target label for diagnostics and logs."""
@@ -89,13 +107,137 @@ class BaseProvider(ABC):
             return self._request_context_name
         return self._request_target_label()
 
-    def _request_log_details(self) -> tuple[str, str, str]:
-        """Return (context, target, package_version) for consistent error logging."""
+    def _request_city_label(self) -> str:
+        """Return city label for diagnostics and logs."""
+        if self._request_context_name:
+            return self._request_context_name
+        return "unknown"
+
+    def _request_log_metadata(self) -> tuple[str, str, str, str]:
+        """Return provider logging metadata."""
         return (
-            self._request_context_label(),
-            self._request_target_label(),
-            PACKAGE_VERSION,
+            self.provider_id,
+            self._request_city_label(),
+            self._ha_cvp_version,
+            self._pycvp_version,
         )
+
+    def _log_with_metadata(self, level: int, message: str, *args: Any) -> None:
+        """Log a message with standard provider metadata suffix."""
+        provider, city, ha_cvp_version, pycvp_version = self._request_log_metadata()
+        _LOGGER.log(
+            level,
+            f"{message} (provider=%s, city=%s, hacvp=%s, pycvp=%s)",
+            *args,
+            provider,
+            city,
+            ha_cvp_version,
+            pycvp_version,
+        )
+
+    def _format_log_details(self, **details: Any) -> str:
+        """Serialize optional log details as a compact key=value suffix."""
+        if not details:
+            return ""
+        return " " + " ".join(f"{key}={value}" for key, value in details.items())
+
+    def _log_operation_started(self, operation: str) -> None:
+        """Log the start of a provider operation."""
+        _LOGGER.debug("Provider %s %s started", self.provider_id, operation)
+
+    def _log_operation_completed(self, operation: str, **details: Any) -> None:
+        """Log successful completion of a provider operation."""
+        _LOGGER.debug(
+            "Provider %s %s completed%s",
+            self.provider_id,
+            operation,
+            self._format_log_details(**details),
+        )
+
+    def _log_operation_failed(self, operation: str, reason: str, **details: Any) -> None:
+        """Log a provider operation failure before raising a validation/provider error."""
+        _LOGGER.debug(
+            "Provider %s %s failed: %s%s",
+            self.provider_id,
+            operation,
+            reason,
+            self._format_log_details(**details),
+        )
+
+    def _log_reauth_triggered(self) -> None:
+        """Log when a provider request falls back to reauthentication."""
+        self._log_with_metadata(logging.WARNING, "Reauth triggered")
+
+    def _log_reauthenticating(self) -> None:
+        """Log when cached credentials are used to reauthenticate."""
+        _LOGGER.debug(
+            "Provider %s reauthenticating with cached credentials",
+            self.provider_id,
+        )
+
+    def _log_missing_response_data(self, label: str, fallback: str = "refetching") -> None:
+        """Log when a response is missing expected data and a fallback is used."""
+        self._log_with_metadata(logging.WARNING, "%s missing permit, %s", label, fallback)
+
+    def _log_response_status(self, status: int) -> None:
+        """Log the HTTP response status returned by a provider."""
+        _LOGGER.debug("Provider %s response status=%s", self.provider_id, status)
+
+    def _summarize_log_text(self, value: str) -> str:
+        """Normalize and truncate response text for safe logging."""
+        compact = " ".join(value.split())
+        if len(compact) > _MAX_LOG_BODY_CHARS:
+            return compact[: _MAX_LOG_BODY_CHARS - 3] + "..."
+        return compact
+
+    def _log_request_failure(self, status: int, *, body: str | None = None) -> None:
+        """Log an unsuccessful provider HTTP response."""
+        is_auth = status in (401, 403)
+        if body is None:
+            self._log_with_metadata(
+                logging.WARNING,
+                "Request failed with %sstatus=%s",
+                "auth " if is_auth else "",
+                status,
+            )
+            return
+        self._log_with_metadata(
+            logging.WARNING,
+            "Request failed with %sstatus=%s, body=%s",
+            "auth " if is_auth else "",
+            status,
+            self._summarize_log_text(body),
+        )
+
+    def _log_invalid_json(self, body: str) -> None:
+        """Log an invalid JSON response body."""
+        _LOGGER.warning(
+            "Provider %s returned invalid JSON body=%s",
+            self.provider_id,
+            self._summarize_log_text(body),
+        )
+
+    async def _request_with_optional_reauth(
+        self,
+        *,
+        allow_reauth: bool,
+        request: Callable[[], Awaitable[_T]],
+        on_reauth: Callable[[], Awaitable[None]] | None = None,
+    ) -> _T:
+        """Execute a request and retry once after reauthentication when allowed."""
+        attempts = 2 if allow_reauth else 1
+        for attempt in range(attempts):
+            try:
+                return await request()
+            except AuthError:
+                if allow_reauth and attempt == 0:
+                    self._log_reauth_triggered()
+                    if on_reauth is None:
+                        raise
+                    await on_reauth()
+                    continue
+                raise
+        raise ProviderError("Request failed.")
 
     @property
     def provider_id(self) -> str:
@@ -243,8 +385,8 @@ class BaseProvider(ABC):
 
     def _merge_credentials(
         self,
-        credentials: Mapping[str, str] | None,
-        **kwargs: str,
+        credentials: Mapping[str, object] | None,
+        **kwargs: object,
     ) -> dict[str, str]:
         merged: dict[str, str] = {}
         if credentials is not None:
@@ -296,13 +438,10 @@ class BaseProvider(ABC):
                 continue
             except (aiohttp.ClientError, TimeoutError) as exc:
                 last_error = exc
-                _LOGGER.warning(
-                    ("Provider %s request error: %s (context=%s, target=%s, package_version=%s)"),
-                    self.provider_id,
+                self._log_with_metadata(
+                    logging.WARNING,
+                    "Request error: %s",
                     exc.__class__.__name__,
-                    self._request_context_label(),
-                    self._request_target_label(),
-                    PACKAGE_VERSION,
                 )
                 if attempt >= attempts - 1:
                     raise NetworkError("Network request failed.") from exc
@@ -324,16 +463,13 @@ class BaseProvider(ABC):
             _attempt: int,
             _attempts: int,
         ) -> Any:
-            _LOGGER.debug(
-                "Provider %s response status=%s",
-                self.provider_id,
-                response.status,
-            )
+            self._log_response_status(response.status)
             self._raise_for_status(response)
             if expect_json:
                 try:
                     return await response.json()
                 except (aiohttp.ContentTypeError, ValueError) as exc:
+                    self._log_invalid_json(await response.text())
                     raise ProviderError("Response did not contain valid JSON.") from exc
             return await response.text()
 
@@ -347,17 +483,7 @@ class BaseProvider(ABC):
     def _raise_for_status(self, response: aiohttp.ClientResponse) -> None:
         if 200 <= response.status < 300:
             return
-        _LOGGER.warning(
-            (
-                "Provider %s request failed with status %s "
-                "(context=%s, target=%s, package_version=%s)"
-            ),
-            self.provider_id,
-            response.status,
-            self._request_context_label(),
-            self._request_target_label(),
-            PACKAGE_VERSION,
-        )
+        self._log_request_failure(response.status)
         if response.status in (401, 403):
             raise AuthError("Authentication failed.")
         raise ProviderError(f"Provider request failed with status {response.status}.")
@@ -380,7 +506,11 @@ class BaseProvider(ABC):
         return f"/{normalized}"
 
     @abstractmethod
-    async def login(self, credentials: Mapping[str, str] | None = None, **kwargs: str) -> None:
+    async def login(
+        self,
+        credentials: Mapping[str, object] | None = None,
+        **kwargs: object,
+    ) -> None:
         """Authenticate against the provider."""
 
     @abstractmethod
@@ -444,7 +574,7 @@ class BaseProvider(ABC):
             raise ValidationError("license_plate updates are not supported.")
         if name is not None and "name" not in self.favorite_update_fields:
             raise ValidationError("name updates are not supported.")
-        _LOGGER.debug("Provider %s update_favorite started", self.provider_id)
+        self._log_operation_started("update_favorite")
         return await self._update_favorite_native(
             favorite_id,
             license_plate=license_plate,

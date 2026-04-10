@@ -31,11 +31,9 @@ def normalize_datetime(value: datetime) -> datetime:
 
 
 def parse_timestamp(value: str) -> datetime:
-    if not isinstance(value, str) or not value:
+    if not isinstance(value, str) or not value.strip():
         raise ValidationError("Timestamp must be a non-empty string.")
     raw = value.strip()
-    if not raw:
-        raise ValidationError("Timestamp must be a non-empty string.")
     if raw.endswith("Z"):
         raw = f"{raw[:-1]}+00:00"
     try:
@@ -89,12 +87,12 @@ def validate_reservation_times(
         raise ValidationError("end_time must be a timezone-aware datetime.")
     start_dt = normalize_datetime(start_time) if start_time is not None else None
     end_dt = normalize_datetime(end_time) if end_time is not None else None
-    if start_dt and end_dt and end_dt <= start_dt:
+    if start_dt is not None and end_dt is not None and end_dt <= start_dt:
         raise ValidationError("end_time must be after start_time.")
     return start_dt, end_dt
 
 
 def filter_chargeable_zone_validity(
-    entries: Iterable[tuple[ZoneValidityBlock, bool]],
+    zone_validity_pairs: Iterable[tuple[ZoneValidityBlock, bool]],
 ) -> list[ZoneValidityBlock]:
-    return [block for block, is_chargeable in entries if is_chargeable]
+    return [block for block, is_chargeable in zone_validity_pairs if is_chargeable]

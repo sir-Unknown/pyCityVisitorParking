@@ -6,6 +6,9 @@ change-title-escapes: '\<*_&'
 
 sort-direction: ascending
 
+include-paths:
+  - "src/"
+
 categories:
   - title: "Breaking changes"
     labels:

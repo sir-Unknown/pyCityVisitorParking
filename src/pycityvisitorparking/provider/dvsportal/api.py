@@ -18,6 +18,7 @@ from ...models import BALANCE_UNIT_MINUTE, Favorite, Permit, Reservation, ZoneVa
 from ...util import format_utc_timestamp, parse_timestamp
 from ..base import BaseProvider
 from ..loader import ProviderManifest
+from ..logger import get_provider_logger
 from .const import (
     API_TIMEZONE,
     AUTH_HEADER,
@@ -35,7 +36,7 @@ from .const import (
     RETRY_AFTER_HEADER,
 )
 
-_LOGGER = logging.getLogger(__name__)
+_LOGGER = get_provider_logger(__name__)
 
 
 class Provider(BaseProvider):
@@ -66,125 +67,106 @@ class Provider(BaseProvider):
         self._auth_header_value: str | None = None
         self._credentials: dict[str, str] | None = None
         self._permit_media_type_id: str | int | None = None
-        self._login_method_int: int | None = None
         self._permit_media_code: str | None = None
         self._api_timezone: ZoneInfo | None = None
         self._operation_lock = asyncio.Lock()
         self._lock_owner: asyncio.Task[Any] | None = None
-        self._lock_depth = 0
 
-    async def login(self, credentials: Mapping[str, str] | None = None, **kwargs: str) -> None:
+    def _build_auth_header(self, token: str) -> str:
+        """Return the Authorization header value for a raw provider token."""
+        encoded = base64.b64encode(token.encode("utf-8")).decode("ascii")
+        return f"{AUTH_PREFIX}{encoded}"
+
+    async def login(
+        self,
+        credentials: Mapping[str, object] | None = None,
+        **kwargs: object,
+    ) -> None:
         """Authenticate against the provider."""
         async with self._operation_guard():
-            _LOGGER.debug("Provider %s login started", self.provider_id)
+            self._log_operation_started("login")
             merged = self._merge_credentials(credentials, **kwargs)
             username = merged.get("username")
             password = merged.get("password")
+            permit_media_type_id = merged.get("permit_media_type_id")
             if not username:
                 raise ValidationError("username is required.")
             if not password:
                 raise ValidationError("password is required.")
-
-            # Prefer the minimal login payload first.
-            # Several DVSPortal deployments return HTTP 500 for the extended
-            # login shape or for GET /login config probing, while minimal login
-            # remains functional.
-            permit_media_type_id: str | int | None = merged.get("permit_media_type_id")
-            login_method_int: int | None = None
-            raw_lm = merged.get("login_method_int")
-            if raw_lm is not None:
-                try:
-                    login_method_int = int(raw_lm)
-                except ValueError, TypeError:
-                    _LOGGER.debug(
-                        "Provider %s received invalid login_method_int=%r; using fallback.",
-                        self.provider_id,
-                        raw_lm,
-                    )
             if permit_media_type_id is None:
                 permit_media_type_id = self._permit_media_type_id
-            if login_method_int is None:
-                login_method_int = self._login_method_int
+            if permit_media_type_id is None:
+                permit_media_type_id = await self._fetch_permit_media_type_id()
+            self._validate_media_type_id(permit_media_type_id)
 
             payload = {
-                "Identifier": username,
-                "Password": password,
+                "identifier": username,
+                "loginMethod": LOGIN_METHOD_PAS,
+                "password": password,
+                "otp": None,
+                "resetCode": None,
+                "asIdentifier": None,
+                "zipCode": None,
+                "permitMediaTypeID": permit_media_type_id,
             }
-            try:
-                data = await self._request_json(
-                    "POST",
-                    LOGIN_ENDPOINT,
-                    json=payload,
-                    allow_reauth=False,
-                )
-            except ProviderError as err:
-                # Fallback to extended payload when minimal model is rejected.
-                if "status 400" not in str(err) and "status 500" not in str(err):
-                    raise
-                if permit_media_type_id is None or login_method_int is None:
-                    fetched_id, fetched_method = await self._fetch_login_config()
-                    if permit_media_type_id is None:
-                        permit_media_type_id = fetched_id
-                    if login_method_int is None:
-                        login_method_int = fetched_method
-                self._validate_media_type_id(permit_media_type_id)
-                fallback_payload = {
-                    "Identifier": username,
-                    "LoginMethod": login_method_int,
-                    "Password": password,
-                    "PermitMediaTypeID": permit_media_type_id,
-                }
-                data = await self._request_json(
-                    "POST",
-                    LOGIN_ENDPOINT,
-                    json=fallback_payload,
-                    allow_reauth=False,
-                )
+            data = await self._request_json(
+                "POST",
+                LOGIN_ENDPOINT,
+                json=payload,
+                allow_reauth=False,
+            )
 
             status_value = data.get("LoginStatus")
             if isinstance(status_value, str) and status_value.isdigit():
                 status_value = int(status_value)
             token = data.get("Token")
             if status_value == 2 or not token:
+                error_message = data.get("ErrorMessage")
+                requires_otp = data.get("RequiresOtp")
+                self._log_with_metadata(
+                    logging.WARNING,
+                    (
+                        "Provider %s login failed: LoginStatus=%r token_present=%s "
+                        "requires_otp=%r error_message=%r"
+                    ),
+                    self.provider_id,
+                    status_value,
+                    bool(token),
+                    requires_otp,
+                    error_message,
+                )
                 raise AuthError("Authentication failed.")
 
             self._token = str(token)
             self._auth_header_value = self._build_auth_header(self._token)
-            if permit_media_type_id is not None:
-                self._permit_media_type_id = permit_media_type_id
-            if login_method_int is not None:
-                self._login_method_int = login_method_int
+            self._permit_media_type_id = permit_media_type_id
             self._credentials = {
                 "username": username,
                 "password": password,
+                "permit_media_type_id": str(permit_media_type_id),
             }
-            if permit_media_type_id is not None:
-                self._credentials["permit_media_type_id"] = str(permit_media_type_id)
-            if login_method_int is not None:
-                self._credentials["login_method_int"] = str(login_method_int)
-            _LOGGER.debug("Provider %s login completed", self.provider_id)
+            self._log_operation_completed(
+                "login",
+                login_status=status_value,
+                token_present=bool(token),
+                permit_media_type_id=permit_media_type_id,
+            )
 
     async def get_permit(self) -> Permit:
         """Return the active permit for the account."""
         async with self._operation_guard():
-            _LOGGER.debug("Provider %s get_permit started", self.provider_id)
+            self._log_operation_started("get_permit")
             permit = await self._fetch_base()
             mapped = self._map_permit(permit)
-            _LOGGER.debug("Provider %s get_permit completed", self.provider_id)
+            self._log_operation_completed("get_permit")
             return mapped
 
     async def list_reservations(self) -> list[Reservation]:
         """Return active reservations."""
         async with self._operation_guard():
-            _LOGGER.debug("Provider %s list_reservations started", self.provider_id)
-            permit = await self._fetch_base()
-            permit_media = self._select_permit_media(permit)
-            reservations = self._map_reservations(permit_media)
-            _LOGGER.debug(
-                "Provider %s list_reservations completed count=%s",
-                self.provider_id,
-                len(reservations),
-            )
+            self._log_operation_started("list_reservations")
+            reservations = self._reservations_from_permit(await self._fetch_base())
+            self._log_operation_completed("list_reservations", count=len(reservations))
             return reservations
 
     async def start_reservation(
@@ -196,7 +178,7 @@ class Provider(BaseProvider):
     ) -> Reservation:
         """Start a reservation for a license plate."""
         async with self._operation_guard():
-            _LOGGER.debug("Provider %s start_reservation started", self.provider_id)
+            self._log_operation_started("start_reservation")
             start_time_utc, end_time_utc = self._validate_reservation_times(
                 start_time,
                 end_time,
@@ -225,24 +207,8 @@ class Provider(BaseProvider):
                 RESERVATION_CREATE_ENDPOINT,
                 json=payload,
             )
-            try:
-                permit = self._extract_permit(data)
-            except ProviderError:
-                context, target, package_version = self._request_log_details()
-                _LOGGER.warning(
-                    (
-                        "Provider %s reservation create missing permit, refetching "
-                        "(context=%s, target=%s, package_version=%s)"
-                    ),
-                    self.provider_id,
-                    context,
-                    target,
-                    package_version,
-                )
-                permit = await self._fetch_base()
-            self._cache_defaults(permit)
-            permit_media = self._select_permit_media(permit)
-            reservations = self._map_reservations(permit_media)
+            permit = await self._permit_from_response(data, "reservation create")
+            reservations = self._reservations_from_permit(permit)
             reservation = self._select_reservation(
                 reservations,
                 license_plate=normalized_plate,
@@ -251,7 +217,7 @@ class Provider(BaseProvider):
             )
             if reservation is None:
                 raise ProviderError("Reservation was not returned by the provider.")
-            _LOGGER.debug("Provider %s start_reservation completed", self.provider_id)
+            self._log_operation_completed("start_reservation")
             return reservation
 
     async def update_reservation(
@@ -263,7 +229,7 @@ class Provider(BaseProvider):
     ) -> Reservation:
         """Update a reservation."""
         async with self._operation_guard():
-            _LOGGER.debug("Provider %s update_reservation started", self.provider_id)
+            self._log_operation_started("update_reservation")
             if not self.reservation_update_possible:
                 raise ProviderError("Reservation updates are not supported.")
             if start_time is not None or name is not None:
@@ -275,69 +241,49 @@ class Provider(BaseProvider):
                 raise ValidationError("reservation_id is required.")
 
             end_dt = self._normalize_datetime(end_time)
-            permit = await self._fetch_base()
-            permit_media = self._select_permit_media(permit)
-        existing = self._select_reservation(
-            self._map_reservations(permit_media),
-            reservation_id=reservation_id_value,
-        )
-        if existing is None:
-            _LOGGER.debug(
-                "Provider %s update_reservation failed: reservation_id not found",
-                self.provider_id,
+            existing = self._select_reservation(
+                self._reservations_from_permit(await self._fetch_base()),
+                reservation_id=reservation_id_value,
             )
-            raise ValidationError("reservation_id was not found.")
-        if self._permit_media_type_id is None or self._permit_media_code is None:
-            raise ProviderError("Permit media defaults are missing.")
-        try:
-            existing_start_dt = parse_timestamp(existing.start_time)
-            existing_end_dt = parse_timestamp(existing.end_time)
-        except ValidationError as exc:
-            raise ProviderError("Provider returned invalid reservation data.") from exc
+            if existing is None:
+                self._log_operation_failed("update_reservation", "reservation_id not found")
+                raise ValidationError("reservation_id was not found.")
+            if self._permit_media_type_id is None or self._permit_media_code is None:
+                raise ProviderError("Permit media defaults are missing.")
+            try:
+                existing_start_dt = parse_timestamp(existing.start_time)
+                existing_end_dt = parse_timestamp(existing.end_time)
+            except ValidationError as exc:
+                raise ProviderError("Provider returned invalid reservation data.") from exc
 
-        self._validate_reservation_times(existing_start_dt, end_dt, require_both=True)
-        delta_seconds = int((end_dt - existing_end_dt).total_seconds())
-        if delta_seconds % 60 != 0:
-            # The API accepts minute deltas only.
-            raise ValidationError("end_time must be aligned to whole minutes.")
-        minutes_delta = delta_seconds // 60
-        payload = {
-            "Minutes": minutes_delta,
-            "ReservationID": reservation_id_value,
-            "permitMediaTypeID": self._permit_media_type_id,
-            "permitMediaCode": self._permit_media_code,
-        }
-        data = await self._request_json_auth(
-            "POST",
-            RESERVATION_UPDATE_ENDPOINT,
-            json=payload,
-        )
-        try:
-            permit = self._extract_permit(data)
-        except ProviderError:
-            context, target, package_version = self._request_log_details()
-            _LOGGER.warning(
-                (
-                    "Provider %s reservation update missing permit, refetching "
-                    "(context=%s, target=%s, package_version=%s)"
-                ),
-                self.provider_id,
-                context,
-                target,
-                package_version,
+            self._validate_reservation_times(existing_start_dt, end_dt, require_both=True)
+            # A negative delta shortens the reservation; the API accepts this.
+            delta_seconds = int((end_dt - existing_end_dt).total_seconds())
+            if delta_seconds % 60 != 0:
+                # The API accepts minute deltas only.
+                raise ValidationError("end_time must be aligned to whole minutes.")
+            minutes_delta = delta_seconds // 60
+            payload = {
+                "Minutes": minutes_delta,
+                "ReservationID": reservation_id_value,
+                "permitMediaTypeID": self._permit_media_type_id,
+                "permitMediaCode": self._permit_media_code,
+            }
+            data = await self._request_json_auth(
+                "POST",
+                RESERVATION_UPDATE_ENDPOINT,
+                json=payload,
             )
-            permit = await self._fetch_base()
-        self._cache_defaults(permit)
-        permit_media = self._select_permit_media(permit)
-        reservations = self._map_reservations(permit_media)
-        updated = self._select_reservation(
-            reservations,
-            reservation_id=reservation_id_value,
-        )
-        if updated is None:
-            raise ProviderError("Reservation was not returned by the provider.")
-        _LOGGER.debug("Provider %s update_reservation completed", self.provider_id)
-        return updated
+            permit = await self._permit_from_response(data, "reservation update")
+            reservations = self._reservations_from_permit(permit)
+            updated = self._select_reservation(
+                reservations,
+                reservation_id=reservation_id_value,
+            )
+            if updated is None:
+                raise ProviderError("Reservation was not returned by the provider.")
+            self._log_operation_completed("update_reservation")
+            return updated
 
     async def end_reservation(
         self,
@@ -346,128 +292,89 @@ class Provider(BaseProvider):
     ) -> Reservation:
         """End a reservation."""
         async with self._operation_guard():
-            _LOGGER.debug("Provider %s end_reservation started", self.provider_id)
+            self._log_operation_started("end_reservation")
             end_dt = self._normalize_datetime(end_time)
             normalized_end_time = self._format_utc_timestamp(end_dt)
             await self._ensure_defaults()
-
-        existing = self._select_reservation(
-            await self.list_reservations(),
-            reservation_id=str(reservation_id),
-        )
-        if existing is None:
-            _LOGGER.debug(
-                "Provider %s end_reservation failed: reservation_id not found",
-                self.provider_id,
+            existing = self._select_reservation(
+                await self.list_reservations(),
+                reservation_id=reservation_id,
             )
-            raise ValidationError("reservation_id was not found.")
-        payload = {
-            "permitMediaTypeID": self._permit_media_type_id,
-            "permitMediaCode": self._permit_media_code,
-            "ReservationID": str(reservation_id),
-        }
-        data = await self._request_json_auth(
-            "POST",
-            RESERVATION_END_ENDPOINT,
-            json=payload,
-        )
-        try:
-            permit = self._extract_permit(data)
-        except ProviderError:
-            context, target, package_version = self._request_log_details()
-            _LOGGER.warning(
-                (
-                    "Provider %s reservation end missing permit, refetching "
-                    "(context=%s, target=%s, package_version=%s)"
-                ),
-                self.provider_id,
-                context,
-                target,
-                package_version,
+            if existing is None:
+                self._log_operation_failed("end_reservation", "reservation_id not found")
+                raise ValidationError("reservation_id was not found.")
+            payload = {
+                "permitMediaTypeID": self._permit_media_type_id,
+                "permitMediaCode": self._permit_media_code,
+                "ReservationID": reservation_id,
+            }
+            data = await self._request_json_auth(
+                "POST",
+                RESERVATION_END_ENDPOINT,
+                json=payload,
             )
-            permit = await self._fetch_base()
-        self._cache_defaults(permit)
-        reservation = Reservation(
-            id=existing.id,
-            name=existing.name,
-            license_plate=existing.license_plate,
-            start_time=existing.start_time,
-            end_time=normalized_end_time,
-        )
-        _LOGGER.debug("Provider %s end_reservation completed", self.provider_id)
-        return reservation
+            permit = await self._permit_from_response(data, "reservation end")
+            self._cache_defaults(permit)
+            reservation = Reservation(
+                id=existing.id,
+                name=existing.name,
+                license_plate=existing.license_plate,
+                start_time=existing.start_time,
+                end_time=normalized_end_time,
+            )
+            self._log_operation_completed("end_reservation")
+            return reservation
 
     async def list_favorites(self) -> list[Favorite]:
         """Return stored favorites."""
         async with self._operation_guard():
-            _LOGGER.debug("Provider %s list_favorites started", self.provider_id)
-            permit = await self._fetch_base()
-            permit_media = self._select_permit_media(permit)
-            favorites = self._map_favorites(permit_media)
-            _LOGGER.debug(
-                "Provider %s list_favorites completed count=%s",
-                self.provider_id,
-                len(favorites),
-            )
+            self._log_operation_started("list_favorites")
+            favorites = self._favorites_from_permit(await self._fetch_base())
+            self._log_operation_completed("list_favorites", count=len(favorites))
             return favorites
 
     async def add_favorite(self, license_plate: str, name: str | None = None) -> Favorite:
         """Add a favorite."""
         async with self._operation_guard():
-            _LOGGER.debug("Provider %s add_favorite started", self.provider_id)
-        normalized_plate = self._normalize_license_plate(license_plate)
-        favorites = await self.list_favorites()
-        for favorite in favorites:
-            if favorite.license_plate == normalized_plate:
-                _LOGGER.debug(
-                    "Provider %s add_favorite failed: duplicate license_plate",
-                    self.provider_id,
-                )
-                raise ValidationError("license_plate is already a favorite.")
-        # The list call also refreshes cached permit media defaults.
-        if self._permit_media_type_id is None or self._permit_media_code is None:
-            raise ProviderError("Permit media defaults are missing.")
-        name_value = name or normalized_plate
-
-        payload = {
-            "permitMediaTypeID": self._permit_media_type_id,
-            "permitMediaCode": self._permit_media_code,
-            "licensePlate": {
-                "Value": normalized_plate,
-                "Name": name_value,
-            },
-            "updateLicensePlate": None,
-            "name": name_value,
-        }
-        data = await self._request_json_auth(
-            "POST",
-            FAVORITE_UPSERT_ENDPOINT,
-            json=payload,
-        )
-        try:
-            permit = self._extract_permit(data)
-        except ProviderError:
-            context, target, package_version = self._request_log_details()
-            _LOGGER.warning(
-                (
-                    "Provider %s favorite upsert missing permit, refetching list "
-                    "(context=%s, target=%s, package_version=%s)"
-                ),
-                self.provider_id,
-                context,
-                target,
-                package_version,
-            )
+            self._log_operation_started("add_favorite")
+            normalized_plate = self._normalize_license_plate(license_plate)
             favorites = await self.list_favorites()
-        else:
-            self._cache_defaults(permit)
-            permit_media = self._select_permit_media(permit)
-            favorites = self._map_favorites(permit_media)
-        favorite = self._select_favorite(favorites, normalized_plate)
-        if favorite is None:
-            raise ProviderError("Favorite was not returned by the provider.")
-        _LOGGER.debug("Provider %s add_favorite completed", self.provider_id)
-        return favorite
+            for favorite in favorites:
+                if favorite.license_plate == normalized_plate:
+                    self._log_operation_failed("add_favorite", "duplicate license_plate")
+                    raise ValidationError("license_plate is already a favorite.")
+            # The list call also refreshes cached permit media defaults.
+            if self._permit_media_type_id is None or self._permit_media_code is None:
+                raise ProviderError("Permit media defaults are missing.")
+            name_value = name or normalized_plate
+
+            payload = {
+                "permitMediaTypeID": self._permit_media_type_id,
+                "permitMediaCode": self._permit_media_code,
+                "licensePlate": {
+                    "Value": normalized_plate,
+                    "Name": name_value,
+                },
+                "updateLicensePlate": None,
+                "name": name_value,
+            }
+            data = await self._request_json_auth(
+                "POST",
+                FAVORITE_UPSERT_ENDPOINT,
+                json=payload,
+            )
+            try:
+                permit = self._extract_permit(data)
+            except ProviderError:
+                self._log_missing_response_data("favorite upsert", fallback="refetching list")
+                favorites = await self.list_favorites()
+            else:
+                favorites = self._favorites_from_permit(permit)
+            favorite = self._select_favorite(favorites, normalized_plate)
+            if favorite is None:
+                raise ProviderError("Favorite was not returned by the provider.")
+            self._log_operation_completed("add_favorite")
+            return favorite
 
     async def _update_favorite_native(
         self,
@@ -481,17 +388,12 @@ class Provider(BaseProvider):
     async def remove_favorite(self, favorite_id: str) -> None:
         """Remove a favorite."""
         async with self._operation_guard():
-            _LOGGER.debug("Provider %s remove_favorite started", self.provider_id)
+            self._log_operation_started("remove_favorite")
             normalized_plate = self._normalize_license_plate(favorite_id)
             favorites = await self.list_favorites()
             # DVS removal expects the stored favorite name when available.
-            name_value = normalized_plate
-            for favorite in favorites:
-                if favorite.license_plate != normalized_plate:
-                    continue
-                if favorite.name:
-                    name_value = favorite.name
-                break
+            found = next((f for f in favorites if f.license_plate == normalized_plate), None)
+            name_value = (found and found.name) or normalized_plate
             if self._permit_media_type_id is None or self._permit_media_code is None:
                 raise ProviderError("Permit media defaults are missing.")
             payload = {
@@ -501,10 +403,9 @@ class Provider(BaseProvider):
                 "name": name_value,
             }
             await self._request_json_auth("POST", FAVORITE_REMOVE_ENDPOINT, json=payload)
-            _LOGGER.debug("Provider %s remove_favorite completed", self.provider_id)
+            self._log_operation_completed("remove_favorite")
 
-    async def _fetch_login_config(self) -> tuple[str | int, int]:
-        """Fetch permit media type ID and login method integer from the server."""
+    async def _fetch_permit_media_type_id(self) -> str | int:
         data = await self._request_json(
             "GET",
             LOGIN_ENDPOINT,
@@ -516,30 +417,28 @@ class Provider(BaseProvider):
         first = types[0]
         if not isinstance(first, dict) or "ID" not in first:
             raise ProviderError("Provider did not return a permit media type ID.")
-        permit_media_type_id = first["ID"]
+        return first["ID"]
 
-        methods = data.get("LoginMethods")
-        login_method_int = 2  # fallback: "Pas" is typically at 1-based index 2
-        if isinstance(methods, list):
-            try:
-                login_method_int = methods.index(LOGIN_METHOD_PAS) + 1
-            except ValueError:
-                _LOGGER.debug(
-                    "Provider %s login methods did not include %r; using fallback index %s.",
-                    self.provider_id,
-                    LOGIN_METHOD_PAS,
-                    login_method_int,
-                )
-        return permit_media_type_id, login_method_int
+    async def _permit_from_response(self, data: dict[str, Any], label: str) -> dict[str, Any]:
+        """Extract permit from a response, falling back to a full fetch on failure."""
+        try:
+            return self._extract_permit(data)
+        except ProviderError:
+            self._log_missing_response_data(label)
+            return await self._fetch_base()
 
-    async def _fetch_permit_media_type_id(self) -> str | int:
-        """Backward-compatible helper for callers expecting only the media type ID."""
-        permit_media_type_id, _ = await self._fetch_login_config()
-        return permit_media_type_id
+    def _reservations_from_permit(self, permit: dict[str, Any]) -> list[Reservation]:
+        """Cache permit defaults and map active reservations."""
+        self._cache_defaults(permit)
+        return self._map_reservations(self._select_permit_media(permit))
+
+    def _favorites_from_permit(self, permit: dict[str, Any]) -> list[Favorite]:
+        """Cache permit defaults and map stored favorites."""
+        self._cache_defaults(permit)
+        return self._map_favorites(self._select_permit_media(permit))
 
     async def _fetch_base(self) -> dict[str, Any]:
-        await self._ensure_authenticated()
-        data = await self._request_json_auth("POST", LOGIN_GETBASE_ENDPOINT, json=None)
+        data = await self._request_json_auth("POST", LOGIN_GETBASE_ENDPOINT)
         permit = self._extract_permit(data)
         self._cache_defaults(permit)
         return permit
@@ -549,8 +448,6 @@ class Provider(BaseProvider):
             if not self._credentials:
                 raise AuthError("Authentication required.")
             await self.login(self._credentials)
-        if self._token and not self._auth_header_value:
-            self._auth_header_value = self._build_auth_header(self._token)
 
     async def _ensure_defaults(self) -> None:
         await self._ensure_authenticated()
@@ -590,9 +487,11 @@ class Provider(BaseProvider):
 
     def _map_permit(self, permit: dict[str, Any]) -> Permit:
         media = self._select_permit_media(permit)
-        permit_id = self._coerce_id(media.get("Code")) or self._coerce_id(permit.get("ZoneCode"))
-        if not permit_id:
-            permit_id = "permit"
+        permit_id = (
+            self._coerce_id(media.get("Code"))
+            or self._coerce_id(permit.get("ZoneCode"))
+            or "permit"
+        )
         remaining_balance = self._parse_int(media.get("Balance"))
         zone_validity = self._map_zone_validity(permit.get("BlockTimes"))
         return Permit(
@@ -659,7 +558,7 @@ class Provider(BaseProvider):
             reservations.append(
                 Reservation(
                     id=self._coerce_id(reservation_id),
-                    name=name or "",
+                    name=name,
                     license_plate=normalized_plate,
                     start_time=start,
                     end_time=end,
@@ -705,7 +604,8 @@ class Provider(BaseProvider):
             raise ValidationError("Provider timestamp is not a valid ISO 8601 value.") from exc
         if parsed.tzinfo is None:
             # DVS Portal returns local timestamps without offsets; assume Europe/Amsterdam.
-            # Use fold=0 deterministically for DST transitions.
+            # fold=0 picks the pre-transition (standard time) occurrence when a local time
+            # is ambiguous during a DST changeover, ensuring deterministic behaviour.
             parsed = parsed.replace(tzinfo=self._provider_timezone(), fold=0)
         return format_utc_timestamp(parsed)
 
@@ -735,27 +635,20 @@ class Provider(BaseProvider):
         start_time: str | None = None,
         end_time: str | None = None,
     ) -> Reservation | None:
-        for reservation in reservations:
-            if reservation_id is not None and reservation.id != reservation_id:
-                continue
-            if license_plate is not None and reservation.license_plate != license_plate:
-                continue
-            if start_time is not None and reservation.start_time != start_time:
-                continue
-            if end_time is not None and reservation.end_time != end_time:
-                continue
-            return reservation
-        return None
+        return next(
+            (
+                r
+                for r in reservations
+                if (reservation_id is None or r.id == reservation_id)
+                and (license_plate is None or r.license_plate == license_plate)
+                and (start_time is None or r.start_time == start_time)
+                and (end_time is None or r.end_time == end_time)
+            ),
+            None,
+        )
 
     def _select_favorite(self, favorites: list[Favorite], plate: str) -> Favorite | None:
-        for favorite in favorites:
-            if favorite.license_plate == plate:
-                return favorite
-        return None
-
-    def _build_auth_header(self, token: str) -> str:
-        encoded = base64.b64encode(token.encode("utf-8")).decode("ascii")
-        return f"{AUTH_PREFIX}{encoded}"
+        return next((f for f in favorites if f.license_plate == plate), None)
 
     def _validate_media_type_id(self, value: Any) -> None:
         if isinstance(value, bool) or not isinstance(value, str | int):
@@ -765,9 +658,7 @@ class Provider(BaseProvider):
 
     async def _request_json_auth(self, method: str, path: str, *, json: Any | None = None) -> Any:
         await self._ensure_authenticated()
-        if not self._auth_header_value:
-            raise AuthError("Authentication required.")
-        headers = {AUTH_HEADER: self._auth_header_value}
+        headers = {AUTH_HEADER: self._auth_header_value or ""}
         return await self._request_json(
             method,
             path,
@@ -784,19 +675,16 @@ class Provider(BaseProvider):
         json: Any | None = None,
         headers: dict[str, str] | None = None,
         allow_reauth: bool = False,
-        **kwargs: Any,
     ) -> Any:
         url = self._build_url(path)
         merged_headers = {**DEFAULT_HEADERS, **(headers or {})}
-        request_kwargs = dict(kwargs)
-        request_kwargs["json"] = json
-        request_kwargs["headers"] = merged_headers
-        request_kwargs["allow_reauth"] = allow_reauth
         return await self._request(
             method,
             url,
             expect_json=True,
-            **request_kwargs,
+            json=json,
+            headers=merged_headers,
+            allow_reauth=allow_reauth,
         )
 
     async def _request(
@@ -808,43 +696,33 @@ class Provider(BaseProvider):
         json: Any = None,
         headers: dict[str, str] | None = None,
         allow_reauth: bool = False,
-        **kwargs: Any,
     ) -> Any:
-        request_headers = dict(headers or DEFAULT_HEADERS)
-        request_kwargs = dict(kwargs)
-        request_kwargs["json"] = json
-        request_kwargs["headers"] = request_headers
-        attempts = 2 if allow_reauth else 1
-        for attempt in range(attempts):
-            try:
-                return await self._request_with_backoff(
-                    method,
-                    url,
-                    expect_json=expect_json,
-                    **request_kwargs,
-                )
-            except AuthError:
-                if allow_reauth and attempt == 0:
-                    context, target, package_version = self._request_log_details()
-                    _LOGGER.warning(
-                        (
-                            "Provider %s reauth triggered "
-                            "(context=%s, target=%s, package_version=%s)"
-                        ),
-                        self.provider_id,
-                        context,
-                        target,
-                        package_version,
-                    )
-                    await self._reauthenticate()
-                    request_headers = {
-                        **DEFAULT_HEADERS,
-                        AUTH_HEADER: self._auth_header_value or "",
-                    }
-                    request_kwargs["headers"] = request_headers
-                    continue
-                raise
-        raise ProviderError("Request failed.")
+        request_headers = dict(headers or {})
+
+        async def perform_request() -> Any:
+            return await self._request_with_backoff(
+                method,
+                url,
+                expect_json=expect_json,
+                json=json,
+                headers=request_headers,
+            )
+
+        async def handle_reauth() -> None:
+            await self._reauthenticate()
+            request_headers.clear()
+            request_headers.update(
+                {
+                    **DEFAULT_HEADERS,
+                    AUTH_HEADER: self._auth_header_value or "",
+                }
+            )
+
+        return await self._request_with_optional_reauth(
+            allow_reauth=allow_reauth,
+            request=perform_request,
+            on_reauth=handle_reauth,
+        )
 
     async def _request_with_backoff(
         self,
@@ -863,38 +741,18 @@ class Provider(BaseProvider):
             if response.status == 429:
                 await self._handle_rate_limit(response, method, attempt, attempts)
                 raise self._RetryRequest()
-            if response.status in (401, 403):
-                context, target, package_version = self._request_log_details()
-                _LOGGER.warning(
-                    (
-                        "Provider %s request failed with auth status=%s "
-                        "(context=%s, target=%s, package_version=%s)"
-                    ),
-                    self.provider_id,
-                    response.status,
-                    context,
-                    target,
-                    package_version,
-                )
-                raise AuthError("Authentication failed.")
+            self._log_response_status(response.status)
             if not 200 <= response.status < 300:
-                context, target, package_version = self._request_log_details()
-                _LOGGER.warning(
-                    (
-                        "Provider %s request failed with status=%s "
-                        "(context=%s, target=%s, package_version=%s)"
-                    ),
-                    self.provider_id,
-                    response.status,
-                    context,
-                    target,
-                    package_version,
-                )
+                body = await response.text()
+                self._log_request_failure(response.status, body=body)
+                if response.status in (401, 403):
+                    raise AuthError("Authentication failed.")
                 raise ProviderError(f"Provider request failed with status {response.status}.")
             if expect_json:
                 try:
                     return await response.json()
                 except (aiohttp.ContentTypeError, ValueError) as exc:
+                    self._log_invalid_json(await response.text())
                     raise ProviderError("Response did not contain valid JSON.") from exc
             return await response.text()
 
@@ -912,20 +770,20 @@ class Provider(BaseProvider):
         attempt: int,
         attempts: int,
     ) -> None:
-        retry_after = response.headers.get(RETRY_AFTER_HEADER)
-        if retry_after:
-            try:
-                delay = int(retry_after)
-            except ValueError:
-                delay = 0
-            if delay > 0:
-                # Respect server-provided cooldown before retrying.
-                _LOGGER.debug(
-                    "Provider %s rate limited, retrying after %s seconds",
-                    self.provider_id,
-                    delay,
-                )
-                await asyncio.sleep(delay)
+        try:
+            delay = int(response.headers.get(RETRY_AFTER_HEADER, 0))
+        except ValueError:
+            delay = 0
+        if delay > 0:
+            # Respect server-provided cooldown before retrying.
+            _LOGGER.debug(
+                "Provider %s rate limited, retrying after %s seconds",
+                self.provider_id,
+                delay,
+            )
+            await asyncio.sleep(delay)
+        # For non-GET requests the delay is still applied as a courtesy to the server,
+        # but retrying a mutating request is not safe so the error is raised regardless.
         if method.upper() != "GET" or attempt >= attempts - 1:
             raise ProviderError("Provider rate limit exceeded.")
 
@@ -934,6 +792,7 @@ class Provider(BaseProvider):
         self._auth_header_value = None
         if not self._credentials:
             raise AuthError("Authentication required.")
+        self._log_reauthenticating()
         await self.login(self._credentials)
 
     @asynccontextmanager
@@ -941,17 +800,11 @@ class Provider(BaseProvider):
         """Serialize provider operations that mutate or depend on shared state."""
         task = asyncio.current_task()
         if task is not None and self._lock_owner is task:
-            self._lock_depth += 1
-            try:
-                yield
-            finally:
-                self._lock_depth -= 1
+            yield
             return
         async with self._operation_lock:
             self._lock_owner = task
-            self._lock_depth = 1
             try:
                 yield
             finally:
-                self._lock_depth = 0
                 self._lock_owner = None

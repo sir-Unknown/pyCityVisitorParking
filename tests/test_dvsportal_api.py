@@ -279,6 +279,43 @@ async def test_request_json_auth_requires_auth() -> None:
 
 
 @pytest.mark.asyncio
+async def test_login_accepts_cookie_authenticated_response_without_token() -> None:
+    session = _SequenceSession(
+        [
+            _FakeResponse(json_data={}),
+            _FakeResponse(json_data=_permit_payload()),
+        ]
+    )
+    provider = _provider(session)
+
+    await provider.login(
+        credentials={
+            "username": "user",
+            "password": "secret",
+            "permit_media_type_id": "7",
+        }
+    )
+
+    assert provider._token is None
+    assert provider._auth_header_value is None
+    assert provider._session_authenticated is True
+    assert provider._permit_media_type_id == 7
+    assert provider._permit_media_code == "CODE"
+    assert session.requests[1]["url"].endswith("/DVSWebAPI/api/login/getbase")
+
+
+@pytest.mark.asyncio
+async def test_request_json_auth_omits_authorization_header_without_token() -> None:
+    session = _SequenceSession([_FakeResponse(json_data={"ok": True})])
+    provider = _provider(session)
+    provider._session_authenticated = True
+
+    await provider._request_json_auth("POST", "/login/getbase")
+
+    assert "Authorization" not in session.requests[0]["kwargs"]["headers"]
+
+
+@pytest.mark.asyncio
 async def test_get_permit_maps_chargeable_block_times() -> None:
     session = _SequenceSession(
         [

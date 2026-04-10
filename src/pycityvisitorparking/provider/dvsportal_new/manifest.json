@@ -1,0 +1,9 @@
+{
+  "id": "dvsportal_new",
+  "name": "DVS Portal (Refactored)",
+  "capabilities": {
+    "favorite_update_fields": [],
+    "reservation_update_fields": ["end_time"],
+    "balance_units": ["MINUTE"]
+  }
+}

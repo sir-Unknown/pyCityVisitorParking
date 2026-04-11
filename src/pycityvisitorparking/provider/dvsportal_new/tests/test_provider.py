@@ -1,3 +1,4 @@
+import logging
 from datetime import UTC, datetime
 from typing import Any
 
@@ -221,6 +222,45 @@ async def test_request_json_auth_omits_xsrf_header_without_cookie(
     headers = captured["request_kwargs"]["headers"]
     assert headers["Authorization"] == "Token token-value"
     assert XSRF_HEADER not in headers
+
+
+@pytest.mark.asyncio
+async def test_request_json_auth_logs_safe_request_context(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    async with aiohttp.ClientSession() as session:
+        session.cookie_jar.update_cookies(
+            {"XSRF-TOKEN": "xsrf-cookie"},
+            response_url=URL("https://example/"),
+        )
+        provider = Provider(session, _manifest(), base_url="https://example")
+        provider._session_authenticated = True
+        provider._token = "raw-token"
+        provider._auth_header_value = "Token token-value"
+        provider._permit_media_type_id = 1
+        provider._permit_media_code = "CARD-1"
+
+        async def _fake_request_with_retries(
+            method: str,
+            url: str,
+            *,
+            request_kwargs: dict[str, Any],
+            response_handler: Any,
+        ) -> Any:
+            return {"ok": True}
+
+        monkeypatch.setattr(provider, "_request_with_retries", _fake_request_with_retries)
+        caplog.set_level(logging.DEBUG, logger="pycityvisitorparking.provider")
+
+        await provider._request_json_auth("POST", RESERVATION_CREATE_ENDPOINT, json={})
+
+    assert "request context" in caplog.text
+    assert "auth_header_present=True" in caplog.text
+    assert "xsrf_header_present=True" in caplog.text
+    assert "permit_media_code=CARD-1" in caplog.text
+    assert "raw-token" not in caplog.text
+    assert "token-value" not in caplog.text
 
 
 @pytest.mark.asyncio

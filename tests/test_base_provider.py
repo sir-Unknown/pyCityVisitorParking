@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from datetime import UTC, datetime
 
 import aiohttp
@@ -172,6 +173,36 @@ def test_filter_chargeable_zone_validity_invalid() -> None:
         provider._filter_chargeable_zone_validity(blocks)
 
 
+def test_mask_payload_redacts_login_and_license_plate_data() -> None:
+    provider = _DummyProvider(_SequenceSession([]), _manifest(), base_url="https://example.com")
+
+    masked = provider._mask_payload(
+        {
+            "identifier": "123456",
+            "password": "secret",
+            "permitMediaCode": "CARD-1",
+            "LicensePlate": {
+                "Value": "AB12CD",
+                "DisplayValue": "AB-12-CD",
+                "Name": "Visitor",
+            },
+            "licensePlate": "XY99ZZ",
+        }
+    )
+
+    assert masked == {
+        "identifier": "***",
+        "password": "***",
+        "permitMediaCode": "CARD-1",
+        "LicensePlate": {
+            "Value": "***",
+            "DisplayValue": "***",
+            "Name": "***",
+        },
+        "licensePlate": "***",
+    }
+
+
 @pytest.mark.asyncio
 async def test_update_favorite_not_supported() -> None:
     provider = _DummyProvider(_SequenceSession([]), _manifest(), base_url="https://example.com")
@@ -241,6 +272,46 @@ async def test_request_json_invalid_response() -> None:
     provider = _DummyProvider(session, _manifest(), base_url="https://example.com")
     with pytest.raises(ProviderError):
         await provider._request_json("GET", "/path")
+
+
+@pytest.mark.asyncio
+async def test_request_json_logs_masked_payload_and_safe_response_summary(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    session = _SequenceSession(
+        [
+            _FakeResponse(
+                json_data={
+                    "Result": 1,
+                    "Token": "secret-token",
+                    "Permits": [{}, {}],
+                    "ErrorMessage": "Temporary backend issue",
+                }
+            )
+        ]
+    )
+    provider = _DummyProvider(session, _manifest(), base_url="https://example.com")
+
+    caplog.set_level(logging.DEBUG, logger="pycityvisitorparking.provider")
+
+    result = await provider._request_json(
+        "POST",
+        "/path",
+        json={
+            "identifier": "123456",
+            "LicensePlate": {"Value": "AB12CD", "Name": "Visitor"},
+        },
+    )
+
+    assert result["Result"] == 1
+    assert "request payload" in caplog.text
+    assert "response summary" in caplog.text
+    assert "123456" not in caplog.text
+    assert "AB12CD" not in caplog.text
+    assert "Visitor" not in caplog.text
+    assert "secret-token" not in caplog.text
+    assert "token-present" in caplog.text
+    assert "permits-count" in caplog.text
 
 
 @pytest.mark.asyncio

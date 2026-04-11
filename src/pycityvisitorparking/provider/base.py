@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import logging
 from abc import ABC, abstractmethod
 from collections.abc import Awaitable, Callable, Iterable, Mapping
 from datetime import datetime
@@ -26,7 +25,23 @@ from .loader import ProviderManifest
 from .logger import get_provider_logger
 
 _DEFAULT_TIMEOUT = aiohttp.ClientTimeout(total=30)
-_MAX_LOG_BODY_CHARS = 240
+_MAX_LOG_BODY_CHARS = 600
+_SENSITIVE_KEYS = frozenset(
+    {
+        "Authorization",
+        "Token",
+        "asIdentifier",
+        "identifier",
+        "otp",
+        "password",
+        "resetCode",
+        "token",
+        "username",
+        "zipCode",
+    }
+)
+_SENSITIVE_OBJECT_KEYS = frozenset({"LicensePlate", "licensePlate", "updateLicensePlate"})
+_SENSITIVE_NESTED_KEYS = frozenset({"DisplayValue", "Name", "Value"})
 _LOGGER = get_provider_logger(__name__)
 _T = TypeVar("_T")
 
@@ -71,6 +86,12 @@ class BaseProvider(ABC):
         self._request_context_name: str | None = None
         self._ha_cvp_version = "unknown"
         self._pycvp_version = PACKAGE_VERSION
+        _LOGGER.debug(
+            "Provider %s initialized base_url=%s api_uri=%s",
+            self._manifest.id,
+            self._base_url,
+            self._api_uri or "(none)",
+        )
 
     def set_request_context(self, context_name: str | None) -> None:
         """Set a human-readable context label for request diagnostics."""
@@ -123,17 +144,36 @@ class BaseProvider(ABC):
         )
 
     def _log_with_metadata(self, level: int, message: str, *args: Any) -> None:
-        """Log a message with standard provider metadata suffix."""
-        provider, city, ha_cvp_version, pycvp_version = self._request_log_metadata()
+        """Log a message with the standard provider metadata suffix."""
+        provider, city, ha_cvp, pycvp = self._request_log_metadata()
         _LOGGER.log(
             level,
             f"{message} (provider=%s, city=%s, hacvp=%s, pycvp=%s)",
             *args,
             provider,
             city,
-            ha_cvp_version,
-            pycvp_version,
+            ha_cvp,
+            pycvp,
         )
+
+    def _log_warning_block(
+        self,
+        label: str,
+        fields: dict[str, Any],
+        *,
+        detail: str | None = None,
+    ) -> None:
+        """Log a warning as a labelled multi-line key=value block with provider metadata."""
+        provider, city, ha_cvp, pycvp = self._request_log_metadata()
+        all_fields = {k: v for k, v in fields.items() if v is not None}
+        all_fields.update({"provider": provider, "city": city, "hacvp": ha_cvp, "pycvp": pycvp})
+        width = max(len(k) for k in all_fields)
+        lines = [label]
+        if detail:
+            lines.append(f"  {detail}")
+        for key, value in all_fields.items():
+            lines.append(f"  {key:<{width}} = {value}")
+        _LOGGER.warning("%s", "\n".join(lines))
 
     def _format_log_details(self, **details: Any) -> str:
         """Serialize optional log details as a compact key=value suffix."""
@@ -141,9 +181,14 @@ class BaseProvider(ABC):
             return ""
         return " " + " ".join(f"{key}={value}" for key, value in details.items())
 
-    def _log_operation_started(self, operation: str) -> None:
+    def _log_operation_started(self, operation: str, **details: Any) -> None:
         """Log the start of a provider operation."""
-        _LOGGER.debug("Provider %s %s started", self.provider_id, operation)
+        _LOGGER.debug(
+            "Provider %s %s started%s",
+            self.provider_id,
+            operation,
+            self._format_log_details(**details),
+        )
 
     def _log_operation_completed(self, operation: str, **details: Any) -> None:
         """Log successful completion of a provider operation."""
@@ -166,7 +211,7 @@ class BaseProvider(ABC):
 
     def _log_reauth_triggered(self) -> None:
         """Log when a provider request falls back to reauthentication."""
-        self._log_with_metadata(logging.WARNING, "Reauth triggered")
+        self._log_warning_block("reauth triggered", {})
 
     def _log_reauthenticating(self) -> None:
         """Log when cached credentials are used to reauthenticate."""
@@ -177,7 +222,9 @@ class BaseProvider(ABC):
 
     def _log_missing_response_data(self, label: str, fallback: str = "refetching") -> None:
         """Log when a response is missing expected data and a fallback is used."""
-        self._log_with_metadata(logging.WARNING, "%s missing permit, %s", label, fallback)
+        self._log_warning_block(
+            "missing permit in response", {"operation": label, "fallback": fallback}
+        )
 
     def _log_response_status(self, status: int) -> None:
         """Log the HTTP response status returned by a provider."""
@@ -190,32 +237,103 @@ class BaseProvider(ABC):
             return compact[: _MAX_LOG_BODY_CHARS - 3] + "..."
         return compact
 
-    def _log_request_failure(self, status: int, *, body: str | None = None) -> None:
+    def _mask_payload(self, payload: Any) -> Any:
+        """Return a copy of payload with sensitive values replaced by '***'."""
+        return self._mask_log_value(payload)
+
+    def _mask_log_value(self, value: Any, *, parent_key: str | None = None) -> Any:
+        """Return a masked copy of structured log data."""
+        if isinstance(value, dict):
+            return {
+                key: (
+                    "***" if key in _SENSITIVE_KEYS else self._mask_log_value(item, parent_key=key)
+                )
+                for key, item in value.items()
+            }
+        if isinstance(value, list):
+            return [self._mask_log_value(item, parent_key=parent_key) for item in value]
+        if parent_key in _SENSITIVE_OBJECT_KEYS:
+            return "***" if value is not None else None
+        if parent_key in _SENSITIVE_NESTED_KEYS:
+            return "***" if value is not None else None
+        return value
+
+    def _response_keys_summary(self, data: dict[str, Any]) -> str:
+        """Return a compact summary of top-level response keys."""
+        keys = sorted(str(key) for key in data)
+        if len(keys) > 12:
+            return ", ".join(keys[:12]) + ", ..."
+        return ", ".join(keys)
+
+    def _build_response_summary(self, data: Any) -> dict[str, Any]:
+        """Return a safe summary of provider response structure and metadata."""
+        if isinstance(data, dict):
+            summary: dict[str, Any] = {
+                "response-type": "dict",
+                "response-keys": self._response_keys_summary(data),
+            }
+            if "Result" in data:
+                summary["result"] = data.get("Result")
+            if "LoginStatus" in data:
+                summary["login-status"] = data.get("LoginStatus")
+            if "RequiresOtp" in data:
+                summary["requires-otp"] = data.get("RequiresOtp")
+            if "Redirect" in data:
+                summary["redirect"] = data.get("Redirect")
+            if "ErrorMessage" in data and data.get("ErrorMessage"):
+                summary["error-message"] = self._summarize_log_text(str(data["ErrorMessage"]))
+            if "Token" in data:
+                summary["token-present"] = bool(data.get("Token"))
+            if "Permit" in data:
+                summary["has-permit"] = isinstance(data.get("Permit"), dict)
+            permits = data.get("Permits")
+            if isinstance(permits, list):
+                summary["permits-count"] = len(permits)
+            permit_medias = data.get("PermitMedias")
+            if isinstance(permit_medias, list):
+                summary["permit-medias-count"] = len(permit_medias)
+            reservations = data.get("ActiveReservations")
+            if isinstance(reservations, list):
+                summary["active-reservations-count"] = len(reservations)
+            return summary
+        if isinstance(data, list):
+            return {"response-type": "list", "items": len(data)}
+        return {"response-type": type(data).__name__}
+
+    def _log_response_summary(self, data: Any) -> None:
+        """Log a safe debug summary of a successful JSON response."""
+        _LOGGER.debug(
+            "Provider %s response summary %s",
+            self.provider_id,
+            self._mask_log_value(self._build_response_summary(data)),
+        )
+
+    def _log_request_failure(
+        self,
+        status: int,
+        *,
+        method: str | None = None,
+        url: str | None = None,
+        payload: Any = None,
+        body: str | None = None,
+        content_type: str | None = None,
+    ) -> None:
         """Log an unsuccessful provider HTTP response."""
         is_auth = status in (401, 403)
-        if body is None:
-            self._log_with_metadata(
-                logging.WARNING,
-                "Request failed with %sstatus=%s",
-                "auth " if is_auth else "",
-                status,
-            )
-            return
-        self._log_with_metadata(
-            logging.WARNING,
-            "Request failed with %sstatus=%s, body=%s",
-            "auth " if is_auth else "",
-            status,
-            self._summarize_log_text(body),
-        )
+        label = "auth request failed" if is_auth else "request failed"
+        detail = f"{method.upper()} {url}" if method and url else url
+        fields: dict[str, Any] = {"status": status}
+        if content_type:
+            fields["content-type"] = content_type
+        if payload is not None:
+            fields["payload"] = self._mask_payload(payload)
+        if body:
+            fields["body"] = self._summarize_log_text(body)
+        self._log_warning_block(label, fields, detail=detail)
 
     def _log_invalid_json(self, body: str) -> None:
         """Log an invalid JSON response body."""
-        _LOGGER.warning(
-            "Provider %s returned invalid JSON body=%s",
-            self.provider_id,
-            self._summarize_log_text(body),
-        )
+        self._log_warning_block("invalid json response", {"body": self._summarize_log_text(body)})
 
     async def _request_with_optional_reauth(
         self,
@@ -416,13 +534,29 @@ class BaseProvider(ABC):
         attempts = retries + 1
         last_error: Exception | None = None
         for attempt in range(attempts):
-            _LOGGER.debug(
-                "Provider %s request %s (attempt %s/%s)",
-                self.provider_id,
-                method.upper(),
-                attempt + 1,
-                attempts,
-            )
+            if attempts > 1:
+                _LOGGER.debug(
+                    "Provider %s request %s %s (attempt %s/%s)",
+                    self.provider_id,
+                    method.upper(),
+                    url,
+                    attempt + 1,
+                    attempts,
+                )
+            else:
+                _LOGGER.debug(
+                    "Provider %s request %s %s",
+                    self.provider_id,
+                    method.upper(),
+                    url,
+                )
+            payload = request_kwargs.get("json")
+            if payload is not None:
+                _LOGGER.debug(
+                    "Provider %s request payload %s",
+                    self.provider_id,
+                    self._mask_payload(payload),
+                )
             try:
                 timeout = request_kwargs.get("timeout", self._timeout)
                 if timeout is None:
@@ -438,11 +572,7 @@ class BaseProvider(ABC):
                 continue
             except (aiohttp.ClientError, TimeoutError) as exc:
                 last_error = exc
-                self._log_with_metadata(
-                    logging.WARNING,
-                    "Request error: %s",
-                    exc.__class__.__name__,
-                )
+                self._log_warning_block("network error", {"error": exc.__class__.__name__})
                 if attempt >= attempts - 1:
                     raise NetworkError("Network request failed.") from exc
         if last_error is not None:
@@ -467,10 +597,12 @@ class BaseProvider(ABC):
             self._raise_for_status(response)
             if expect_json:
                 try:
-                    return await response.json()
+                    data = await response.json()
                 except (aiohttp.ContentTypeError, ValueError) as exc:
                     self._log_invalid_json(await response.text())
                     raise ProviderError("Response did not contain valid JSON.") from exc
+                self._log_response_summary(data)
+                return data
             return await response.text()
 
         return await self._request_with_retries(

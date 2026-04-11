@@ -8,12 +8,15 @@ from typing import TYPE_CHECKING, Any
 import aiohttp
 
 from ...exceptions import AuthError, ProviderError
-from .const import AUTH_HEADER, DEFAULT_HEADERS, RETRY_AFTER_HEADER
+from ..logger import get_provider_logger
+from .const import AUTH_HEADER, DEFAULT_HEADERS, RETRY_AFTER_HEADER, XSRF_HEADER
 
 if TYPE_CHECKING:
     from .api import Provider
     from .profile import PortalProfile
     from .session import PortalSessionState
+
+_LOGGER = get_provider_logger(__name__)
 
 
 class PortalTransport:
@@ -53,6 +56,12 @@ class PortalTransport:
         request_headers = self._compose_headers(
             url,
             extra=headers,
+            include_auth=include_auth,
+        )
+        self._log_request_context(
+            method,
+            url,
+            headers=request_headers,
             include_auth=include_auth,
         )
 
@@ -114,19 +123,29 @@ class PortalTransport:
             if response.status == 429:
                 await self._handle_rate_limit(response, method, attempt, attempts)
                 raise self._provider._RetryRequest()
-            self._provider._log_response_status(response.status)
             if not 200 <= response.status < 300:
                 body = await response.text()
-                self._provider._log_request_failure(response.status, body=body)
+                content_type = response.headers.get("Content-Type")
+                self._provider._log_request_failure(
+                    response.status,
+                    method=method,
+                    url=url,
+                    payload=json,
+                    body=body,
+                    content_type=content_type,
+                )
                 if response.status in (401, 403):
                     raise AuthError("Authentication failed.")
                 raise ProviderError(f"Provider request failed with status {response.status}.")
+            self._provider._log_response_status(response.status)
             if expect_json:
                 try:
-                    return await response.json()
+                    data = await response.json()
                 except (aiohttp.ContentTypeError, ValueError) as exc:
                     self._provider._log_invalid_json(await response.text())
                     raise ProviderError("Response did not contain valid JSON.") from exc
+                self._provider._log_response_summary(data)
+                return data
             return await response.text()
 
         return await self._provider._request_with_retries(
@@ -155,12 +174,19 @@ class PortalTransport:
 
     async def _reauthenticate(self) -> None:
         """Clear auth state and re-login using cached credentials."""
+        self._provider._log_warning_block(
+            "reauthenticating",
+            {
+                "token-present": self._state.token is not None,
+                "session-authenticated": self._state.session_authenticated,
+                "credentials-present": bool(self._state.credentials),
+            },
+        )
         self._state.token = None
         self._state.auth_header_value = None
         self._state.session_authenticated = False
         if not self._state.credentials:
             raise AuthError("Authentication required.")
-        self._provider._log_reauthenticating()
         await self._provider.login(self._state.credentials)
 
     def _compose_headers(
@@ -177,3 +203,29 @@ class PortalTransport:
         cookie_jar = getattr(self._provider._session, "cookie_jar", None)
         merged_headers.update(self._profile.xsrf_headers(cookie_jar, url=url))
         return merged_headers
+
+    def _log_request_context(
+        self,
+        method: str,
+        url: str,
+        *,
+        headers: dict[str, str],
+        include_auth: bool,
+    ) -> None:
+        """Log safe request-context flags for troubleshooting auth/session issues."""
+        _LOGGER.debug(
+            "Provider %s request context method=%s url=%s include_auth=%s "
+            "auth_header_present=%s xsrf_header_present=%s "
+            "session_authenticated=%s token_present=%s "
+            "permit_media_type_id=%s permit_media_code=%s",
+            self._provider.provider_id,
+            method.upper(),
+            url,
+            include_auth,
+            AUTH_HEADER in headers,
+            XSRF_HEADER in headers,
+            self._state.session_authenticated,
+            self._state.token is not None,
+            self._state.permit_media_type_id,
+            self._state.permit_media_code,
+        )

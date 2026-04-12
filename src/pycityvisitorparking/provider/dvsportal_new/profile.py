@@ -34,9 +34,18 @@ class PortalProfile:
         login_method: int = LOGIN_METHOD_PAS,
         xsrf_cookie_names: Iterable[str] = DEFAULT_XSRF_COOKIE_NAMES,
     ) -> None:
-        """Initialize immutable profile settings."""
+        """Initialize profile settings."""
         self._login_method = login_method
-        self._xsrf_cookie_names = tuple(name for name in xsrf_cookie_names if name)
+        self._xsrf_cookie_names: tuple[str, ...] = tuple(name for name in xsrf_cookie_names if name)
+
+    def update_xsrf_cookie_name(self, name: str) -> None:
+        """Prepend a deployment-specific XSRF cookie name to the search list."""
+        if not name:
+            return
+        names = list(self._xsrf_cookie_names)
+        if name not in names:
+            names.insert(0, name)
+            self._xsrf_cookie_names = tuple(names)
 
     def build_login_payload(
         self,

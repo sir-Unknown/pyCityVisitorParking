@@ -6,8 +6,8 @@ import aiohttp
 import pytest
 from yarl import URL
 
-from pycityvisitorparking.exceptions import AuthError
-from pycityvisitorparking.models import Favorite, Reservation, ZoneValidityBlock
+from pycityvisitorparking.exceptions import AuthError, ProviderError
+from pycityvisitorparking.models import Reservation, ZoneValidityBlock
 from pycityvisitorparking.provider.dvsportal_new.api import Provider
 from pycityvisitorparking.provider.dvsportal_new.const import (
     DEFAULT_API_URI,
@@ -98,6 +98,45 @@ def assert_utc_timestamp(value: str) -> None:
     parsed = parse_timestamp(value)
     assert parsed.tzinfo == UTC
     assert format_utc_timestamp(parsed) == value
+
+
+class _FakeResponse:
+    def __init__(
+        self,
+        *,
+        status: int,
+        text_data: str,
+        headers: dict[str, str] | None = None,
+    ) -> None:
+        self.status = status
+        self._text_data = text_data
+        self.headers = headers or {}
+
+    async def json(self) -> object:
+        raise ValueError("response is not JSON")
+
+    async def text(self) -> str:
+        return self._text_data
+
+
+class _FakeRequestContext:
+    def __init__(self, response: _FakeResponse) -> None:
+        self._response = response
+
+    async def __aenter__(self) -> _FakeResponse:
+        return self._response
+
+    async def __aexit__(self, exc_type, exc, tb) -> bool:
+        return False
+
+
+class _FailingSession:
+    def __init__(self, response: _FakeResponse) -> None:
+        self.cookie_jar = None
+        self._response = response
+
+    def request(self, method: str, url: str, **kwargs: Any) -> _FakeRequestContext:
+        return _FakeRequestContext(self._response)
 
 
 @pytest.mark.asyncio
@@ -258,9 +297,11 @@ async def test_request_json_auth_logs_safe_request_context(
     assert "request context" in caplog.text
     assert "auth_header_present=True" in caplog.text
     assert "xsrf_header_present=True" in caplog.text
-    assert "permit_media_code=CARD-1" in caplog.text
+    assert "permit_media_code=***" in caplog.text
+    assert "permit_media_type_id" not in caplog.text
     assert "raw-token" not in caplog.text
     assert "token-value" not in caplog.text
+    assert "CARD-1" not in caplog.text
 
 
 @pytest.mark.asyncio
@@ -271,7 +312,7 @@ async def test_login_without_token_falls_back_to_fetch_base(
         provider = Provider(session, _manifest(), base_url="https://example")
         calls: list[tuple[str, str]] = []
 
-        async def _fake_fetch_media_type() -> str | int:
+        async def _fake_fetch_media_type(*, operation: str = "login") -> str | int:
             return 7
 
         async def _fake_request_json(
@@ -282,11 +323,12 @@ async def test_login_without_token_falls_back_to_fetch_base(
             headers: dict[str, str] | None = None,
             allow_reauth: bool = False,
             include_auth: bool = False,
+            operation: str | None = None,
         ) -> Any:
             calls.append((method, path))
             return {"LoginStatus": 1}
 
-        async def _fake_fetch_base() -> dict[str, Any]:
+        async def _fake_fetch_base(*, operation: str = "fetch_base") -> dict[str, Any]:
             calls.append(("POST", "/login/getbase"))
             provider._permit_media_code = "CARD-7"
             return {
@@ -316,7 +358,7 @@ async def test_login_with_permit_caches_defaults_without_fetch_base(
         provider = Provider(session, _manifest(), base_url="https://example")
         fetched_base = {"called": False}
 
-        async def _fake_fetch_media_type() -> str | int:
+        async def _fake_fetch_media_type(*, operation: str = "login") -> str | int:
             return 3
 
         async def _fake_request_json(
@@ -327,6 +369,7 @@ async def test_login_with_permit_caches_defaults_without_fetch_base(
             headers: dict[str, str] | None = None,
             allow_reauth: bool = False,
             include_auth: bool = False,
+            operation: str | None = None,
         ) -> Any:
             return {
                 "LoginStatus": 1,
@@ -338,7 +381,7 @@ async def test_login_with_permit_caches_defaults_without_fetch_base(
                 },
             }
 
-        async def _fake_fetch_base() -> dict[str, Any]:
+        async def _fake_fetch_base(*, operation: str = "fetch_base") -> dict[str, Any]:
             fetched_base["called"] = True
             return {}
 
@@ -363,7 +406,7 @@ async def test_permit_from_response_falls_back_to_fetch_base(
         provider = Provider(session, _manifest(), base_url="https://example")
         fallback_called = {"called": False}
 
-        async def _fake_fetch_base() -> dict[str, Any]:
+        async def _fake_fetch_base(*, operation: str = "fetch_base") -> dict[str, Any]:
             fallback_called["called"] = True
             return {
                 "ZoneCode": "ZONE-1",
@@ -401,6 +444,7 @@ async def test_request_json_auth_reauthenticates_once_on_auth_error(
             expect_json: bool,
             json: Any,
             headers: dict[str, str],
+            operation: str | None,
         ) -> Any:
             attempts["count"] += 1
             if attempts["count"] == 1:
@@ -433,13 +477,19 @@ async def test_start_reservation_payload_uses_local_offset_with_milliseconds(
         provider._permit_media_type_id = 1
         provider._permit_media_code = "CARD-1"
 
-        async def _noop_defaults() -> None:
+        async def _noop_defaults(*, operation: str = "ensure_defaults") -> None:
             return None
 
         monkeypatch.setattr(provider, "_ensure_defaults", _noop_defaults)
         captured: dict[str, Any] = {}
 
-        async def _fake_request_json_auth(method: str, path: str, *, json: Any) -> Any:
+        async def _fake_request_json_auth(
+            method: str,
+            path: str,
+            *,
+            json: Any,
+            operation: str | None = None,
+        ) -> Any:
             captured["method"] = method
             captured["path"] = path
             captured["json"] = json
@@ -537,13 +587,19 @@ async def test_update_reservation_payload_uses_minute_delta(
             "BlockTimes": [],
         }
 
-        async def _fake_fetch_base() -> dict[str, Any]:
+        async def _fake_fetch_base(*, operation: str = "fetch_base") -> dict[str, Any]:
             return existing_permit
 
         monkeypatch.setattr(provider, "_fetch_base", _fake_fetch_base)
         captured: dict[str, Any] = {}
 
-        async def _fake_request_json_auth(method: str, path: str, *, json: Any) -> Any:
+        async def _fake_request_json_auth(
+            method: str,
+            path: str,
+            *,
+            json: Any,
+            operation: str | None = None,
+        ) -> Any:
             captured["method"] = method
             captured["path"] = path
             captured["json"] = json
@@ -581,14 +637,28 @@ async def test_add_and_remove_favorite_payloads(
         provider._permit_media_code = "CARD-1"
         add_captured: dict[str, Any] = {}
         remove_captured: dict[str, Any] = {}
+        current_permit: dict[str, Any] = {
+            "PermitMedias": [
+                {
+                    "TypeID": 1,
+                    "Code": "CARD-1",
+                    "ActiveReservations": [],
+                    "LicensePlates": [],
+                }
+            ],
+            "BlockTimes": [],
+        }
 
-        async def _empty_favorites() -> list[Favorite]:
-            return []
+        async def _fake_fetch_base(*, operation: str = "fetch_base") -> dict[str, Any]:
+            return current_permit
 
-        async def _existing_favorites() -> list[Favorite]:
-            return [Favorite(id="AB12CD", name="Visitor", license_plate="AB12CD")]
-
-        async def _fake_request_json_auth(method: str, path: str, *, json: Any) -> Any:
+        async def _fake_request_json_auth(
+            method: str,
+            path: str,
+            *,
+            json: Any,
+            operation: str | None = None,
+        ) -> Any:
             if path.endswith("upsert"):
                 add_captured["json"] = json
                 return {
@@ -607,9 +677,19 @@ async def test_add_and_remove_favorite_payloads(
             return {}
 
         monkeypatch.setattr(provider, "_request_json_auth", _fake_request_json_auth)
-        monkeypatch.setattr(provider, "list_favorites", _empty_favorites)
+        monkeypatch.setattr(provider, "_fetch_base", _fake_fetch_base)
         favorite = await provider.add_favorite("ab-12 cd", name="Visitor")
-        monkeypatch.setattr(provider, "list_favorites", _existing_favorites)
+        current_permit = {
+            "PermitMedias": [
+                {
+                    "TypeID": 1,
+                    "Code": "CARD-1",
+                    "ActiveReservations": [],
+                    "LicensePlates": [{"Value": "AB12CD", "Name": "Visitor"}],
+                }
+            ],
+            "BlockTimes": [],
+        }
         await provider.remove_favorite("ab-12 cd")
 
     assert add_captured["json"]["licensePlate"]["Value"] == "AB12CD"
@@ -618,3 +698,101 @@ async def test_add_and_remove_favorite_payloads(
     assert favorite.id == "AB12CD"
     assert remove_captured["json"]["licensePlate"] == "AB12CD"
     assert remove_captured["json"]["name"] == "Visitor"
+
+
+@pytest.mark.asyncio
+async def test_start_reservation_failure_logs_operation_context_and_masked_payload(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    provider = Provider(
+        _FailingSession(
+            _FakeResponse(
+                status=500,
+                text_data="Backend reservation failure",
+                headers={"Content-Type": "text/plain; charset=utf-8"},
+            )
+        ),
+        _manifest(),
+        base_url="https://example",
+    )
+    provider._session_authenticated = True
+    provider._auth_header_value = "Token token-value"
+    provider._permit_media_type_id = 1
+    provider._permit_media_code = "CARD-1"
+
+    async def _noop_defaults(*, operation: str = "ensure_defaults") -> None:
+        return None
+
+    monkeypatch.setattr(provider, "_ensure_defaults", _noop_defaults)
+    caplog.set_level(logging.WARNING, logger="pycityvisitorparking.provider")
+
+    with pytest.raises(ProviderError, match="status 500"):
+        await provider.start_reservation(
+            "ab-12 cd",
+            datetime(2026, 1, 2, 22, 57, tzinfo=UTC),
+            datetime(2026, 1, 2, 23, 57, tzinfo=UTC),
+        )
+
+    assert "operation" in caplog.text
+    assert "start_reservation" in caplog.text
+    assert f"POST https://example{DEFAULT_API_URI}{RESERVATION_CREATE_ENDPOINT}" in caplog.text
+    assert "status" in caplog.text
+    assert "500" in caplog.text
+    assert "content-type" in caplog.text
+    assert "text/plain; charset=utf-8" in caplog.text
+    assert "response_kind" in caplog.text
+    assert "text" in caplog.text
+    assert "Backend reservation failure" in caplog.text
+    assert "AB12CD" not in caplog.text
+    assert "CARD-1" not in caplog.text
+    assert "token-value" not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_start_reservation_failure_logs_compact_html_summary(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    provider = Provider(
+        _FailingSession(
+            _FakeResponse(
+                status=500,
+                text_data=(
+                    "<!DOCTYPE html><html lang='nl'><head><title>Bezoekers App</title>"
+                    "<base href='/DVSPortal/' />"
+                    "<script>window.marker='GRONINGEN-HTML-MARKER';</script>"
+                    "</head><body>Portal</body></html>"
+                ),
+                headers={"Content-Type": "text/html; charset=utf-8"},
+            )
+        ),
+        _manifest(),
+        base_url="https://example",
+    )
+    provider._session_authenticated = True
+    provider._auth_header_value = "Token token-value"
+    provider._permit_media_type_id = 1
+    provider._permit_media_code = "CARD-1"
+
+    async def _noop_defaults(*, operation: str = "ensure_defaults") -> None:
+        return None
+
+    monkeypatch.setattr(provider, "_ensure_defaults", _noop_defaults)
+    caplog.set_level(logging.WARNING, logger="pycityvisitorparking.provider")
+
+    with pytest.raises(ProviderError, match="status 500"):
+        await provider.start_reservation(
+            "ab-12 cd",
+            datetime(2026, 1, 2, 22, 57, tzinfo=UTC),
+            datetime(2026, 1, 2, 23, 57, tzinfo=UTC),
+        )
+
+    assert "response_kind" in caplog.text
+    assert "html" in caplog.text
+    assert "html_title" in caplog.text
+    assert "Bezoekers App" in caplog.text
+    assert "html_base_href" in caplog.text
+    assert "/DVSPortal/" in caplog.text
+    assert "GRONINGEN-HTML-MARKER" not in caplog.text
+    assert "body_excerpt" not in caplog.text

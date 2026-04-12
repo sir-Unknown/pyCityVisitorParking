@@ -97,7 +97,7 @@ class Provider(BaseProvider):
             if permit_media_type_id is None:
                 permit_media_type_id = self._permit_media_type_id
             if permit_media_type_id is None:
-                permit_media_type_id = await self._fetch_permit_media_type_id()
+                permit_media_type_id = await self._fetch_permit_media_type_id(operation="login")
             self._validate_media_type_id(permit_media_type_id)
 
             payload = {
@@ -115,6 +115,7 @@ class Provider(BaseProvider):
                 LOGIN_ENDPOINT,
                 json=payload,
                 allow_reauth=False,
+                operation="login",
             )
 
             status_value = data.get("LoginStatus")
@@ -159,7 +160,7 @@ class Provider(BaseProvider):
                 if permit is not None:
                     self._cache_defaults(permit)
             else:
-                await self._fetch_base()
+                await self._fetch_base(operation="login")
             self._log_operation_completed(
                 "login",
                 login_status=status_value,
@@ -171,7 +172,7 @@ class Provider(BaseProvider):
         """Return the active permit for the account."""
         async with self._operation_guard():
             self._log_operation_started("get_permit")
-            permit = await self._fetch_base()
+            permit = await self._fetch_base(operation="get_permit")
             mapped = self._map_permit(permit)
             self._log_operation_completed("get_permit")
             return mapped
@@ -180,7 +181,9 @@ class Provider(BaseProvider):
         """Return active reservations."""
         async with self._operation_guard():
             self._log_operation_started("list_reservations")
-            reservations = self._reservations_from_permit(await self._fetch_base())
+            reservations = self._reservations_from_permit(
+                await self._fetch_base(operation="list_reservations")
+            )
             self._log_operation_completed("list_reservations", count=len(reservations))
             return reservations
 
@@ -202,7 +205,7 @@ class Provider(BaseProvider):
             start_time_utc_value = self._format_utc_timestamp(start_time_utc)
             end_time_utc_value = self._format_utc_timestamp(end_time_utc)
             normalized_plate = self._normalize_license_plate(license_plate)
-            await self._ensure_defaults()
+            await self._ensure_defaults(operation="start_reservation")
 
             # DVS Portal expects local timestamps with offsets and milliseconds in requests.
             start_time_local = self._format_provider_timestamp(start_time_utc)
@@ -221,8 +224,13 @@ class Provider(BaseProvider):
                 "POST",
                 RESERVATION_CREATE_ENDPOINT,
                 json=payload,
+                operation="start_reservation",
             )
-            permit = await self._permit_from_response(data, "reservation create")
+            permit = await self._permit_from_response(
+                data,
+                "reservation create",
+                operation="start_reservation",
+            )
             reservations = self._reservations_from_permit(permit)
             reservation = self._select_reservation(
                 reservations,
@@ -257,7 +265,9 @@ class Provider(BaseProvider):
 
             end_dt = self._normalize_datetime(end_time)
             existing = self._select_reservation(
-                self._reservations_from_permit(await self._fetch_base()),
+                self._reservations_from_permit(
+                    await self._fetch_base(operation="update_reservation")
+                ),
                 reservation_id=reservation_id_value,
             )
             if existing is None:
@@ -288,8 +298,13 @@ class Provider(BaseProvider):
                 "POST",
                 RESERVATION_UPDATE_ENDPOINT,
                 json=payload,
+                operation="update_reservation",
             )
-            permit = await self._permit_from_response(data, "reservation update")
+            permit = await self._permit_from_response(
+                data,
+                "reservation update",
+                operation="update_reservation",
+            )
             reservations = self._reservations_from_permit(permit)
             updated = self._select_reservation(
                 reservations,
@@ -310,9 +325,9 @@ class Provider(BaseProvider):
             self._log_operation_started("end_reservation")
             end_dt = self._normalize_datetime(end_time)
             normalized_end_time = self._format_utc_timestamp(end_dt)
-            await self._ensure_defaults()
+            await self._ensure_defaults(operation="end_reservation")
             existing = self._select_reservation(
-                await self.list_reservations(),
+                self._reservations_from_permit(await self._fetch_base(operation="end_reservation")),
                 reservation_id=reservation_id,
             )
             if existing is None:
@@ -327,8 +342,13 @@ class Provider(BaseProvider):
                 "POST",
                 RESERVATION_END_ENDPOINT,
                 json=payload,
+                operation="end_reservation",
             )
-            permit = await self._permit_from_response(data, "reservation end")
+            permit = await self._permit_from_response(
+                data,
+                "reservation end",
+                operation="end_reservation",
+            )
             self._cache_defaults(permit)
             reservation = Reservation(
                 id=existing.id,
@@ -344,7 +364,9 @@ class Provider(BaseProvider):
         """Return stored favorites."""
         async with self._operation_guard():
             self._log_operation_started("list_favorites")
-            favorites = self._favorites_from_permit(await self._fetch_base())
+            favorites = self._favorites_from_permit(
+                await self._fetch_base(operation="list_favorites")
+            )
             self._log_operation_completed("list_favorites", count=len(favorites))
             return favorites
 
@@ -353,7 +375,9 @@ class Provider(BaseProvider):
         async with self._operation_guard():
             self._log_operation_started("add_favorite")
             normalized_plate = self._normalize_license_plate(license_plate)
-            favorites = await self.list_favorites()
+            favorites = self._favorites_from_permit(
+                await self._fetch_base(operation="add_favorite")
+            )
             for favorite in favorites:
                 if favorite.license_plate == normalized_plate:
                     self._log_operation_failed("add_favorite", "duplicate license_plate")
@@ -377,12 +401,15 @@ class Provider(BaseProvider):
                 "POST",
                 FAVORITE_UPSERT_ENDPOINT,
                 json=payload,
+                operation="add_favorite",
             )
             try:
                 permit = self._extract_permit(data)
             except ProviderError:
                 self._log_missing_response_data("favorite upsert", fallback="refetching list")
-                favorites = await self.list_favorites()
+                favorites = self._favorites_from_permit(
+                    await self._fetch_base(operation="add_favorite")
+                )
             else:
                 favorites = self._favorites_from_permit(permit)
             favorite = self._select_favorite(favorites, normalized_plate)
@@ -405,7 +432,9 @@ class Provider(BaseProvider):
         async with self._operation_guard():
             self._log_operation_started("remove_favorite")
             normalized_plate = self._normalize_license_plate(favorite_id)
-            favorites = await self.list_favorites()
+            favorites = self._favorites_from_permit(
+                await self._fetch_base(operation="remove_favorite")
+            )
             # DVS removal expects the stored favorite name when available.
             found = next((f for f in favorites if f.license_plate == normalized_plate), None)
             name_value = (found and found.name) or normalized_plate
@@ -417,14 +446,20 @@ class Provider(BaseProvider):
                 "licensePlate": normalized_plate,
                 "name": name_value,
             }
-            await self._request_json_auth("POST", FAVORITE_REMOVE_ENDPOINT, json=payload)
+            await self._request_json_auth(
+                "POST",
+                FAVORITE_REMOVE_ENDPOINT,
+                json=payload,
+                operation="remove_favorite",
+            )
             self._log_operation_completed("remove_favorite")
 
-    async def _fetch_permit_media_type_id(self) -> str | int:
+    async def _fetch_permit_media_type_id(self, *, operation: str = "login") -> str | int:
         data = await self._request_json(
             "GET",
             LOGIN_ENDPOINT,
             allow_reauth=False,
+            operation=operation,
         )
         types = data.get("PermitMediaTypes")
         if not isinstance(types, list) or not types:
@@ -434,13 +469,19 @@ class Provider(BaseProvider):
             raise ProviderError("Provider did not return a permit media type ID.")
         return first["ID"]
 
-    async def _permit_from_response(self, data: dict[str, Any], label: str) -> dict[str, Any]:
+    async def _permit_from_response(
+        self,
+        data: dict[str, Any],
+        label: str,
+        *,
+        operation: str = "fetch_base",
+    ) -> dict[str, Any]:
         """Extract permit from a response, falling back to a full fetch on failure."""
         try:
             return self._extract_permit(data)
         except ProviderError:
             self._log_missing_response_data(label)
-            return await self._fetch_base()
+            return await self._fetch_base(operation=operation)
 
     def _reservations_from_permit(self, permit: dict[str, Any]) -> list[Reservation]:
         """Cache permit defaults and map active reservations."""
@@ -452,8 +493,12 @@ class Provider(BaseProvider):
         self._cache_defaults(permit)
         return self._map_favorites(self._select_permit_media(permit))
 
-    async def _fetch_base(self) -> dict[str, Any]:
-        data = await self._request_json_auth("POST", LOGIN_GETBASE_ENDPOINT)
+    async def _fetch_base(self, *, operation: str = "fetch_base") -> dict[str, Any]:
+        data = await self._request_json_auth(
+            "POST",
+            LOGIN_GETBASE_ENDPOINT,
+            operation=operation,
+        )
         permit = self._extract_permit(data)
         self._cache_defaults(permit)
         return permit
@@ -464,10 +509,10 @@ class Provider(BaseProvider):
                 raise AuthError("Authentication required.")
             await self.login(self._credentials)
 
-    async def _ensure_defaults(self) -> None:
+    async def _ensure_defaults(self, *, operation: str = "ensure_defaults") -> None:
         await self._ensure_authenticated()
         if self._permit_media_type_id is None or self._permit_media_code is None:
-            await self._fetch_base()
+            await self._fetch_base(operation=operation)
         if self._permit_media_type_id is None or self._permit_media_code is None:
             raise ProviderError("Permit media defaults are missing.")
 
@@ -679,7 +724,14 @@ class Provider(BaseProvider):
         if isinstance(value, str) and not value.strip():
             raise ValidationError("permit_media_type_id must be non-empty.")
 
-    async def _request_json_auth(self, method: str, path: str, *, json: Any | None = None) -> Any:
+    async def _request_json_auth(
+        self,
+        method: str,
+        path: str,
+        *,
+        json: Any | None = None,
+        operation: str | None = None,
+    ) -> Any:
         await self._ensure_authenticated()
         headers = {}
         if self._auth_header_value is not None:
@@ -690,6 +742,7 @@ class Provider(BaseProvider):
             json=json,
             headers=headers,
             allow_reauth=True,
+            operation=operation,
         )
 
     async def _request_json(
@@ -700,6 +753,7 @@ class Provider(BaseProvider):
         json: Any | None = None,
         headers: dict[str, str] | None = None,
         allow_reauth: bool = False,
+        operation: str | None = None,
     ) -> Any:
         url = self._build_url(path)
         merged_headers = {**DEFAULT_HEADERS, **(headers or {})}
@@ -710,6 +764,7 @@ class Provider(BaseProvider):
             json=json,
             headers=merged_headers,
             allow_reauth=allow_reauth,
+            operation=operation,
         )
 
     async def _request(
@@ -721,6 +776,7 @@ class Provider(BaseProvider):
         json: Any = None,
         headers: dict[str, str] | None = None,
         allow_reauth: bool = False,
+        operation: str | None = None,
     ) -> Any:
         request_headers = dict(headers or {})
 
@@ -731,6 +787,7 @@ class Provider(BaseProvider):
                 expect_json=expect_json,
                 json=json,
                 headers=request_headers,
+                operation=operation,
             )
 
         async def handle_reauth() -> None:
@@ -754,6 +811,7 @@ class Provider(BaseProvider):
         expect_json: bool,
         json: Any,
         headers: dict[str, str],
+        operation: str | None,
     ) -> Any:
         async def handle_response(
             response: aiohttp.ClientResponse,
@@ -766,7 +824,15 @@ class Provider(BaseProvider):
             self._log_response_status(response.status)
             if not 200 <= response.status < 300:
                 body = await response.text()
-                self._log_request_failure(response.status, body=body)
+                self._log_request_failure(
+                    response.status,
+                    method=method,
+                    url=url,
+                    operation=operation,
+                    payload=json,
+                    body=body,
+                    content_type=response.headers.get("Content-Type"),
+                )
                 if response.status in (401, 403):
                     raise AuthError("Authentication failed.")
                 raise ProviderError(f"Provider request failed with status {response.status}.")

@@ -171,6 +171,7 @@ async def test_request_with_backoff_rate_limit_retries_get(monkeypatch: pytest.M
         expect_json=True,
         json=None,
         headers={},
+        operation=None,
     )
     assert result == {"ok": True}
     assert session.calls == 2
@@ -187,6 +188,7 @@ async def test_request_with_backoff_auth_error() -> None:
             expect_json=True,
             json=None,
             headers={},
+            operation=None,
         )
 
 
@@ -201,6 +203,7 @@ async def test_request_with_backoff_invalid_json_without_status() -> None:
             expect_json=True,
             json=None,
             headers={},
+            operation=None,
         )
 
 
@@ -259,14 +262,14 @@ async def test_update_reservation_rejects_start_time_update() -> None:
 async def test_end_reservation_rejects_unknown_id(monkeypatch: pytest.MonkeyPatch) -> None:
     provider = _provider(_SequenceSession([]))
 
-    async def _fake_list_reservations() -> list:
-        return []
-
-    async def _noop_defaults() -> None:
+    async def _noop_defaults(*, operation: str = "ensure_defaults") -> None:
         return None
 
-    monkeypatch.setattr(provider, "list_reservations", _fake_list_reservations)
+    async def _fake_fetch_base(*, operation: str = "fetch_base") -> dict:
+        return {"PermitMedias": [{"TypeID": 1, "Code": "CARD"}]}
+
     monkeypatch.setattr(provider, "_ensure_defaults", _noop_defaults)
+    monkeypatch.setattr(provider, "_fetch_base", _fake_fetch_base)
     with pytest.raises(ValidationError):
         await provider.end_reservation("missing", end_time=datetime.now(tz=UTC))
 
@@ -510,6 +513,7 @@ async def test_request_with_backoff_non_2xx_status() -> None:
             expect_json=True,
             json=None,
             headers={},
+            operation=None,
         )
 
 
@@ -524,6 +528,7 @@ async def test_request_with_backoff_invalid_json() -> None:
             expect_json=True,
             json=None,
             headers={},
+            operation=None,
         )
 
 
@@ -538,6 +543,7 @@ async def test_request_with_backoff_network_error() -> None:
             expect_json=True,
             json=None,
             headers={},
+            operation=None,
         )
 
 

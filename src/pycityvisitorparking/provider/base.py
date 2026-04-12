@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from abc import ABC, abstractmethod
 from collections.abc import Awaitable, Callable, Iterable, Mapping
 from datetime import datetime
@@ -26,6 +27,11 @@ from .logger import get_provider_logger
 
 _DEFAULT_TIMEOUT = aiohttp.ClientTimeout(total=30)
 _MAX_LOG_BODY_CHARS = 600
+_HTML_TITLE_RE = re.compile(r"<title[^>]*>(.*?)</title>", re.IGNORECASE | re.DOTALL)
+_HTML_BASE_RE = re.compile(
+    r"""<base[^>]+href\s*=\s*["']?([^"'\s>]+)""",
+    re.IGNORECASE | re.DOTALL,
+)
 _SENSITIVE_KEYS = frozenset(
     {
         "Authorization",
@@ -34,6 +40,10 @@ _SENSITIVE_KEYS = frozenset(
         "identifier",
         "otp",
         "password",
+        "permitId",
+        "permitMediaCode",
+        "permit_id",
+        "permit_media_code",
         "resetCode",
         "token",
         "username",
@@ -237,12 +247,50 @@ class BaseProvider(ABC):
             return compact[: _MAX_LOG_BODY_CHARS - 3] + "..."
         return compact
 
+    def _response_kind(self, content_type: str | None, body: str | None) -> str:
+        """Classify a failed response body for compact diagnostics."""
+        if not body:
+            return "empty"
+
+        lowered_type = (content_type or "").lower()
+        if "html" in lowered_type:
+            return "html"
+
+        compact = body.lstrip().lower()
+        if compact.startswith("<!doctype html") or compact.startswith("<html"):
+            return "html"
+
+        return "text"
+
+    def _extract_html_log_fields(self, body: str) -> dict[str, str]:
+        """Return compact HTML diagnostics without logging the full page body."""
+        fields: dict[str, str] = {}
+
+        title_match = _HTML_TITLE_RE.search(body)
+        if title_match:
+            title = self._summarize_log_text(title_match.group(1))
+            if title:
+                fields["html_title"] = title
+
+        base_match = _HTML_BASE_RE.search(body)
+        if base_match:
+            base_href = self._summarize_log_text(base_match.group(1))
+            if base_href:
+                fields["html_base_href"] = base_href
+
+        if not fields:
+            fields["body_excerpt"] = self._summarize_log_text(body)
+
+        return fields
+
     def _mask_payload(self, payload: Any) -> Any:
         """Return a copy of payload with sensitive values replaced by '***'."""
         return self._mask_log_value(payload)
 
     def _mask_log_value(self, value: Any, *, parent_key: str | None = None) -> Any:
         """Return a masked copy of structured log data."""
+        if parent_key in _SENSITIVE_KEYS:
+            return "***" if value is not None else None
         if isinstance(value, dict):
             return {
                 key: (
@@ -314,6 +362,7 @@ class BaseProvider(ABC):
         *,
         method: str | None = None,
         url: str | None = None,
+        operation: str | None = None,
         payload: Any = None,
         body: str | None = None,
         content_type: str | None = None,
@@ -323,11 +372,16 @@ class BaseProvider(ABC):
         label = "auth request failed" if is_auth else "request failed"
         detail = f"{method.upper()} {url}" if method and url else url
         fields: dict[str, Any] = {"status": status}
+        if operation:
+            fields["operation"] = operation
         if content_type:
             fields["content-type"] = content_type
+        fields["response_kind"] = self._response_kind(content_type, body)
         if payload is not None:
             fields["payload"] = self._mask_payload(payload)
-        if body:
+        if fields["response_kind"] == "html" and body:
+            fields.update(self._extract_html_log_fields(body))
+        elif body:
             fields["body"] = self._summarize_log_text(body)
         self._log_warning_block(label, fields, detail=detail)
 
@@ -588,13 +642,26 @@ class BaseProvider(ABC):
         return await self._request(method, url, expect_json=False, **kwargs)
 
     async def _request(self, method: str, url: str, *, expect_json: bool, **kwargs: Any) -> Any:
+        request_kwargs = dict(kwargs)
+        operation = request_kwargs.pop("operation", None)
+        payload = request_kwargs.get("json")
+
         async def handle_response(
             response: aiohttp.ClientResponse,
             _attempt: int,
             _attempts: int,
         ) -> Any:
             self._log_response_status(response.status)
-            self._raise_for_status(response)
+            if not 200 <= response.status < 300:
+                self._raise_for_status(
+                    response,
+                    method=method,
+                    url=url,
+                    operation=operation,
+                    payload=payload,
+                    body=await response.text(),
+                    content_type=response.headers.get("Content-Type"),
+                )
             if expect_json:
                 try:
                     data = await response.json()
@@ -608,14 +675,32 @@ class BaseProvider(ABC):
         return await self._request_with_retries(
             method,
             url,
-            request_kwargs=kwargs,
+            request_kwargs=request_kwargs,
             response_handler=handle_response,
         )
 
-    def _raise_for_status(self, response: aiohttp.ClientResponse) -> None:
+    def _raise_for_status(
+        self,
+        response: aiohttp.ClientResponse,
+        *,
+        method: str | None = None,
+        url: str | None = None,
+        operation: str | None = None,
+        payload: Any = None,
+        body: str | None = None,
+        content_type: str | None = None,
+    ) -> None:
         if 200 <= response.status < 300:
             return
-        self._log_request_failure(response.status)
+        self._log_request_failure(
+            response.status,
+            method=method,
+            url=url,
+            operation=operation,
+            payload=payload,
+            body=body,
+            content_type=content_type,
+        )
         if response.status in (401, 403):
             raise AuthError("Authentication failed.")
         raise ProviderError(f"Provider request failed with status {response.status}.")

@@ -17,3 +17,4 @@ class PortalSessionState:
     permit_media_type_id: str | int | None = None
     permit_media_code: str | None = None
     api_timezone: ZoneInfo | None = None
+    app_env_fetched: bool = False

@@ -5,11 +5,12 @@ import aiohttp
 import pytest
 
 from pycityvisitorparking.exceptions import ProviderError, ValidationError
-from pycityvisitorparking.models import Favorite, Reservation, ZoneValidityBlock
+from pycityvisitorparking.models import Reservation, ZoneValidityBlock
 from pycityvisitorparking.provider.dvsportal.api import Provider
 from pycityvisitorparking.provider.dvsportal.const import (
     DEFAULT_API_URI,
     LOGIN_ENDPOINT,
+    LOGIN_METHOD_PAS,
     RESERVATION_UPDATE_ENDPOINT,
 )
 from pycityvisitorparking.provider.loader import ProviderManifest
@@ -324,8 +325,11 @@ async def test_login_payload_uses_minimal_pascal_case_fields(
         )
         captured: dict[str, Any] = {}
 
-        async def _fake_fetch_login_config() -> tuple[int, int]:
-            return (1, 2)
+        async def _fake_fetch_permit_media_type_id(
+            *,
+            operation: str = "login",
+        ) -> str | int:
+            return 1
 
         async def _fake_request_json(method: str, path: str, **kwargs: Any) -> dict[str, Any]:
             captured["method"] = method
@@ -333,7 +337,11 @@ async def test_login_payload_uses_minimal_pascal_case_fields(
             captured["json"] = kwargs.get("json")
             return {"LoginStatus": 1, "Token": "token"}
 
-        monkeypatch.setattr(provider, "_fetch_login_config", _fake_fetch_login_config)
+        monkeypatch.setattr(
+            provider,
+            "_fetch_permit_media_type_id",
+            _fake_fetch_permit_media_type_id,
+        )
         monkeypatch.setattr(provider, "_request_json", _fake_request_json)
 
         await provider.login(credentials={"username": "user-123", "password": "secret"})
@@ -341,10 +349,16 @@ async def test_login_payload_uses_minimal_pascal_case_fields(
     payload = captured["json"]
     assert captured["method"] == "POST"
     assert captured["path"] == LOGIN_ENDPOINT
-    assert payload["Identifier"] == "user-123"
-    assert payload["Password"] == "secret"
-    assert "LoginMethod" not in payload
-    assert "PermitMediaTypeID" not in payload
+    assert payload == {
+        "identifier": "user-123",
+        "loginMethod": LOGIN_METHOD_PAS,
+        "password": "secret",
+        "otp": None,
+        "resetCode": None,
+        "asIdentifier": None,
+        "zipCode": None,
+        "permitMediaTypeID": 1,
+    }
 
 
 @pytest.mark.asyncio
@@ -364,30 +378,40 @@ async def test_login_retries_with_minimal_payload_on_http_400(
         )
         calls: list[dict[str, Any]] = []
 
-        async def _fake_fetch_login_config() -> tuple[int, int]:
-            return (1, 2)
+        async def _fake_fetch_permit_media_type_id(
+            *,
+            operation: str = "login",
+        ) -> str | int:
+            return 1
 
         async def _fake_request_json(_method: str, _path: str, **kwargs: Any) -> dict[str, Any]:
             payload = kwargs.get("json")
             if not isinstance(payload, dict):
                 raise AssertionError("Expected JSON payload dictionary.")
             calls.append(payload)
-            if len(calls) == 1:
-                raise ProviderError("Provider request failed with status 400.")
             return {"LoginStatus": 1, "Token": "token"}
 
-        monkeypatch.setattr(provider, "_fetch_login_config", _fake_fetch_login_config)
+        monkeypatch.setattr(
+            provider,
+            "_fetch_permit_media_type_id",
+            _fake_fetch_permit_media_type_id,
+        )
         monkeypatch.setattr(provider, "_request_json", _fake_request_json)
 
         await provider.login(credentials={"username": "user-123", "password": "secret"})
 
-    assert calls[0] == {"Identifier": "user-123", "Password": "secret"}
-    assert calls[1] == {
-        "Identifier": "user-123",
-        "LoginMethod": 2,
-        "Password": "secret",
-        "PermitMediaTypeID": 1,
-    }
+    assert calls == [
+        {
+            "identifier": "user-123",
+            "loginMethod": LOGIN_METHOD_PAS,
+            "password": "secret",
+            "otp": None,
+            "resetCode": None,
+            "asIdentifier": None,
+            "zipCode": None,
+            "permitMediaTypeID": 1,
+        }
+    ]
 
 
 @pytest.mark.asyncio
@@ -444,13 +468,19 @@ async def test_start_reservation_payload_uses_local_offset_with_milliseconds(
         provider._permit_media_type_id = 1
         provider._permit_media_code = "CARD-1"
 
-        async def _noop_defaults() -> None:
+        async def _noop_defaults(*, operation: str = "ensure_defaults") -> None:
             return None
 
         monkeypatch.setattr(provider, "_ensure_defaults", _noop_defaults)
         captured: dict[str, Any] = {}
 
-        async def _fake_request_json_auth(method: str, path: str, *, json: Any) -> Any:
+        async def _fake_request_json_auth(
+            method: str,
+            path: str,
+            *,
+            json: Any,
+            operation: str | None = None,
+        ) -> Any:
             captured["method"] = method
             captured["path"] = path
             captured["json"] = json
@@ -559,13 +589,19 @@ async def test_update_reservation_payload_uses_minute_delta(
             "BlockTimes": [],
         }
 
-        async def _fake_fetch_base() -> dict[str, Any]:
+        async def _fake_fetch_base(*, operation: str = "fetch_base") -> dict[str, Any]:
             return existing_permit
 
         monkeypatch.setattr(provider, "_fetch_base", _fake_fetch_base)
         captured: dict[str, Any] = {}
 
-        async def _fake_request_json_auth(method: str, path: str, *, json: Any) -> Any:
+        async def _fake_request_json_auth(
+            method: str,
+            path: str,
+            *,
+            json: Any,
+            operation: str | None = None,
+        ) -> Any:
             captured["method"] = method
             captured["path"] = path
             captured["json"] = json
@@ -613,10 +649,25 @@ async def test_add_favorite_payload_contains_required_fields(
         provider._permit_media_code = "CARD-1"
         captured: dict[str, Any] = {}
 
-        async def _fake_list_favorites() -> list[Favorite]:
-            return []
+        async def _fake_fetch_base(*, operation: str = "fetch_base") -> dict[str, Any]:
+            return {
+                "PermitMedias": [
+                    {
+                        "TypeID": 1,
+                        "Code": "CARD-1",
+                        "ActiveReservations": [],
+                        "LicensePlates": [],
+                    }
+                ]
+            }
 
-        async def _fake_request_json_auth(method: str, path: str, *, json: Any) -> Any:
+        async def _fake_request_json_auth(
+            method: str,
+            path: str,
+            *,
+            json: Any,
+            operation: str | None = None,
+        ) -> Any:
             captured["json"] = json
             return {
                 "Permit": {
@@ -633,7 +684,7 @@ async def test_add_favorite_payload_contains_required_fields(
                 }
             }
 
-        monkeypatch.setattr(provider, "list_favorites", _fake_list_favorites)
+        monkeypatch.setattr(provider, "_fetch_base", _fake_fetch_base)
         monkeypatch.setattr(provider, "_request_json_auth", _fake_request_json_auth)
         favorite = await provider.add_favorite("ab-12 cd", name="Visitor")
 
@@ -665,16 +716,31 @@ async def test_add_favorite_rejects_duplicate_plate(
         provider._permit_media_type_id = 1
         provider._permit_media_code = "CARD-1"
 
-        async def _fake_list_favorites() -> list[Favorite]:
-            return [Favorite(id="AB12CD", name="Family", license_plate="AB12CD")]
+        async def _fake_fetch_base(*, operation: str = "fetch_base") -> dict[str, Any]:
+            return {
+                "PermitMedias": [
+                    {
+                        "TypeID": 1,
+                        "Code": "CARD-1",
+                        "ActiveReservations": [],
+                        "LicensePlates": [{"Value": "AB12CD", "Name": "Family"}],
+                    }
+                ]
+            }
 
         called = {"request": False}
 
-        async def _fake_request_json_auth(method: str, path: str, *, json: Any) -> Any:
+        async def _fake_request_json_auth(
+            method: str,
+            path: str,
+            *,
+            json: Any,
+            operation: str | None = None,
+        ) -> Any:
             called["request"] = True
             return {}
 
-        monkeypatch.setattr(provider, "list_favorites", _fake_list_favorites)
+        monkeypatch.setattr(provider, "_fetch_base", _fake_fetch_base)
         monkeypatch.setattr(provider, "_request_json_auth", _fake_request_json_auth)
 
         with pytest.raises(ValidationError):
@@ -701,10 +767,25 @@ async def test_add_favorite_raises_when_response_misses_plate(
         provider._permit_media_type_id = 1
         provider._permit_media_code = "CARD-1"
 
-        async def _fake_list_favorites() -> list[Favorite]:
-            return []
+        async def _fake_fetch_base(*, operation: str = "fetch_base") -> dict[str, Any]:
+            return {
+                "PermitMedias": [
+                    {
+                        "TypeID": 1,
+                        "Code": "CARD-1",
+                        "ActiveReservations": [],
+                        "LicensePlates": [],
+                    }
+                ]
+            }
 
-        async def _fake_request_json_auth(method: str, path: str, *, json: Any) -> Any:
+        async def _fake_request_json_auth(
+            method: str,
+            path: str,
+            *,
+            json: Any,
+            operation: str | None = None,
+        ) -> Any:
             return {
                 "Permit": {
                     "PermitMedias": [
@@ -720,7 +801,7 @@ async def test_add_favorite_raises_when_response_misses_plate(
                 }
             }
 
-        monkeypatch.setattr(provider, "list_favorites", _fake_list_favorites)
+        monkeypatch.setattr(provider, "_fetch_base", _fake_fetch_base)
         monkeypatch.setattr(provider, "_request_json_auth", _fake_request_json_auth)
 
         with pytest.raises(ProviderError):
@@ -746,14 +827,29 @@ async def test_remove_favorite_payload_contains_required_fields(
         provider._permit_media_code = "CARD-1"
         captured: dict[str, Any] = {}
 
-        async def _fake_list_favorites() -> list[Favorite]:
-            return [Favorite(id="AB12CD", name="Visitor", license_plate="AB12CD")]
+        async def _fake_fetch_base(*, operation: str = "fetch_base") -> dict[str, Any]:
+            return {
+                "PermitMedias": [
+                    {
+                        "TypeID": 1,
+                        "Code": "CARD-1",
+                        "ActiveReservations": [],
+                        "LicensePlates": [{"Value": "AB12CD", "Name": "Visitor"}],
+                    }
+                ]
+            }
 
-        async def _fake_request_json_auth(method: str, path: str, *, json: Any) -> Any:
+        async def _fake_request_json_auth(
+            method: str,
+            path: str,
+            *,
+            json: Any,
+            operation: str | None = None,
+        ) -> Any:
             captured["json"] = json
             return {}
 
-        monkeypatch.setattr(provider, "list_favorites", _fake_list_favorites)
+        monkeypatch.setattr(provider, "_fetch_base", _fake_fetch_base)
         monkeypatch.setattr(provider, "_request_json_auth", _fake_request_json_auth)
         await provider.remove_favorite("ab-12 cd")
 

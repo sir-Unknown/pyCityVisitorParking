@@ -3,13 +3,16 @@
 from __future__ import annotations
 
 import asyncio
+import re
 from typing import TYPE_CHECKING, Any
 
 import aiohttp
 
 from ...exceptions import AuthError, ProviderError
 from ..logger import get_provider_logger
-from .const import AUTH_HEADER, DEFAULT_HEADERS, RETRY_AFTER_HEADER, XSRF_HEADER
+from .const import APP_ENV_SCRIPT, AUTH_HEADER, DEFAULT_HEADERS, RETRY_AFTER_HEADER, XSRF_HEADER
+
+_XSRF_COOKIE_NAME_RE = re.compile(r"window\.__env\.xsrfCookieName\s*=\s*['\"]([^'\"]+)['\"]")
 
 if TYPE_CHECKING:
     from .api import Provider
@@ -33,6 +36,73 @@ class PortalTransport:
         self._state = state
         self._profile = profile
 
+    async def fetch_app_env(self) -> None:
+        """Bootstrap the XSRF cookie before login.
+
+        The DVSPortal Angular app reads window.__env.xsrfCookieName from
+        app.env.js and then sends that cookie value as the X-XSRF-TOKEN
+        header on every request.  In normal browser use the XSRF cookie is
+        set by the server when the Angular HTML page (GET /DVSPortal/) is
+        loaded — before any API call is made.  Because we never load that
+        page, we have to replicate those two steps explicitly:
+
+        1. GET app.env.js  — parse xsrfCookieName so we know which cookie
+           to look for in the jar.
+        2. GET the Angular HTML page — ask the server to issue the XSRF
+           cookie so it lands in the aiohttp session cookie jar.
+
+        Both steps are executed once per provider lifetime and any failure
+        is silently ignored so the login flow is never blocked.
+        """
+        if self._state.app_env_fetched:
+            return
+        self._state.app_env_fetched = True
+
+        api_uri = self._provider._api_uri or ""
+        base_url = self._provider._base_url or ""
+        # Derive the app base path from the api_uri.
+        # e.g. /DVSPortal/api  ->  /DVSPortal
+        #      /DVSWebAPI/api  ->  /DVSWebAPI
+        app_base = api_uri[:-4] if api_uri.endswith("/api") else api_uri.rstrip("/")
+        timeout = aiohttp.ClientTimeout(total=10)
+
+        # Step 1: fetch app.env.js to discover xsrfCookieName.
+        env_url = f"{base_url}{app_base}/{APP_ENV_SCRIPT}"
+        try:
+            async with self._provider._session.request("GET", env_url, timeout=timeout) as response:
+                if response.status == 200:
+                    body = await response.text()
+                    match = _XSRF_COOKIE_NAME_RE.search(body)
+                    if match:
+                        cookie_name = match.group(1)
+                        self._profile.update_xsrf_cookie_name(cookie_name)
+                        _LOGGER.debug(
+                            "Provider %s discovered xsrfCookieName=%r from %s",
+                            self._provider.provider_id,
+                            cookie_name,
+                            env_url,
+                        )
+        except Exception:
+            pass
+
+        # Step 2: load the Angular HTML page so the server sets the XSRF
+        # cookie in the aiohttp session cookie jar.  This mirrors what a
+        # browser does before making any API call.
+        html_url = f"{base_url}{app_base}/"
+        try:
+            async with self._provider._session.request(
+                "GET", html_url, timeout=timeout
+            ) as response:
+                _LOGGER.debug(
+                    "Provider %s fetched app HTML status=%s url=%s",
+                    self._provider.provider_id,
+                    response.status,
+                    html_url,
+                )
+                await response.read()
+        except Exception:
+            pass
+
     async def ensure_authenticated(self) -> None:
         """Ensure the provider has a valid session or token."""
         if self._state.token is None and not self._state.session_authenticated:
@@ -49,6 +119,7 @@ class PortalTransport:
         headers: dict[str, str] | None = None,
         allow_reauth: bool = False,
         include_auth: bool = False,
+        operation: str | None = None,
     ) -> Any:
         """Perform a JSON request with optional auth and reauth handling."""
         url = self._provider._build_url(path)
@@ -72,6 +143,7 @@ class PortalTransport:
                 expect_json=True,
                 json=json,
                 headers=request_headers,
+                operation=operation,
             )
 
         async def handle_reauth() -> None:
@@ -93,6 +165,7 @@ class PortalTransport:
         path: str,
         *,
         json: Any | None = None,
+        operation: str | None = None,
     ) -> Any:
         """Perform an authenticated JSON request."""
         await self.ensure_authenticated()
@@ -102,6 +175,7 @@ class PortalTransport:
             json=json,
             allow_reauth=True,
             include_auth=True,
+            operation=operation,
         )
 
     async def _request_with_backoff(
@@ -112,6 +186,7 @@ class PortalTransport:
         expect_json: bool,
         json: Any,
         headers: dict[str, str],
+        operation: str | None,
     ) -> Any:
         """Run a request and map response failures into provider exceptions."""
 
@@ -130,6 +205,7 @@ class PortalTransport:
                     response.status,
                     method=method,
                     url=url,
+                    operation=operation,
                     payload=json,
                     body=body,
                     content_type=content_type,
@@ -217,7 +293,7 @@ class PortalTransport:
             "Provider %s request context method=%s url=%s include_auth=%s "
             "auth_header_present=%s xsrf_header_present=%s "
             "session_authenticated=%s token_present=%s "
-            "permit_media_type_id=%s permit_media_code=%s",
+            "permit_media_code=%s",
             self._provider.provider_id,
             method.upper(),
             url,
@@ -226,6 +302,8 @@ class PortalTransport:
             XSRF_HEADER in headers,
             self._state.session_authenticated,
             self._state.token is not None,
-            self._state.permit_media_type_id,
-            self._state.permit_media_code,
+            self._provider._mask_log_value(
+                self._state.permit_media_code,
+                parent_key="permit_media_code",
+            ),
         )

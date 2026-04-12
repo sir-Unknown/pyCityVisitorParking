@@ -2,6 +2,7 @@
 
 DEFAULT_API_URI = "/DVSWebAPI/api"
 API_TIMEZONE = "Europe/Amsterdam"
+APP_ENV_SCRIPT = "app.env.js"
 
 LOGIN_ENDPOINT = "/login"
 LOGIN_INFO_ENDPOINT = "/login/info"

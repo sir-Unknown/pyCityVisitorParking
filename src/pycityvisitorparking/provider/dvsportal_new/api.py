@@ -14,7 +14,7 @@ import aiohttp
 from ...exceptions import AuthError, ProviderError, ValidationError
 from ...models import Favorite, Permit, Reservation
 from ...util import parse_timestamp
-from ..base import BaseProvider
+from ..base import BaseProvider, _HttpSession
 from ..loader import ProviderManifest
 from .const import (
     DEFAULT_API_URI,
@@ -37,7 +37,7 @@ class Provider(BaseProvider):
 
     def __init__(
         self,
-        session: aiohttp.ClientSession,
+        session: _HttpSession,
         manifest: ProviderManifest,
         *,
         base_url: str | None = None,
@@ -70,6 +70,7 @@ class Provider(BaseProvider):
         """Authenticate against the provider."""
         async with self._operation_guard():
             self._log_operation_started("login")
+            await self._transport.fetch_app_env()
             merged = self._merge_credentials(credentials, **kwargs)
             username = merged.get("username")
             password = merged.get("password")
@@ -81,7 +82,7 @@ class Provider(BaseProvider):
             if permit_media_type_id is None:
                 permit_media_type_id = self._state.permit_media_type_id
             if permit_media_type_id is None:
-                permit_media_type_id = await self._fetch_permit_media_type_id()
+                permit_media_type_id = await self._fetch_permit_media_type_id(operation="login")
             self._validate_media_type_id(permit_media_type_id)
 
             payload = self._profile.build_login_payload(
@@ -95,6 +96,7 @@ class Provider(BaseProvider):
                 json=payload,
                 allow_reauth=False,
                 include_auth=False,
+                operation="login",
             )
 
             status_value = self._profile.normalize_login_status(data.get("LoginStatus"))
@@ -133,7 +135,7 @@ class Provider(BaseProvider):
             if self._mapper.response_includes_permit(data):
                 self._mapper.cache_defaults(self._mapper.extract_permit(data))
             else:
-                await self._fetch_base()
+                await self._fetch_base(operation="login")
 
             self._log_operation_completed(
                 "login",
@@ -146,7 +148,7 @@ class Provider(BaseProvider):
         """Return the active permit for the account."""
         async with self._operation_guard():
             self._log_operation_started("get_permit")
-            permit = await self._fetch_base()
+            permit = await self._fetch_base(operation="get_permit")
             mapped = self._mapper.map_permit(permit)
             self._log_operation_completed("get_permit")
             return mapped
@@ -155,7 +157,9 @@ class Provider(BaseProvider):
         """Return active reservations."""
         async with self._operation_guard():
             self._log_operation_started("list_reservations")
-            reservations = self._mapper.reservations_from_permit(await self._fetch_base())
+            reservations = self._mapper.reservations_from_permit(
+                await self._fetch_base(operation="list_reservations")
+            )
             self._log_operation_completed("list_reservations", count=len(reservations))
             return reservations
 
@@ -177,7 +181,7 @@ class Provider(BaseProvider):
             start_time_utc_value = self._format_utc_timestamp(start_time_utc)
             end_time_utc_value = self._format_utc_timestamp(end_time_utc)
             normalized_plate = self._normalize_license_plate(license_plate)
-            await self._ensure_defaults()
+            await self._ensure_defaults(operation="start_reservation")
 
             payload = {
                 "permitMediaTypeID": self._state.permit_media_type_id,
@@ -193,8 +197,13 @@ class Provider(BaseProvider):
                 "POST",
                 RESERVATION_CREATE_ENDPOINT,
                 json=payload,
+                operation="start_reservation",
             )
-            permit = await self._permit_from_response(data, "reservation create")
+            permit = await self._permit_from_response(
+                data,
+                "reservation create",
+                operation="start_reservation",
+            )
             reservations = self._mapper.reservations_from_permit(permit)
             reservation = self._mapper.select_reservation(
                 reservations,
@@ -229,7 +238,9 @@ class Provider(BaseProvider):
 
             end_dt = self._normalize_datetime(end_time)
             existing = self._mapper.select_reservation(
-                self._mapper.reservations_from_permit(await self._fetch_base()),
+                self._mapper.reservations_from_permit(
+                    await self._fetch_base(operation="update_reservation")
+                ),
                 reservation_id=reservation_id_value,
             )
             if existing is None:
@@ -257,8 +268,13 @@ class Provider(BaseProvider):
                 "POST",
                 RESERVATION_UPDATE_ENDPOINT,
                 json=payload,
+                operation="update_reservation",
             )
-            permit = await self._permit_from_response(data, "reservation update")
+            permit = await self._permit_from_response(
+                data,
+                "reservation update",
+                operation="update_reservation",
+            )
             reservations = self._mapper.reservations_from_permit(permit)
             updated = self._mapper.select_reservation(
                 reservations,
@@ -279,9 +295,11 @@ class Provider(BaseProvider):
             self._log_operation_started("end_reservation")
             end_dt = self._normalize_datetime(end_time)
             normalized_end_time = self._format_utc_timestamp(end_dt)
-            await self._ensure_defaults()
+            await self._ensure_defaults(operation="end_reservation")
             existing = self._mapper.select_reservation(
-                await self.list_reservations(),
+                self._mapper.reservations_from_permit(
+                    await self._fetch_base(operation="end_reservation")
+                ),
                 reservation_id=reservation_id,
             )
             if existing is None:
@@ -296,8 +314,13 @@ class Provider(BaseProvider):
                 "POST",
                 RESERVATION_END_ENDPOINT,
                 json=payload,
+                operation="end_reservation",
             )
-            permit = await self._permit_from_response(data, "reservation end")
+            permit = await self._permit_from_response(
+                data,
+                "reservation end",
+                operation="end_reservation",
+            )
             self._mapper.cache_defaults(permit)
             reservation = Reservation(
                 id=existing.id,
@@ -313,7 +336,9 @@ class Provider(BaseProvider):
         """Return stored favorites."""
         async with self._operation_guard():
             self._log_operation_started("list_favorites")
-            favorites = self._mapper.favorites_from_permit(await self._fetch_base())
+            favorites = self._mapper.favorites_from_permit(
+                await self._fetch_base(operation="list_favorites")
+            )
             self._log_operation_completed("list_favorites", count=len(favorites))
             return favorites
 
@@ -322,7 +347,9 @@ class Provider(BaseProvider):
         async with self._operation_guard():
             self._log_operation_started("add_favorite")
             normalized_plate = self._normalize_license_plate(license_plate)
-            favorites = await self.list_favorites()
+            favorites = self._mapper.favorites_from_permit(
+                await self._fetch_base(operation="add_favorite")
+            )
             for favorite in favorites:
                 if favorite.license_plate == normalized_plate:
                     self._log_operation_failed("add_favorite", "duplicate license_plate")
@@ -345,12 +372,15 @@ class Provider(BaseProvider):
                 "POST",
                 FAVORITE_UPSERT_ENDPOINT,
                 json=payload,
+                operation="add_favorite",
             )
             try:
                 favorites = self._mapper.favorites_from_permit(self._mapper.extract_permit(data))
             except ProviderError:
                 self._log_missing_response_data("favorite upsert", fallback="refetching list")
-                favorites = await self.list_favorites()
+                favorites = self._mapper.favorites_from_permit(
+                    await self._fetch_base(operation="add_favorite")
+                )
             favorite = self._mapper.select_favorite(favorites, normalized_plate)
             if favorite is None:
                 raise ProviderError("Favorite was not returned by the provider.")
@@ -371,7 +401,9 @@ class Provider(BaseProvider):
         async with self._operation_guard():
             self._log_operation_started("remove_favorite")
             normalized_plate = self._normalize_license_plate(favorite_id)
-            favorites = await self.list_favorites()
+            favorites = self._mapper.favorites_from_permit(
+                await self._fetch_base(operation="remove_favorite")
+            )
             found = next(
                 (favorite for favorite in favorites if favorite.license_plate == normalized_plate),
                 None,
@@ -389,16 +421,18 @@ class Provider(BaseProvider):
                 "POST",
                 FAVORITE_REMOVE_ENDPOINT,
                 json=payload,
+                operation="remove_favorite",
             )
             self._log_operation_completed("remove_favorite")
 
-    async def _fetch_permit_media_type_id(self) -> str | int:
+    async def _fetch_permit_media_type_id(self, *, operation: str = "login") -> str | int:
         """Return the default permit media type ID from the login bootstrap call."""
         data = await self._request_json(
             "GET",
             LOGIN_ENDPOINT,
             allow_reauth=False,
             include_auth=False,
+            operation=operation,
         )
         types = data.get("PermitMediaTypes")
         if not isinstance(types, list) or not types:
@@ -408,28 +442,38 @@ class Provider(BaseProvider):
             raise ProviderError("Provider did not return a permit media type ID.")
         return first["ID"]
 
-    async def _permit_from_response(self, data: dict[str, Any], label: str) -> dict[str, Any]:
+    async def _permit_from_response(
+        self,
+        data: dict[str, Any],
+        label: str,
+        *,
+        operation: str = "fetch_base",
+    ) -> dict[str, Any]:
         """Extract permit from a response, falling back to a full fetch on failure."""
         try:
             permit = self._mapper.extract_permit(data)
         except ProviderError:
             self._log_missing_response_data(label)
-            return await self._fetch_base()
+            return await self._fetch_base(operation=operation)
         self._mapper.cache_defaults(permit)
         return permit
 
-    async def _fetch_base(self) -> dict[str, Any]:
+    async def _fetch_base(self, *, operation: str = "fetch_base") -> dict[str, Any]:
         """Fetch the current base model and return the active permit."""
-        data = await self._request_json_auth("POST", LOGIN_GETBASE_ENDPOINT)
+        data = await self._request_json_auth(
+            "POST",
+            LOGIN_GETBASE_ENDPOINT,
+            operation=operation,
+        )
         permit = self._mapper.extract_permit(data)
         self._mapper.cache_defaults(permit)
         return permit
 
-    async def _ensure_defaults(self) -> None:
+    async def _ensure_defaults(self, *, operation: str = "ensure_defaults") -> None:
         """Ensure auth and permit media defaults are available."""
         await self._transport.ensure_authenticated()
         if self._state.permit_media_type_id is None or self._state.permit_media_code is None:
-            await self._fetch_base()
+            await self._fetch_base(operation=operation)
         if self._state.permit_media_type_id is None or self._state.permit_media_code is None:
             raise ProviderError("Permit media defaults are missing.")
 
@@ -551,9 +595,21 @@ class Provider(BaseProvider):
         """Backward-compatible mapper wrapper for tests and introspection."""
         return self._mapper.select_favorite(favorites, plate)
 
-    async def _request_json_auth(self, method: str, path: str, *, json: Any | None = None) -> Any:
+    async def _request_json_auth(
+        self,
+        method: str,
+        path: str,
+        *,
+        json: Any | None = None,
+        operation: str | None = None,
+    ) -> Any:
         """Backward-compatible transport wrapper for tests and introspection."""
-        return await self._transport.request_json_auth(method, path, json=json)
+        return await self._transport.request_json_auth(
+            method,
+            path,
+            json=json,
+            operation=operation,
+        )
 
     async def _request_json(
         self,
@@ -564,6 +620,7 @@ class Provider(BaseProvider):
         headers: dict[str, str] | None = None,
         allow_reauth: bool = False,
         include_auth: bool = False,
+        operation: str | None = None,
     ) -> Any:
         """Backward-compatible transport wrapper for tests and introspection."""
         return await self._transport.request_json(
@@ -573,6 +630,7 @@ class Provider(BaseProvider):
             headers=headers,
             allow_reauth=allow_reauth,
             include_auth=include_auth,
+            operation=operation,
         )
 
     @asynccontextmanager

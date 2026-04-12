@@ -20,11 +20,13 @@ class _FakeResponse:
         json_data: object | None = None,
         text_data: str = "",
         json_error: Exception | None = None,
+        headers: dict[str, str] | None = None,
     ) -> None:
         self.status = status
         self._json_data = json_data
         self._text_data = text_data
         self._json_error = json_error
+        self.headers = headers or {}
 
     async def json(self) -> object:
         if self._json_error is not None:
@@ -193,7 +195,7 @@ def test_mask_payload_redacts_login_and_license_plate_data() -> None:
     assert masked == {
         "identifier": "***",
         "password": "***",
-        "permitMediaCode": "CARD-1",
+        "permitMediaCode": "***",
         "LicensePlate": {
             "Value": "***",
             "DisplayValue": "***",
@@ -312,6 +314,54 @@ async def test_request_json_logs_masked_payload_and_safe_response_summary(
     assert "secret-token" not in caplog.text
     assert "token-present" in caplog.text
     assert "permits-count" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_request_json_logs_compact_html_failure_summary(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    session = _SequenceSession(
+        [
+            _FakeResponse(
+                status=500,
+                text_data=(
+                    "<!DOCTYPE html><html><head><title>Bezoekers App</title>"
+                    '<base href="/DVSPortal/" />'
+                    "<script>window.marker='VERY-LONG-HTML-MARKER';</script>"
+                    "</head><body>Unexpected body</body></html>"
+                ),
+                headers={"Content-Type": "text/html; charset=utf-8"},
+            )
+        ]
+    )
+    provider = _DummyProvider(session, _manifest(), base_url="https://example.com")
+
+    caplog.set_level(logging.WARNING, logger="pycityvisitorparking.provider")
+
+    with pytest.raises(ProviderError, match="status 500"):
+        await provider._request_json(
+            "POST",
+            "/path",
+            json={
+                "identifier": "123456",
+                "LicensePlate": {"Value": "AB12CD", "Name": "Visitor"},
+            },
+            operation="start_reservation",
+        )
+
+    assert "operation" in caplog.text
+    assert "start_reservation" in caplog.text
+    assert "response_kind" in caplog.text
+    assert "html" in caplog.text
+    assert "html_title" in caplog.text
+    assert "Bezoekers App" in caplog.text
+    assert "html_base_href" in caplog.text
+    assert "/DVSPortal/" in caplog.text
+    assert "VERY-LONG-HTML-MARKER" not in caplog.text
+    assert "AB12CD" not in caplog.text
+    assert "Visitor" not in caplog.text
+    assert "CARD-1" not in caplog.text
+    assert "123456" not in caplog.text
 
 
 @pytest.mark.asyncio

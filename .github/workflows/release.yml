@@ -66,12 +66,20 @@ jobs:
 
       - name: Log resolved package version
         run: |
-          uv run python -c "from importlib.metadata import version; print(version('pycityvisitorparking'))"
+          uv run --locked python -c "from importlib.metadata import version; print(version('pycityvisitorparking'))"
 
       - name: Build
         run: |
           uv build
           uvx twine check dist/*
+
+      - name: Confirm release build kept tracked files clean
+        run: |
+          if ! git diff --quiet --exit-code; then
+            echo "Release build modified tracked files. Commit generated file updates before publishing."
+            git diff --stat
+            exit 1
+          fi
 
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@ed0c53931b1dc9bd32cbe73a98c7f6766f8a527e # v1.13.0

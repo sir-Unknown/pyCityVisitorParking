@@ -45,7 +45,7 @@ jobs:
         uses: astral-sh/setup-uv@cec208311dfd045dd5311c1add060b2062131d57 # v8.0.0
 
       - name: Run zizmor
-        run: uv run --group security zizmor --format sarif . > zizmor.sarif; [ $? -le 1 ]
+        run: uv run --group security zizmor --format sarif . > zizmor.sarif || [ $? -eq 1 ]
 
       - name: Upload SARIF results
         if: always()

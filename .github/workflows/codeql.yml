@@ -3,8 +3,9 @@
 # findings as SARIF to GitHub code scanning.
 #
 # Custom query config is in .github/codeql/codeql-config.yml.
-# Only triggers on changes to src/, tests/, or codeql config files to avoid
-# unnecessary runs on docs or other non-code changes.
+# Only triggers on changes to src/, tests/, workflow files, or codeql config
+# to avoid unnecessary runs on docs or other non-code changes. All workflow
+# files are included because this workflow also analyzes language: actions.
 name: "CodeQL Advanced"
 
 on:
@@ -14,14 +15,14 @@ on:
     paths:
       - "src/**"
       - "tests/**"
-      - ".github/workflows/codeql.yml"
+      - ".github/workflows/**"
       - ".github/codeql/**"
   pull_request:
     branches: [ "main" ]
     paths:
       - "src/**"
       - "tests/**"
-      - ".github/workflows/codeql.yml"
+      - ".github/workflows/**"
       - ".github/codeql/**"
   schedule:
     - cron: '45 12 * * 1'

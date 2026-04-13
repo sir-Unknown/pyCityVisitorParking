@@ -52,6 +52,7 @@ version-resolver:
       - "enhancement"
       - "new-feature"
       - "feature"
+      - "schema"
   patch:
     labels:
       - "bugfix"
@@ -64,7 +65,6 @@ version-resolver:
       - "maintenance"
       - "performance"
       - "refactor"
-      - "schema"
       - "tests"
   default: patch
 

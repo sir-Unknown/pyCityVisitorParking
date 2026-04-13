@@ -22,7 +22,7 @@ class _CookieJarLike(Protocol):
 
     def filter_cookies(self, url: URL) -> dict[str, Morsel[str]]:
         """Return cookies applicable to the provided URL."""
-        ...
+        raise NotImplementedError
 
 
 class PortalProfile:

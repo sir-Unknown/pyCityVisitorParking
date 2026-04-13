@@ -133,7 +133,15 @@ class Provider(BaseProvider):
             }
 
             if self._mapper.response_includes_permit(data):
-                self._mapper.cache_defaults(self._mapper.extract_permit(data))
+                permit = self._mapper.extract_permit(data)
+                try:
+                    self._mapper.cache_defaults(permit)
+                except ProviderError:
+                    # Some deployments include Permit/Permits in the login response
+                    # before PermitMedias is fully populated. Fall back to getbase
+                    # so a successful login does not regress into an auth failure.
+                    self._log_missing_response_data("login", fallback="fetching base")
+                    await self._fetch_base(operation="login")
             else:
                 await self._fetch_base(operation="login")
 

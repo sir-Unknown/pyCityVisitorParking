@@ -118,6 +118,9 @@ class _FakeResponse:
     async def text(self) -> str:
         return self._text_data
 
+    async def read(self) -> bytes:
+        return self._text_data.encode()
+
 
 class _FakeRequestContext:
     def __init__(self, response: _FakeResponse) -> None:
@@ -399,6 +402,57 @@ async def test_login_with_permit_caches_defaults_without_fetch_base(
 
 
 @pytest.mark.asyncio
+async def test_login_with_partial_permit_falls_back_to_fetch_base(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async with aiohttp.ClientSession() as session:
+        provider = Provider(session, _manifest(), base_url="https://example")
+        fetched_base = {"called": False}
+
+        async def _fake_fetch_media_type(*, operation: str = "login") -> str | int:
+            return 3
+
+        async def _fake_request_json(
+            method: str,
+            path: str,
+            *,
+            json: Any | None = None,
+            headers: dict[str, str] | None = None,
+            allow_reauth: bool = False,
+            include_auth: bool = False,
+            operation: str | None = None,
+        ) -> Any:
+            return {
+                "LoginStatus": 1,
+                "Token": "token-123",
+                "Permit": {},
+                "Permits": [{"ZoneCode": "ZONE-1"}],
+            }
+
+        async def _fake_fetch_base(*, operation: str = "fetch_base") -> dict[str, Any]:
+            fetched_base["called"] = True
+            provider._permit_media_type_id = 3
+            provider._permit_media_code = "CARD-3"
+            return {
+                "ZoneCode": "ZONE-1",
+                "PermitMedias": [{"TypeID": 3, "Code": "CARD-3", "ActiveReservations": []}],
+                "BlockTimes": [],
+            }
+
+        monkeypatch.setattr(provider, "_fetch_permit_media_type_id", _fake_fetch_media_type)
+        monkeypatch.setattr(provider, "_request_json", _fake_request_json)
+        monkeypatch.setattr(provider, "_fetch_base", _fake_fetch_base)
+
+        await provider.login(credentials={"username": "user", "password": "secret"})
+
+    assert provider._session_authenticated is True
+    assert provider._token == "token-123"
+    assert provider._permit_media_type_id == 3
+    assert provider._permit_media_code == "CARD-3"
+    assert fetched_base["called"] is True
+
+
+@pytest.mark.asyncio
 async def test_permit_from_response_falls_back_to_fetch_base(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -419,6 +473,73 @@ async def test_permit_from_response_falls_back_to_fetch_base(
 
     assert fallback_called["called"] is True
     assert permit["PermitMedias"][0]["Code"] == "CARD-1"
+
+
+@pytest.mark.asyncio
+async def test_extract_permit_treats_empty_permit_as_missing() -> None:
+    async with aiohttp.ClientSession() as session:
+        provider = Provider(session, _manifest(), base_url="https://example")
+        permit = provider._extract_permit(
+            {
+                "Permit": {},
+                "Permits": [
+                    {"ZoneCode": "ZONE-1", "PermitMedias": [{"Code": "CARD-1", "TypeID": 1}]}
+                ],
+            }
+        )
+
+    assert permit["ZoneCode"] == "ZONE-1"
+
+
+@pytest.mark.asyncio
+async def test_fetch_app_env_only_marks_success_after_both_bootstrap_steps() -> None:
+    async with aiohttp.ClientSession() as session:
+        provider = Provider(session, _manifest(), base_url="https://example")
+        responses = [
+            _FakeResponse(status=404, text_data="missing"),
+            _FakeResponse(status=200, text_data="<html></html>"),
+        ]
+
+        class _Session:
+            def __init__(self, values: list[_FakeResponse]) -> None:
+                self.cookie_jar = session.cookie_jar
+                self._values = values
+
+            def request(self, method: str, url: str, **kwargs: Any) -> _FakeRequestContext:
+                return _FakeRequestContext(self._values.pop(0))
+
+        provider._session = _Session(responses)  # type: ignore[assignment]
+
+        await provider._transport.fetch_app_env()
+
+    assert provider._state.app_env_fetched is False
+
+
+@pytest.mark.asyncio
+async def test_fetch_app_env_marks_success_after_cookie_name_and_html_success() -> None:
+    async with aiohttp.ClientSession() as session:
+        provider = Provider(session, _manifest(), base_url="https://example")
+        responses = [
+            _FakeResponse(
+                status=200,
+                text_data='window.__env.xsrfCookieName = "XSRF-TOKEN";',
+            ),
+            _FakeResponse(status=200, text_data="<html></html>"),
+        ]
+
+        class _Session:
+            def __init__(self, values: list[_FakeResponse]) -> None:
+                self.cookie_jar = session.cookie_jar
+                self._values = values
+
+            def request(self, method: str, url: str, **kwargs: Any) -> _FakeRequestContext:
+                return _FakeRequestContext(self._values.pop(0))
+
+        provider._session = _Session(responses)  # type: ignore[assignment]
+
+        await provider._transport.fetch_app_env()
+
+    assert provider._state.app_env_fetched is True
 
 
 @pytest.mark.asyncio

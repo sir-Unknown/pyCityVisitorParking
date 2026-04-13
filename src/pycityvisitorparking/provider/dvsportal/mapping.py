@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, TypeGuard
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from ...exceptions import ProviderError, ValidationError
@@ -12,14 +12,13 @@ from ...util import format_utc_timestamp
 from .const import API_TIMEZONE
 
 if TYPE_CHECKING:
-    from .api import Provider
     from .session import PortalSessionState
 
 
 class PortalMapper:
     """Map provider payloads into strict public models."""
 
-    def __init__(self, provider: Provider, state: PortalSessionState) -> None:
+    def __init__(self, provider: Any, state: PortalSessionState) -> None:
         """Initialize the mapper with provider helpers and shared session state."""
         self._provider = provider
         self._state = state
@@ -27,7 +26,7 @@ class PortalMapper:
     def extract_permit(self, data: dict[str, Any]) -> dict[str, Any]:
         """Extract the relevant permit from a provider response."""
         permit = data.get("Permit")
-        if isinstance(permit, dict):
+        if self._is_usable_permit(permit):
             return permit
         permits = data.get("Permits")
         if isinstance(permits, list):
@@ -39,10 +38,10 @@ class PortalMapper:
     def response_includes_permit(self, data: dict[str, Any]) -> bool:
         """Return whether the response contains permit details."""
         permit = data.get("Permit")
-        if isinstance(permit, dict):
+        if self._is_usable_permit(permit):
             return True
         permits = data.get("Permits")
-        return isinstance(permits, list) and any(isinstance(item, dict) for item in permits)
+        return isinstance(permits, list) and any(self._is_usable_permit(item) for item in permits)
 
     def select_permit_media(self, permit: dict[str, Any]) -> dict[str, Any]:
         """Select the active permit media from a permit payload."""
@@ -158,7 +157,7 @@ class PortalMapper:
             name = plate_info.get("DisplayValue") or plate_value
             reservations.append(
                 Reservation(
-                    id=self._provider._coerce_id(reservation_id),
+                    id=self._provider._coerce_id(reservation_id) or str(reservation_id),
                     name=name,
                     license_plate=normalized_plate,
                     start_time=start,
@@ -262,7 +261,7 @@ class PortalMapper:
         cached_media_code = self._state.permit_media_code
         if cached_media_code:
             for permit in permits:
-                if not isinstance(permit, dict):
+                if not self._is_usable_permit(permit):
                     continue
                 media_items = permit.get("PermitMedias")
                 if not isinstance(media_items, list):
@@ -275,6 +274,10 @@ class PortalMapper:
                     ):
                         return permit
         for permit in permits:
-            if isinstance(permit, dict):
+            if self._is_usable_permit(permit):
                 return permit
         return None
+
+    def _is_usable_permit(self, permit: Any) -> TypeGuard[dict[str, Any]]:
+        """Return whether a permit payload is present and usable."""
+        return isinstance(permit, dict) and bool(permit)

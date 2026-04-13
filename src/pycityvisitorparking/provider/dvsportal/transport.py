@@ -15,9 +15,9 @@ from .const import APP_ENV_SCRIPT, AUTH_HEADER, DEFAULT_HEADERS, RETRY_AFTER_HEA
 _XSRF_COOKIE_NAME_RE = re.compile(r"window\.__env\.xsrfCookieName\s*=\s*['\"]([^'\"]+)['\"]")
 
 if TYPE_CHECKING:
-    from .api import Provider
     from .profile import PortalProfile
     from .session import PortalSessionState
+
 
 _LOGGER = get_provider_logger(__name__)
 
@@ -27,7 +27,7 @@ class PortalTransport:
 
     def __init__(
         self,
-        provider: Provider,
+        provider: Any,
         state: PortalSessionState,
         profile: PortalProfile,
     ) -> None:
@@ -84,9 +84,27 @@ class PortalTransport:
                             cookie_name,
                             env_url,
                         )
-                step1_ok = True
-        except Exception:
-            pass
+                        step1_ok = True
+                    else:
+                        _LOGGER.debug(
+                            "Provider %s app.env.js missing xsrfCookieName url=%s",
+                            self._provider.provider_id,
+                            env_url,
+                        )
+                else:
+                    _LOGGER.debug(
+                        "Provider %s app.env.js bootstrap status=%s url=%s",
+                        self._provider.provider_id,
+                        response.status,
+                        env_url,
+                    )
+        except Exception as exc:
+            _LOGGER.debug(
+                "Provider %s app.env.js bootstrap failed url=%s error=%s",
+                self._provider.provider_id,
+                env_url,
+                exc.__class__.__name__,
+            )
 
         # Step 2: load the Angular HTML page so the server sets the XSRF
         # cookie in the aiohttp session cookie jar.  This mirrors what a
@@ -103,9 +121,15 @@ class PortalTransport:
                     html_url,
                 )
                 await response.read()
-            step2_ok = True
-        except Exception:
-            pass
+                if response.status == 200:
+                    step2_ok = True
+        except Exception as exc:
+            _LOGGER.debug(
+                "Provider %s app HTML bootstrap failed url=%s error=%s",
+                self._provider.provider_id,
+                html_url,
+                exc.__class__.__name__,
+            )
 
         if step1_ok and step2_ok:
             self._state.app_env_fetched = True

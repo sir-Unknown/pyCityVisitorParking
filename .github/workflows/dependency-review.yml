@@ -14,7 +14,7 @@ on:
     branches: [ "main" ]
     paths:
       - "pyproject.toml"
-      - "requirements*.txt"
+      - "uv.lock"
 
 concurrency:
   group: dependency-review-${{ github.event.pull_request.number || github.ref }}

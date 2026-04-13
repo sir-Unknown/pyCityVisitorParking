@@ -15,16 +15,18 @@ on:
   workflow_dispatch:
   push:
     branches: [ "main" ]
-    paths-ignore:
-      - "docs/**"
-      - "README.md"
-      - "CHANGELOG.md"
+    paths:
+      - "src/**"
+      - "tests/**"
+      - ".github/workflows/codeql.yml"
+      - ".github/codeql/**"
   pull_request:
     branches: [ "main" ]
-    paths-ignore:
-      - "docs/**"
-      - "README.md"
-      - "CHANGELOG.md"
+    paths:
+      - "src/**"
+      - "tests/**"
+      - ".github/workflows/codeql.yml"
+      - ".github/codeql/**"
   schedule:
     - cron: '45 12 * * 1'
 
@@ -43,7 +45,7 @@ jobs:
     #   - https://gh.io/using-larger-runners (GitHub.com only)
     # Consider using larger runners or machines with greater resources for possible analysis time improvements.
     runs-on: ${{ (matrix.language == 'swift' && 'macos-latest') || 'ubuntu-latest' }}
-    timeout-minutes: 45
+    timeout-minutes: 20
     permissions:
       security-events: write # Required for CodeQL and SARIF uploads.
       packages: read # Required for private-action and package metadata reads during analysis.

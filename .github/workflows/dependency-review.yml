@@ -17,6 +17,11 @@ concurrency:
   group: dependency-review-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
+env:
+  # Opt into the GitHub-hosted Node 24 runtime for JavaScript actions ahead of
+  # the platform-wide switch away from Node 20.
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
 permissions: {}
 
 jobs:

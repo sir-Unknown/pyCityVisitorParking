@@ -1,3 +1,5 @@
+# Automatically assigns newly opened issues and pull requests to the maintainer
+# (sir-Unknown) so nothing falls through the cracks without an owner.
 name: Auto-assign
 
 on:

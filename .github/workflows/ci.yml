@@ -1,3 +1,14 @@
+# Main CI pipeline: linting (ruff), type checking (pyright), tests (pytest),
+# and a dist build + metadata check (twine). Runs on every PR, push to main,
+# and on version tags (v*) so the release artifact is validated before publish.
+#
+# Note: uv caching is intentionally disabled (enable-cache: false) because this
+# workflow triggers on tags used for publishing. An attacker could poison a
+# cached package and have it included in the published artifact.
+#
+# Two jobs run in parallel:
+#   test   — lint, type-check, tests, build
+#   schema — validates every provider manifest.json against its JSON schema
 name: CI
 
 on:

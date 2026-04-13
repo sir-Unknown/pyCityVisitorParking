@@ -1,3 +1,6 @@
+# Locks closed issues and PRs after an inactivity threshold to prevent
+# off-topic comments on resolved threads.
+# Thresholds: issues locked after 30 days, PRs after 14 days.
 name: Lock
 
 on:
@@ -24,5 +27,5 @@ jobs:
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           issue-inactive-days: 30
-          pr-inactive-days: 1
+          pr-inactive-days: 14
           issue-lock-reason: "resolved"

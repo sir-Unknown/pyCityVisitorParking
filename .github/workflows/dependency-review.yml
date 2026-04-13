@@ -1,12 +1,9 @@
-# Dependency Review Action
+# Scans dependency changes in PRs for known vulnerabilities using the GitHub
+# Advisory Database. Fails on findings with severity >= moderate and posts a
+# summary comment on the PR when issues are found.
 #
-# This Action will scan dependency manifest files that change as part of a Pull Request,
-# surfacing known-vulnerable versions of the packages declared or updated in the PR.
-# Once installed, if the workflow run is marked as required, PRs introducing known-vulnerable
-# packages will be blocked from merging.
-#
-# Source repository: https://github.com/actions/dependency-review-action
-# Public documentation: https://docs.github.com/en/code-security/supply-chain-security/understanding-your-software-supply-chain/about-dependency-review#dependency-review-enforcement
+# Triggers only when pyproject.toml or uv.lock changes, so routine code PRs
+# are unaffected.
 name: 'Dependency review'
 on:
   workflow_dispatch:
@@ -14,18 +11,12 @@ on:
     branches: [ "main" ]
     paths:
       - "pyproject.toml"
-      - "requirements*.txt"
+      - "uv.lock"
 
 concurrency:
   group: dependency-review-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
-# If using a dependency submission action in this workflow this permission will need to be set to:
-#
-# permissions:
-#   contents: write
-#
-# https://docs.github.com/en/enterprise-cloud@latest/code-security/supply-chain-security/understanding-your-software-supply-chain/using-the-dependency-submission-api
 permissions: {}
 
 jobs:
@@ -43,11 +34,9 @@ jobs:
           persist-credentials: false
       - name: 'Dependency Review'
         uses: actions/dependency-review-action@2031cfc080254a8a887f58cffee85186f0e49e48 # v4.9.0
-        # Commonly enabled options, see https://github.com/actions/dependency-review-action#configuration-options for all available options.
         with:
           base-ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || 'refs/heads/main' }}
           head-ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
           comment-summary-in-pr: on-failure
           fail-on-severity: moderate
           retry-on-snapshot-warnings: true
-        #   deny-licenses: GPL-1.0-or-later, LGPL-2.0-or-later

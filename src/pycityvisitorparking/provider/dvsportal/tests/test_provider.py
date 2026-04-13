@@ -8,8 +8,8 @@ from yarl import URL
 
 from pycityvisitorparking.exceptions import AuthError, ProviderError
 from pycityvisitorparking.models import Reservation, ZoneValidityBlock
-from pycityvisitorparking.provider.dvsportal_new.api import Provider
-from pycityvisitorparking.provider.dvsportal_new.const import (
+from pycityvisitorparking.provider.dvsportal.api import Provider
+from pycityvisitorparking.provider.dvsportal.const import (
     DEFAULT_API_URI,
     LOGIN_ENDPOINT,
     RESERVATION_CREATE_ENDPOINT,
@@ -87,7 +87,7 @@ PERMIT_SAMPLE_NAIVE = {
 
 def _manifest() -> ProviderManifest:
     return ProviderManifest(
-        id="dvsportal_new",
+        id="dvsportal",
         name="DVS Portal (Refactored)",
         favorite_update_fields=(),
         reservation_update_fields=("end_time",),

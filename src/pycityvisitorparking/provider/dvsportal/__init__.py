@@ -1,4 +1,4 @@
-"""DVS Portal provider package."""
+"""Refactored DVS Portal provider package."""
 
 from .api import Provider
 

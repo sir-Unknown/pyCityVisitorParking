@@ -1,3 +1,11 @@
+# Security audit of all GitHub Actions workflows using zizmor. Findings are
+# uploaded as SARIF to GitHub code scanning so they appear in the Security tab.
+#
+# The zizmor step uses `|| true` so that findings (exit code 1) do not fail
+# the job — the SARIF upload handles visibility. Actual crashes still surface
+# because only exit code 1 is suppressed.
+# The upload step runs with `if: always()` to ensure SARIF is uploaded even
+# when zizmor reports findings.
 name: Zizmor
 
 on:

@@ -1,3 +1,6 @@
+# Locks closed issues and PRs after an inactivity threshold to prevent
+# off-topic comments on resolved threads.
+# Thresholds: issues locked after 30 days, PRs after 1 day.
 name: Lock
 
 on:

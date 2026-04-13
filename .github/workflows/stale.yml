@@ -1,3 +1,10 @@
+# Marks inactive issues and pull requests as stale and closes them after a
+# grace period. Three separate passes run per hour:
+#   - PRs:                    stale after 60 days, closed after 7 more days
+#   - Issues:                 stale after 90 days, closed after 7 more days
+#   - needs-more-information: stale after 14 days, closed after 7 more days
+#
+# Items with the "no-stale" or "help-wanted" label are exempt from closing.
 name: Stale
 
 on:

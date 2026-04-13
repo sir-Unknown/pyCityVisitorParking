@@ -1,3 +1,13 @@
+# Builds and publishes the package to PyPI when a GitHub Release is published.
+#
+# Flow:
+#   1. Validate that the release tag matches vX.Y.Z exactly.
+#   2. Check out the exact tagged commit and verify the tag is present on HEAD.
+#   3. Build sdist + wheel, verify dist metadata with twine.
+#   4. Publish to PyPI using OIDC trusted publishing (no API token required).
+#
+# Note: uv caching is disabled to prevent cache-poisoning of published artifacts.
+# Note: the release environment requires manual approval in GitHub settings.
 name: Release
 
 on:

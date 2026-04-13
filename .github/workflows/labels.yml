@@ -1,3 +1,6 @@
+# Keeps GitHub issue/PR labels in sync with the label definitions in
+# .github/labels.yml. Runs automatically when that file changes on main,
+# so the repository's label set is always the canonical source of truth.
 name: Sync labels
 # yamllint disable-line rule:truthy
 

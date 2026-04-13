@@ -1,3 +1,14 @@
+# Weekly job (every Monday 06:30 UTC) that checks if Home Assistant Core has
+# bumped its minimum Python version. When a new minor version is detected, a
+# PR is opened automatically that updates the following targets in pyproject.toml:
+#   - project.requires-python
+#   - Programming Language :: Python :: X.Y classifier
+#   - tool.ruff.target-version
+#   - tool.pyright.pythonVersion
+#   - tool.pylint.py-version
+#
+# If a bump branch already exists the job pushes to it instead of creating a
+# duplicate PR.
 name: Sync Python version from HA Core
 
 on:

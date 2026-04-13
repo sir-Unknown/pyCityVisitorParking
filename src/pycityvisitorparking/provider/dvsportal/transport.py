@@ -56,7 +56,6 @@ class PortalTransport:
         """
         if self._state.app_env_fetched:
             return
-        self._state.app_env_fetched = True
 
         api_uri = self._provider._api_uri or ""
         base_url = self._provider._base_url or ""
@@ -65,6 +64,9 @@ class PortalTransport:
         #      /DVSWebAPI/api  ->  /DVSWebAPI
         app_base = api_uri[:-4] if api_uri.endswith("/api") else api_uri.rstrip("/")
         timeout = aiohttp.ClientTimeout(total=10)
+
+        step1_ok = False
+        step2_ok = False
 
         # Step 1: fetch app.env.js to discover xsrfCookieName.
         env_url = f"{base_url}{app_base}/{APP_ENV_SCRIPT}"
@@ -82,6 +84,7 @@ class PortalTransport:
                             cookie_name,
                             env_url,
                         )
+                step1_ok = True
         except Exception:
             pass
 
@@ -100,8 +103,12 @@ class PortalTransport:
                     html_url,
                 )
                 await response.read()
+            step2_ok = True
         except Exception:
             pass
+
+        if step1_ok and step2_ok:
+            self._state.app_env_fetched = True
 
     async def ensure_authenticated(self) -> None:
         """Ensure the provider has a valid session or token."""

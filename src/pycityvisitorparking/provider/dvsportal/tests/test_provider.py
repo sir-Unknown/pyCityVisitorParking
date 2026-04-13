@@ -796,3 +796,61 @@ async def test_start_reservation_failure_logs_compact_html_summary(
     assert "/DVSPortal/" in caplog.text
     assert "GRONINGEN-HTML-MARKER" not in caplog.text
     assert "body_excerpt" not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_fetch_app_env_does_not_set_flag_on_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """app_env_fetched must stay False when either bootstrap step raises."""
+
+    class _ErrorContext:
+        async def __aenter__(self) -> _ErrorContext:
+            raise aiohttp.ClientError("network error")
+
+        async def __aexit__(self, *_: object) -> bool:
+            return False
+
+    async with aiohttp.ClientSession() as session:
+        provider = Provider(session, _manifest(), base_url="https://example")
+
+        monkeypatch.setattr(session, "request", lambda *a, **kw: _ErrorContext())
+        await provider._transport.fetch_app_env()
+
+    assert not provider._transport._state.app_env_fetched
+
+
+@pytest.mark.asyncio
+async def test_fetch_app_env_sets_flag_on_success(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """app_env_fetched must be True only after both bootstrap steps succeed."""
+
+    class _OkContext:
+        def __init__(self, status: int, text: str) -> None:
+            self.status = status
+            self._text = text
+            self.headers: dict[str, str] = {}
+
+        async def __aenter__(self) -> _OkContext:
+            return self
+
+        async def __aexit__(self, *_: object) -> bool:
+            return False
+
+        async def text(self) -> str:
+            return self._text
+
+        async def read(self) -> bytes:
+            return self._text.encode()
+
+    async with aiohttp.ClientSession() as session:
+        provider = Provider(session, _manifest(), base_url="https://example")
+
+        def _ok_request(method: str, url: str, **kwargs: Any) -> _OkContext:
+            return _OkContext(status=200, text="window.__env.xsrfCookieName = 'XSRF-TOKEN';")
+
+        monkeypatch.setattr(session, "request", _ok_request)
+        await provider._transport.fetch_app_env()
+
+    assert provider._transport._state.app_env_fetched

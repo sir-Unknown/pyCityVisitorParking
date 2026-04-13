@@ -83,6 +83,7 @@ jobs:
       with:
         languages: ${{ matrix.language }}
         build-mode: ${{ matrix.build-mode }}
+        config-file: ./.github/codeql/codeql-config.yml
         queries: security-extended,security-and-quality
 
     # If the analyze step fails for one of the languages you are analyzing with

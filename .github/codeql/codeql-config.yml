@@ -1,0 +1,6 @@
+paths-ignore:
+  # Ignore virtual environment to prevent false positives from third-party packages.
+  - ".venv/**"
+  - "tests/**"
+  - "docs/**"
+  - "**/*.md"

@@ -570,7 +570,7 @@ def _parse_balance_amount(balance: dict[str, Any]) -> float:
             raw = param.get("prr_value")
             try:
                 return float(raw)
-            except TypeError, ValueError:
+            except (TypeError, ValueError):
                 return 0.0
     return 0.0
 

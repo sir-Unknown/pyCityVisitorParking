@@ -1,7 +1,12 @@
 {
   "recommendations": [
     "ms-python.python",
+    "ms-python.vscode-pylance",
+    "charliermarsh.ruff",
+    "ms-python.debugpy",
     "ms-python.pylint",
-    "charliermarsh.ruff"
+    "github.vscode-github-actions",
+    "anthropic.claude-code",
+    "tamasfe.even-better-toml"
   ]
 }

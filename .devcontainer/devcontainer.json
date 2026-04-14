@@ -6,14 +6,14 @@
     "ghcr.io/astral-sh/uv:latest": {}
   },
   "postCreateCommand": "bash .devcontainer/setup.sh",
+  "remoteEnv": {
+    "VIRTUAL_ENV": "${containerWorkspaceFolder}/.venv",
+    "PATH": "${containerWorkspaceFolder}/.venv/bin:${containerEnv:PATH}"
+  },
   "customizations": {
     "vscode": {
       "settings": {
         "python.defaultInterpreterPath": "${containerWorkspaceFolder}/.venv/bin/python",
-        "terminal.integrated.env.linux": {
-          "VIRTUAL_ENV": "${containerWorkspaceFolder}/.venv",
-          "PATH": "${containerWorkspaceFolder}/.venv/bin:${env:PATH}"
-        },
         "editor.formatOnSave": true,
         "[python]": {
           "editor.defaultFormatter": "charliermarsh.ruff"
@@ -25,7 +25,8 @@
         "charliermarsh.ruff",
         "ms-python.debugpy",
         "github.vscode-github-actions",
-        "anthropic.claude-code"
+        "anthropic.claude-code",
+        "tamasfe.even-better-toml"
       ]
     }
   },

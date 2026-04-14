@@ -4,14 +4,9 @@ set -e
 REPO_DIR="$(git rev-parse --show-toplevel)"
 VENV_DIR="$REPO_DIR/.venv"
 
-echo "🐍 Installing Python $(cat "$REPO_DIR/.python-version")..."
-uv python install "$(cat "$REPO_DIR/.python-version")"
-uv venv "$VENV_DIR" --python "$(cat "$REPO_DIR/.python-version")"
-
-source "$VENV_DIR/bin/activate"
-
 echo "📦 Installing package (editable) + dev extras..."
-uv pip install -e '.[dev]'
+cd "$REPO_DIR"
+uv sync --group dev
 
 # ── Activate venv in shell profiles ──────────────────────────────
 for profile in ~/.bashrc ~/.zshrc; do
@@ -21,8 +16,7 @@ for profile in ~/.bashrc ~/.zshrc; do
 done
 
 echo "🪝 Installing pre-commit hooks..."
-cd "$REPO_DIR"
-pre-commit install
+uv run pre-commit install
 
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

@@ -3,7 +3,7 @@
   "image": "mcr.microsoft.com/devcontainers/base:debian",
   "features": {
     "ghcr.io/devcontainers/features/github-cli:1": {},
-    "ghcr.io/astral-sh/uv:latest": {}
+    "ghcr.io/devcontainer-community/devcontainer-features/astral.sh-uv:1": {}
   },
   "postCreateCommand": "bash .devcontainer/setup.sh",
   "remoteEnv": {

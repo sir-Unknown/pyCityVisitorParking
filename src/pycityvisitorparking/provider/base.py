@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import re
 from abc import ABC, abstractmethod
 from collections.abc import Awaitable, Callable, Iterable, Mapping
@@ -96,7 +97,8 @@ class BaseProvider(ABC):
         self._request_context_name: str | None = None
         self._ha_cvp_version = "unknown"
         self._pycvp_version = PACKAGE_VERSION
-        _LOGGER.debug(
+        self._logger = get_provider_logger(type(self).__module__)
+        self._logger.debug(
             "Provider %s initialized base_url=%s api_uri=%s",
             self._manifest.id,
             self._base_url,
@@ -156,7 +158,7 @@ class BaseProvider(ABC):
     def _log_with_metadata(self, level: int, message: str, *args: Any) -> None:
         """Log a message with the standard provider metadata suffix."""
         provider, city, ha_cvp, pycvp = self._request_log_metadata()
-        _LOGGER.log(
+        self._logger.log(
             level,
             f"{message} (provider=%s, city=%s, hacvp=%s, pycvp=%s)",
             *args,
@@ -183,7 +185,7 @@ class BaseProvider(ABC):
             lines.append(f"  {detail}")
         for key, value in all_fields.items():
             lines.append(f"  {key:<{width}} = {value}")
-        _LOGGER.warning("%s", "\n".join(lines))
+        self._logger.warning("%s", "\n".join(lines))
 
     def _format_log_details(self, **details: Any) -> str:
         """Serialize optional log details as a compact key=value suffix."""
@@ -193,7 +195,7 @@ class BaseProvider(ABC):
 
     def _log_operation_started(self, operation: str, **details: Any) -> None:
         """Log the start of a provider operation."""
-        _LOGGER.debug(
+        self._logger.debug(
             "Provider %s %s started%s",
             self.provider_id,
             operation,
@@ -202,7 +204,7 @@ class BaseProvider(ABC):
 
     def _log_operation_completed(self, operation: str, **details: Any) -> None:
         """Log successful completion of a provider operation."""
-        _LOGGER.debug(
+        self._logger.debug(
             "Provider %s %s completed%s",
             self.provider_id,
             operation,
@@ -211,7 +213,7 @@ class BaseProvider(ABC):
 
     def _log_operation_failed(self, operation: str, reason: str, **details: Any) -> None:
         """Log a provider operation failure before raising a validation/provider error."""
-        _LOGGER.debug(
+        self._logger.debug(
             "Provider %s %s failed: %s%s",
             self.provider_id,
             operation,
@@ -225,7 +227,7 @@ class BaseProvider(ABC):
 
     def _log_reauthenticating(self) -> None:
         """Log when cached credentials are used to reauthenticate."""
-        _LOGGER.debug(
+        self._logger.debug(
             "Provider %s reauthenticating with cached credentials",
             self.provider_id,
         )
@@ -238,7 +240,7 @@ class BaseProvider(ABC):
 
     def _log_response_status(self, status: int) -> None:
         """Log the HTTP response status returned by a provider."""
-        _LOGGER.debug("Provider %s response status=%s", self.provider_id, status)
+        self._logger.debug("Provider %s response status=%s", self.provider_id, status)
 
     def _summarize_log_text(self, value: str) -> str:
         """Normalize and truncate response text for safe logging."""
@@ -350,7 +352,7 @@ class BaseProvider(ABC):
 
     def _log_response_summary(self, data: Any) -> None:
         """Log a safe debug summary of a successful JSON response."""
-        _LOGGER.debug(
+        self._logger.debug(
             "Provider %s response summary %s",
             self.provider_id,
             self._mask_log_value(self._build_response_summary(data)),
@@ -589,7 +591,7 @@ class BaseProvider(ABC):
         last_error: Exception | None = None
         for attempt in range(attempts):
             if attempts > 1:
-                _LOGGER.debug(
+                self._logger.debug(
                     "Provider %s request %s %s (attempt %s/%s)",
                     self.provider_id,
                     method.upper(),
@@ -598,7 +600,7 @@ class BaseProvider(ABC):
                     attempts,
                 )
             else:
-                _LOGGER.debug(
+                self._logger.debug(
                     "Provider %s request %s %s",
                     self.provider_id,
                     method.upper(),
@@ -606,7 +608,7 @@ class BaseProvider(ABC):
                 )
             payload = request_kwargs.get("json")
             if payload is not None:
-                _LOGGER.debug(
+                self._logger.debug(
                     "Provider %s request payload %s",
                     self.provider_id,
                     self._mask_payload(payload),
@@ -703,6 +705,8 @@ class BaseProvider(ABC):
         )
         if response.status in (401, 403):
             raise AuthError("Authentication failed.")
+        if response.status in (502, 503, 504):
+            raise NetworkError(f"Provider temporarily unavailable (status {response.status}).")
         raise ProviderError(f"Provider request failed with status {response.status}.")
 
     def _normalize_base_url(self, base_url: str | None) -> str | None:
@@ -721,6 +725,20 @@ class BaseProvider(ABC):
         if not normalized:
             return ""
         return f"/{normalized}"
+
+    async def fetch_all(self) -> tuple[Permit, list[Reservation], list[Favorite]]:
+        """Return permit, reservations, and favorites in a single batch.
+
+        Providers that serve all three from a single HTTP response should override
+        this method for efficiency. The default implementation calls the three
+        individual methods concurrently.
+        """
+        permit, reservations, favorites = await asyncio.gather(
+            self.get_permit(),
+            self.list_reservations(),
+            self.list_favorites(),
+        )
+        return permit, reservations, favorites
 
     @abstractmethod
     async def login(
@@ -782,7 +800,7 @@ class BaseProvider(ABC):
     ) -> Favorite:
         """Update a favorite."""
         if not self.favorite_update_possible:
-            _LOGGER.info(
+            self._logger.info(
                 "Provider %s favorite update requested but not supported",
                 self.provider_id,
             )

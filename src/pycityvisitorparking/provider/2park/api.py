@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json as _json
 import re
 from collections.abc import Mapping
@@ -285,6 +286,30 @@ class Provider(BaseProvider):
         favorites = self._map_favorite_list(details)
         self._log_operation_completed("list_favorites", count=len(favorites))
         return favorites
+
+    async def fetch_all(self) -> tuple[Permit, list[Reservation], list[Favorite]]:
+        """Return permit, reservations, and favorites with two parallel provider fetches."""
+        self._log_operation_started("fetch_all")
+        await self._ensure_authenticated()
+        permit_data, details = await asyncio.gather(
+            self._post_form(
+                BALANCE_ENDPOINT,
+                {"product_id": self._product_id or "", "locale": LOCALE},
+            ),
+            self._post_form(
+                PRODUCT_DETAILS_ENDPOINT,
+                {"product_id": self._product_id or "", "locale": LOCALE},
+            ),
+        )
+        permit = self._map_permit(permit_data)
+        reservations = self._map_reservation_list(details)
+        favorites = self._map_favorite_list(details)
+        self._log_operation_completed(
+            "fetch_all",
+            reservations=len(reservations),
+            favorites=len(favorites),
+        )
+        return permit, reservations, favorites
 
     async def add_favorite(self, license_plate: str, name: str | None = None) -> Favorite:
         """Add a favorite."""

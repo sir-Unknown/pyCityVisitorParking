@@ -350,6 +350,21 @@ class Provider(BaseProvider):
             self._log_operation_completed("list_favorites", count=len(favorites))
             return favorites
 
+    async def fetch_all(self) -> tuple[Permit, list[Reservation], list[Favorite]]:
+        """Return permit, reservations, and favorites with a single provider fetch."""
+        async with self._operation_guard():
+            self._log_operation_started("fetch_all")
+            permit_raw = await self._fetch_base(operation="fetch_all")
+            permit = self._mapper.map_permit(permit_raw)
+            reservations = self._mapper.reservations_from_permit(permit_raw)
+            favorites = self._mapper.favorites_from_permit(permit_raw)
+            self._log_operation_completed(
+                "fetch_all",
+                reservations=len(reservations),
+                favorites=len(favorites),
+            )
+            return permit, reservations, favorites
+
     async def add_favorite(self, license_plate: str, name: str | None = None) -> Favorite:
         """Add a favorite."""
         async with self._operation_guard():

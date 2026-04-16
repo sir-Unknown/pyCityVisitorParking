@@ -396,6 +396,15 @@ async def test_request_text_success() -> None:
     assert await provider._request_text("GET", "/path") == "ok"
 
 
+@pytest.mark.asyncio
+async def test_fetch_all_default_returns_permit_reservations_favorites() -> None:
+    provider = _DummyProvider(_SequenceSession([]), _manifest(), base_url="https://example.com")
+    permit, reservations, favorites = await provider.fetch_all()
+    assert permit.id == "permit"
+    assert reservations == []
+    assert favorites == []
+
+
 def test_validate_reservation_times_require_both() -> None:
     provider = _DummyProvider(_SequenceSession([]), _manifest(), base_url="https://example.com")
     start = datetime(2024, 1, 1, 10, 0, tzinfo=UTC)

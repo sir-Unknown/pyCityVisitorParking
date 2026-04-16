@@ -975,3 +975,28 @@ async def test_fetch_app_env_sets_flag_on_success(
         await provider._transport.fetch_app_env()
 
     assert provider._transport._state.app_env_fetched
+
+
+@pytest.mark.asyncio
+async def test_fetch_all_uses_single_request(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async with aiohttp.ClientSession() as session:
+        provider = Provider(session, _manifest(), base_url="https://example")
+        fetch_base_calls = {"count": 0}
+
+        async def _fake_fetch_base(*, operation: str = "fetch_base") -> dict[str, Any]:
+            fetch_base_calls["count"] += 1
+            return PERMIT_SAMPLE
+
+        monkeypatch.setattr(provider, "_fetch_base", _fake_fetch_base)
+
+        permit, reservations, favorites = await provider.fetch_all()
+
+    assert fetch_base_calls["count"] == 1
+    assert permit.id == "CARD-1"
+    assert permit.remaining_balance == 120
+    assert len(reservations) == 1
+    assert reservations[0].id == "123"
+    assert len(favorites) == 1
+    assert favorites[0].id == "XY99ZZ"

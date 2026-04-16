@@ -592,6 +592,41 @@ async def test_http_500_raises_provider_error() -> None:
         await provider.get_permit()
 
 
+# --- fetch_all ---
+
+
+async def test_fetch_all_uses_two_parallel_requests() -> None:
+    provider, session = await _logged_in_provider(
+        [
+            _FakeResponse(json_data=_AUTH_OK),
+            _FakeResponse(json_data=_CATEGORIES),
+            _FakeResponse(json_data=_BALANCE),
+            _FakeResponse(json_data=_PRODUCT_DETAILS_WITH_MEMBERS),
+        ]
+    )
+    permit, reservations, _favorites = await provider.fetch_all()
+    # Two HTTP requests: BALANCE_ENDPOINT + PRODUCT_DETAILS_ENDPOINT
+    assert session.calls == 4  # 2 login + 2 fetch_all
+    assert permit.remaining_balance == 120
+    assert len(reservations) == 1
+    assert reservations[0].license_plate == "AB1234"
+
+
+async def test_fetch_all_empty_details() -> None:
+    provider, _session = await _logged_in_provider(
+        [
+            _FakeResponse(json_data=_AUTH_OK),
+            _FakeResponse(json_data=_CATEGORIES),
+            _FakeResponse(json_data=_BALANCE),
+            _FakeResponse(json_data=_PRODUCT_DETAILS_EMPTY),
+        ]
+    )
+    permit, reservations, favorites = await provider.fetch_all()
+    assert permit.balance_unit == "MINUTE"
+    assert reservations == []
+    assert favorites == []
+
+
 # --- mapping unit tests ---
 # (kept here because "2park" is not a valid Python identifier so pytest cannot
 # traverse src/pycityvisitorparking/provider/2park/ for test collection)

@@ -53,7 +53,6 @@ _SENSITIVE_KEYS = frozenset(
 )
 _SENSITIVE_OBJECT_KEYS = frozenset({"LicensePlate", "licensePlate", "updateLicensePlate"})
 _SENSITIVE_NESTED_KEYS = frozenset({"DisplayValue", "Name", "Value"})
-_LOGGER = get_provider_logger(__name__)
 _T = TypeVar("_T")
 
 try:

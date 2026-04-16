@@ -6,6 +6,7 @@ import uuid
 from collections.abc import Mapping
 from datetime import datetime
 
+from ...exceptions import ProviderError
 from ...models import Favorite, Permit, Reservation, ZoneValidityBlock
 from ..base import BaseProvider
 
@@ -201,8 +202,6 @@ class Provider(BaseProvider):
                     start_time=r["start_time"],
                     end_time=r["end_time"],
                 )
-        from ...exceptions import ProviderError
-
         raise ProviderError(f"Reservation {reservation_id!r} not found.")
 
     async def end_reservation(
@@ -221,8 +220,6 @@ class Provider(BaseProvider):
                 )
                 self._reservations.pop(i)
                 return ended
-        from ...exceptions import ProviderError
-
         raise ProviderError(f"Reservation {reservation_id!r} not found.")
 
     async def list_favorites(self) -> list[Favorite]:
@@ -255,8 +252,6 @@ class Provider(BaseProvider):
                 if name is not None:
                     f["name"] = name
                 return Favorite(id=f["id"], name=f["name"], license_plate=f["license_plate"])
-        from ...exceptions import ProviderError
-
         raise ProviderError(f"Favorite {favorite_id!r} not found.")
 
     async def remove_favorite(self, favorite_id: str) -> None:

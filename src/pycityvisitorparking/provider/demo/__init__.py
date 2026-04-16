@@ -160,6 +160,9 @@ class Provider(BaseProvider):
         end_time: datetime,
         name: str | None = None,
     ) -> Reservation:
+        start_time, end_time = self._validate_reservation_times(
+            start_time, end_time, require_both=True
+        )
         reservation = Reservation(
             id=str(uuid.uuid4()),
             name=name or "",
@@ -229,10 +232,11 @@ class Provider(BaseProvider):
         ]
 
     async def add_favorite(self, license_plate: str, name: str | None = None) -> Favorite:
+        normalized = self._normalize_license_plate(license_plate)
         favorite = Favorite(
-            id=str(uuid.uuid4()),
+            id=normalized,
             name=name or "",
-            license_plate=license_plate,
+            license_plate=normalized,
         )
         self._get_favorites().append(
             {"id": favorite.id, "name": favorite.name, "license_plate": favorite.license_plate}
@@ -248,7 +252,7 @@ class Provider(BaseProvider):
         for f in self._get_favorites():
             if f["id"] == favorite_id:
                 if license_plate is not None:
-                    f["license_plate"] = license_plate
+                    f["license_plate"] = self._normalize_license_plate(license_plate)
                 if name is not None:
                     f["name"] = name
                 return Favorite(id=f["id"], name=f["name"], license_plate=f["license_plate"])

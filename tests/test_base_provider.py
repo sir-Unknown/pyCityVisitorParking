@@ -381,10 +381,28 @@ async def test_request_text_provider_error() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("status", [502, 503, 504])
+async def test_request_text_network_error_on_gateway_timeout(status: int) -> None:
+    session = _SequenceSession([_FakeResponse(status=status)])
+    provider = _DummyProvider(session, _manifest(), base_url="https://example.com")
+    with pytest.raises(NetworkError):
+        await provider._request_text("GET", "/path")
+
+
+@pytest.mark.asyncio
 async def test_request_text_success() -> None:
     session = _SequenceSession([_FakeResponse(text_data="ok")])
     provider = _DummyProvider(session, _manifest(), base_url="https://example.com")
     assert await provider._request_text("GET", "/path") == "ok"
+
+
+@pytest.mark.asyncio
+async def test_fetch_all_default_returns_permit_reservations_favorites() -> None:
+    provider = _DummyProvider(_SequenceSession([]), _manifest(), base_url="https://example.com")
+    permit, reservations, favorites = await provider.fetch_all()
+    assert permit.id == "permit"
+    assert reservations == []
+    assert favorites == []
 
 
 def test_validate_reservation_times_require_both() -> None:

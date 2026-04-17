@@ -331,7 +331,9 @@ async def test_login_without_token_falls_back_to_fetch_base(
             calls.append((method, path))
             return {"LoginStatus": 1}
 
-        async def _fake_fetch_base(*, operation: str = "fetch_base") -> dict[str, Any]:
+        async def _fake_fetch_base(
+            *, operation: str = "fetch_base", allow_reauth: bool = True
+        ) -> dict[str, Any]:
             calls.append(("POST", "/login/getbase"))
             provider._permit_media_code = "CARD-7"
             return {
@@ -384,7 +386,9 @@ async def test_login_with_permit_caches_defaults_without_fetch_base(
                 },
             }
 
-        async def _fake_fetch_base(*, operation: str = "fetch_base") -> dict[str, Any]:
+        async def _fake_fetch_base(
+            *, operation: str = "fetch_base", allow_reauth: bool = True
+        ) -> dict[str, Any]:
             fetched_base["called"] = True
             return {}
 
@@ -429,7 +433,9 @@ async def test_login_with_partial_permit_falls_back_to_fetch_base(
                 "Permits": [{"ZoneCode": "ZONE-1"}],
             }
 
-        async def _fake_fetch_base(*, operation: str = "fetch_base") -> dict[str, Any]:
+        async def _fake_fetch_base(
+            *, operation: str = "fetch_base", allow_reauth: bool = True
+        ) -> dict[str, Any]:
             fetched_base["called"] = True
             provider._permit_media_type_id = 3
             provider._permit_media_code = "CARD-3"
@@ -460,7 +466,9 @@ async def test_permit_from_response_falls_back_to_fetch_base(
         provider = Provider(session, _manifest(), base_url="https://example")
         fallback_called = {"called": False}
 
-        async def _fake_fetch_base(*, operation: str = "fetch_base") -> dict[str, Any]:
+        async def _fake_fetch_base(
+            *, operation: str = "fetch_base", allow_reauth: bool = True
+        ) -> dict[str, Any]:
             fallback_called["called"] = True
             return {
                 "ZoneCode": "ZONE-1",
@@ -708,7 +716,9 @@ async def test_update_reservation_payload_uses_minute_delta(
             "BlockTimes": [],
         }
 
-        async def _fake_fetch_base(*, operation: str = "fetch_base") -> dict[str, Any]:
+        async def _fake_fetch_base(
+            *, operation: str = "fetch_base", allow_reauth: bool = True
+        ) -> dict[str, Any]:
             return existing_permit
 
         monkeypatch.setattr(provider, "_fetch_base", _fake_fetch_base)
@@ -770,7 +780,9 @@ async def test_add_and_remove_favorite_payloads(
             "BlockTimes": [],
         }
 
-        async def _fake_fetch_base(*, operation: str = "fetch_base") -> dict[str, Any]:
+        async def _fake_fetch_base(
+            *, operation: str = "fetch_base", allow_reauth: bool = True
+        ) -> dict[str, Any]:
             return current_permit
 
         async def _fake_request_json_auth(
@@ -985,7 +997,9 @@ async def test_fetch_all_uses_single_request(
         provider = Provider(session, _manifest(), base_url="https://example")
         fetch_base_calls = {"count": 0}
 
-        async def _fake_fetch_base(*, operation: str = "fetch_base") -> dict[str, Any]:
+        async def _fake_fetch_base(
+            *, operation: str = "fetch_base", allow_reauth: bool = True
+        ) -> dict[str, Any]:
             fetch_base_calls["count"] += 1
             return PERMIT_SAMPLE
 

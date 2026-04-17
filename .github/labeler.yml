@@ -10,26 +10,6 @@ tests:
       - any-glob-to-any-file:
           - "tests/**"
 
-bugfix:
-  - head-branch:
-      - "^bugfix(?:/|-.+|$)"
-      - "^fix(?:/|-.+|$)"
-      - "^hotfix(?:/|-.+|$)"
-
-new-feature:
-  - head-branch:
-      - "^feat(?:/|-.+|$)"
-      - "^feature(?:/|-.+|$)"
-
-refactor:
-  - head-branch:
-      - "^refactor(?:/|-.+|$)"
-
-performance:
-  - head-branch:
-      - "^perf(?:/|-.+|$)"
-      - "^performance(?:/|-.+|$)"
-
 ci:
   - changed-files:
       - any-glob-to-any-file:

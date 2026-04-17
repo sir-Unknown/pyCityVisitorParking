@@ -141,9 +141,9 @@ class Provider(BaseProvider):
                     # before PermitMedias is fully populated. Fall back to getbase
                     # so a successful login does not regress into an auth failure.
                     self._log_missing_response_data("login", fallback="fetching base")
-                    await self._fetch_base(operation="login")
+                    await self._fetch_base(operation="login", allow_reauth=False)
             else:
-                await self._fetch_base(operation="login")
+                await self._fetch_base(operation="login", allow_reauth=False)
 
             self._log_operation_completed(
                 "login",
@@ -481,13 +481,24 @@ class Provider(BaseProvider):
         self._mapper.cache_defaults(permit)
         return permit
 
-    async def _fetch_base(self, *, operation: str = "fetch_base") -> dict[str, Any]:
+    async def _fetch_base(
+        self, *, operation: str = "fetch_base", allow_reauth: bool = True
+    ) -> dict[str, Any]:
         """Fetch the current base model and return the active permit."""
-        data = await self._request_json_auth(
-            "POST",
-            LOGIN_GETBASE_ENDPOINT,
-            operation=operation,
-        )
+        if allow_reauth:
+            data = await self._request_json_auth(
+                "POST",
+                LOGIN_GETBASE_ENDPOINT,
+                operation=operation,
+            )
+        else:
+            data = await self._request_json(
+                "POST",
+                LOGIN_GETBASE_ENDPOINT,
+                allow_reauth=False,
+                include_auth=True,
+                operation=operation,
+            )
         permit = self._mapper.extract_permit(data)
         self._mapper.cache_defaults(permit)
         return permit

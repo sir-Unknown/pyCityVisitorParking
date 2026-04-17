@@ -51,18 +51,17 @@ jobs:
             *)                             LABEL="" ;;
           esac
 
-          if [ -z "$LABEL" ]; then
-            echo "No conventional commit prefix recognised in: $PR_TITLE"
-            exit 0
-          fi
-
-          echo "Assigning label: $LABEL"
-
-          # Remove all other category labels that may have been set previously
+          # Remove all category labels that may have been set previously
           for l in $CATEGORY_LABELS; do
             if [ "$l" != "$LABEL" ]; then
               gh pr edit "$PR_NUMBER" --repo "$REPO" --remove-label "$l" 2>/dev/null || true
             fi
           done
 
+          if [ -z "$LABEL" ]; then
+            echo "No conventional commit prefix recognised in: $PR_TITLE — stale labels cleared"
+            exit 0
+          fi
+
+          echo "Assigning label: $LABEL"
           gh pr edit "$PR_NUMBER" --repo "$REPO" --add-label "$LABEL"

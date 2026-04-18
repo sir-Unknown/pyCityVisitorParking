@@ -58,7 +58,7 @@ class Provider(BaseProvider):
         self._state = PortalSessionState()
         self._profile = profile or DvsPortalProfile()
         self._mapper = PortalMapper(self, self._state)
-        self._transport = PortalTransport(self, self._state, self._profile)
+        self._transport = PortalTransport(self, self._state, self._profile, self._plogger)
         self._operation_lock = asyncio.Lock()
         self._lock_owner: asyncio.Task[Any] | None = None
 
@@ -140,7 +140,9 @@ class Provider(BaseProvider):
                     # Some deployments include Permit/Permits in the login response
                     # before PermitMedias is fully populated. Fall back to getbase
                     # so a successful login does not regress into an auth failure.
-                    self._log_missing_response_data("login", fallback="fetching base")
+                    self._log_missing_response_data(
+                        "login", fallback="fetching base", response_data=permit
+                    )
                     await self._fetch_base(operation="login", allow_reauth=False)
             else:
                 await self._fetch_base(operation="login", allow_reauth=False)
@@ -397,10 +399,14 @@ class Provider(BaseProvider):
                 json=payload,
                 operation="add_favorite",
             )
+            if data.get("ErrorMessage"):
+                self._log_provider_error_response(data, operation="favorite upsert")
             try:
                 favorites = self._mapper.favorites_from_permit(self._mapper.extract_permit(data))
             except ProviderError:
-                self._log_missing_response_data("favorite upsert", fallback="refetching list")
+                self._log_missing_response_data(
+                    "favorite upsert", fallback="refetching list", response_data=data
+                )
                 favorites = self._mapper.favorites_from_permit(
                     await self._fetch_base(operation="add_favorite")
                 )
@@ -473,10 +479,12 @@ class Provider(BaseProvider):
         operation: str = "fetch_base",
     ) -> dict[str, Any]:
         """Extract permit from a response, falling back to a full fetch on failure."""
+        if data.get("ErrorMessage"):
+            self._log_provider_error_response(data, operation=label)
         try:
             permit = self._mapper.extract_permit(data)
         except ProviderError:
-            self._log_missing_response_data(label)
+            self._log_missing_response_data(label, response_data=data)
             return await self._fetch_base(operation=operation)
         self._mapper.cache_defaults(permit)
         return permit

@@ -80,7 +80,7 @@ class Provider(BaseProvider):
         **kwargs: object,
     ) -> None:
         """Authenticate against the provider."""
-        self._log_operation_started("login")
+        self._plogger.operation_started("login")
         merged = self._merge_credentials(credentials, **kwargs)
         username = merged.get("username")
         password = merged.get("password")
@@ -113,26 +113,26 @@ class Provider(BaseProvider):
             self._credentials["product_id"] = product_id
         if location:
             self._credentials["location"] = location
-        self._log_operation_completed("login", product_id=product_id, location=location)
+        self._plogger.operation_completed("login", product_id=product_id, location=location)
 
     async def get_permit(self) -> Permit:
         """Return the active permit for the account."""
-        self._log_operation_started("get_permit")
+        self._plogger.operation_started("get_permit")
         await self._ensure_authenticated()
         data = await self._post_form(
             BALANCE_ENDPOINT,
             {"product_id": self._product_id or "", "locale": LOCALE},
         )
         permit = self._map_permit(data)
-        self._log_operation_completed("get_permit")
+        self._plogger.operation_completed("get_permit")
         return permit
 
     async def list_reservations(self) -> list[Reservation]:
         """Return active reservations."""
-        self._log_operation_started("list_reservations")
+        self._plogger.operation_started("list_reservations")
         details = await self._fetch_product_details()
         reservations = self._map_reservation_list(details)
-        self._log_operation_completed("list_reservations", count=len(reservations))
+        self._plogger.operation_completed("list_reservations", count=len(reservations))
         return reservations
 
     async def start_reservation(
@@ -143,7 +143,7 @@ class Provider(BaseProvider):
         name: str | None = None,
     ) -> Reservation:
         """Start a reservation for a license plate."""
-        self._log_operation_started("start_reservation")
+        self._plogger.operation_started("start_reservation")
         await self._ensure_authenticated()
         start_dt, end_dt = self._validate_reservation_times(start_time, end_time, require_both=True)
         normalized_plate = self._normalize_license_plate(license_plate)
@@ -188,7 +188,7 @@ class Provider(BaseProvider):
                 start_time=format_utc_timestamp(start_dt),
                 end_time=format_utc_timestamp(end_dt),
             )
-        self._log_operation_completed("start_reservation")
+        self._plogger.operation_completed("start_reservation")
         return reservation
 
     async def update_reservation(
@@ -199,7 +199,7 @@ class Provider(BaseProvider):
         name: str | None = None,
     ) -> Reservation:
         """Update a reservation end time."""
-        self._log_operation_started("update_reservation")
+        self._plogger.operation_started("update_reservation")
         if start_time is not None or name is not None:
             raise ValidationError("Only end_time can be updated.")
         if end_time is None:
@@ -232,7 +232,7 @@ class Provider(BaseProvider):
             message = data.get("status", {}).get("message", "Unknown error")
             raise ProviderError(f"Failed to update reservation: {message}")
 
-        self._log_operation_completed("update_reservation")
+        self._plogger.operation_completed("update_reservation")
         return Reservation(
             id=existing.id,
             name=existing.name,
@@ -247,7 +247,7 @@ class Provider(BaseProvider):
         end_time: datetime,
     ) -> Reservation:
         """End a reservation."""
-        self._log_operation_started("end_reservation")
+        self._plogger.operation_started("end_reservation")
         reservation_id_value = self._require_id(reservation_id, "reservation_id")
         end_dt = self._normalize_datetime(end_time)
         normalized_end_time = format_utc_timestamp(end_dt)
@@ -276,20 +276,20 @@ class Provider(BaseProvider):
             start_time=existing.start_time,
             end_time=normalized_end_time,
         )
-        self._log_operation_completed("end_reservation")
+        self._plogger.operation_completed("end_reservation")
         return reservation
 
     async def list_favorites(self) -> list[Favorite]:
         """Return stored license plates as favorites."""
-        self._log_operation_started("list_favorites")
+        self._plogger.operation_started("list_favorites")
         details = await self._fetch_product_details()
         favorites = self._map_favorite_list(details)
-        self._log_operation_completed("list_favorites", count=len(favorites))
+        self._plogger.operation_completed("list_favorites", count=len(favorites))
         return favorites
 
     async def fetch_all(self) -> tuple[Permit, list[Reservation], list[Favorite]]:
         """Return permit, reservations, and favorites with two parallel provider fetches."""
-        self._log_operation_started("fetch_all")
+        self._plogger.operation_started("fetch_all")
         await self._ensure_authenticated()
         permit_data, details = await asyncio.gather(
             self._post_form(
@@ -304,7 +304,7 @@ class Provider(BaseProvider):
         permit = self._map_permit(permit_data)
         reservations = self._map_reservation_list(details)
         favorites = self._map_favorite_list(details)
-        self._log_operation_completed(
+        self._plogger.operation_completed(
             "fetch_all",
             reservations=len(reservations),
             favorites=len(favorites),
@@ -313,11 +313,11 @@ class Provider(BaseProvider):
 
     async def add_favorite(self, license_plate: str, name: str | None = None) -> Favorite:
         """Add a favorite."""
-        self._log_operation_started("add_favorite")
+        self._plogger.operation_started("add_favorite")
         normalized_plate = self._normalize_license_plate(license_plate)
         for existing in await self.list_favorites():
             if existing.license_plate == normalized_plate:
-                self._log_operation_failed("add_favorite", "duplicate license_plate")
+                self._plogger.operation_failed("add_favorite", "duplicate license_plate")
                 raise ValidationError("license_plate is already a favorite.")
         name_value = name or normalized_plate
         data = await self._post_form(
@@ -347,7 +347,7 @@ class Provider(BaseProvider):
         favorite = next((f for f in favorites if f.license_plate == normalized_plate), None)
         if favorite is None:
             raise ProviderError("Favorite was not returned by the provider.")
-        self._log_operation_completed("add_favorite")
+        self._plogger.operation_completed("add_favorite")
         return favorite
 
     async def _update_favorite_native(
@@ -361,7 +361,7 @@ class Provider(BaseProvider):
 
     async def remove_favorite(self, favorite_id: str) -> None:
         """Remove a favorite."""
-        self._log_operation_started("remove_favorite")
+        self._plogger.operation_started("remove_favorite")
         favorite_id_value = self._require_id(favorite_id, "favorite_id")
 
         existing = self._find_by_id(await self.list_favorites(), favorite_id_value)
@@ -390,7 +390,7 @@ class Provider(BaseProvider):
         if major != "OK":
             message = data.get("status", {}).get("message", "Unknown error")
             raise ProviderError(f"Failed to remove favorite: {message}")
-        self._log_operation_completed("remove_favorite")
+        self._plogger.operation_completed("remove_favorite")
 
     async def _detect_product(self, product_id: str | None) -> tuple[str, str | None]:
         """Fetch categories and return (product_id, location) for the selected product."""
@@ -432,7 +432,7 @@ class Provider(BaseProvider):
         self._product_id = None
         if not self._credentials:
             raise AuthError("Authentication required.")
-        self._log_reauthenticating()
+        self._plogger.reauthenticating()
         await self.login(self._credentials)
 
     def _map_permit(self, data: Any) -> Permit:
@@ -568,17 +568,17 @@ class Provider(BaseProvider):
             _attempt: int,
             _attempts: int,
         ) -> Any:
-            self._log_response_status(response.status)
+            self._plogger.response_status(response.status)
             if response.status in (401, 403):
-                self._log_request_failure(response.status)
+                self._plogger.request_failure(response.status)
                 raise AuthError("Authentication failed.")
             if not 200 <= response.status < 300:
-                self._log_request_failure(response.status)
+                self._plogger.request_failure(response.status)
                 raise ProviderError(f"Provider request failed with status {response.status}.")
             try:
                 return await response.json(content_type=None)
             except (aiohttp.ContentTypeError, ValueError) as exc:
-                self._log_invalid_json(await response.text())
+                self._plogger.invalid_json(await response.text())
                 raise ProviderError("Response did not contain valid JSON.") from exc
 
         return await self._request_with_retries(

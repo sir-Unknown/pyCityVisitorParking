@@ -129,88 +129,6 @@ class BaseProvider(ABC):
             self._pycvp_version,
         )
 
-    # ------------------------------------------------------------------
-    # Logging delegates — logic lives in self._plogger (ProviderLogger).
-    # These wrappers keep the existing call-sites in subclasses working
-    # and will be removed once all callers are updated to use _plogger
-    # directly (see GitHub issue #53).
-    # ------------------------------------------------------------------
-
-    def _log_with_metadata(self, level: int, message: str, *args: Any) -> None:
-        self._plogger.log(level, message, *args)
-
-    def _log_warning_block(
-        self, label: str, fields: dict[str, Any], *, detail: str | None = None
-    ) -> None:
-        self._plogger.warning_block(label, fields, detail=detail)
-
-    def _log_operation_started(self, operation: str, **details: Any) -> None:
-        self._plogger.operation_started(operation, **details)
-
-    def _log_operation_completed(self, operation: str, **details: Any) -> None:
-        self._plogger.operation_completed(operation, **details)
-
-    def _log_operation_failed(self, operation: str, reason: str, **details: Any) -> None:
-        self._plogger.operation_failed(operation, reason, **details)
-
-    def _log_reauth_triggered(self) -> None:
-        self._plogger.reauth_triggered()
-
-    def _log_reauthenticating(self) -> None:
-        self._plogger.reauthenticating()
-
-    def _log_provider_error_response(
-        self, data: dict[str, Any], *, operation: str | None = None
-    ) -> None:
-        self._plogger.provider_error_response(data, operation=operation)
-
-    def _log_missing_response_data(
-        self, label: str, fallback: str = "refetching", *, response_data: Any = None
-    ) -> None:
-        self._plogger.missing_response_data(label, fallback, response_data=response_data)
-
-    def _log_response_status(self, status: int) -> None:
-        self._plogger.response_status(status)
-
-    def _log_response_summary(self, data: Any) -> None:
-        self._plogger.response_summary(data)
-
-    def _log_request_failure(
-        self,
-        status: int,
-        *,
-        method: str | None = None,
-        url: str | None = None,
-        operation: str | None = None,
-        payload: Any = None,
-        body: str | None = None,
-        content_type: str | None = None,
-    ) -> None:
-        self._plogger.request_failure(
-            status,
-            method=method,
-            url=url,
-            operation=operation,
-            payload=payload,
-            body=body,
-            content_type=content_type,
-        )
-
-    def _log_invalid_json(self, body: str) -> None:
-        self._plogger.invalid_json(body)
-
-    def _mask_payload(self, payload: Any) -> Any:
-        return self._plogger.mask_payload(payload)
-
-    def _mask_log_value(self, value: Any, *, parent_key: str | None = None) -> Any:
-        return self._plogger.mask_value(value, parent_key=parent_key)
-
-    def _summarize_log_text(self, value: str) -> str:
-        return self._plogger.summarize_text(value)
-
-    def _build_response_summary(self, data: Any) -> dict[str, Any]:
-        return self._plogger.build_response_summary(data)
-
     async def _request_with_optional_reauth(
         self,
         *,
@@ -225,7 +143,7 @@ class BaseProvider(ABC):
                 return await request()
             except AuthError:
                 if allow_reauth and attempt == 0:
-                    self._log_reauth_triggered()
+                    self._plogger.reauth_triggered()
                     if on_reauth is None:
                         raise
                     await on_reauth()
@@ -438,7 +356,7 @@ class BaseProvider(ABC):
                 continue
             except (aiohttp.ClientError, TimeoutError) as exc:
                 last_error = exc
-                self._log_warning_block("network error", {"error": exc.__class__.__name__})
+                self._plogger.warning_block("network error", {"error": exc.__class__.__name__})
                 if attempt >= attempts - 1:
                     raise NetworkError("Network request failed.") from exc
         if last_error is not None:
@@ -463,7 +381,7 @@ class BaseProvider(ABC):
             _attempt: int,
             _attempts: int,
         ) -> Any:
-            self._log_response_status(response.status)
+            self._plogger.response_status(response.status)
             if not 200 <= response.status < 300:
                 self._raise_for_status(
                     response,
@@ -478,9 +396,9 @@ class BaseProvider(ABC):
                 try:
                     data = await response.json()
                 except (aiohttp.ContentTypeError, ValueError) as exc:
-                    self._log_invalid_json(await response.text())
+                    self._plogger.invalid_json(await response.text())
                     raise ProviderError("Response did not contain valid JSON.") from exc
-                self._log_response_summary(data)
+                self._plogger.response_summary(data)
                 return data
             return await response.text()
 
@@ -504,7 +422,7 @@ class BaseProvider(ABC):
     ) -> None:
         if 200 <= response.status < 300:
             return
-        self._log_request_failure(
+        self._plogger.request_failure(
             response.status,
             method=method,
             url=url,
@@ -616,7 +534,7 @@ class BaseProvider(ABC):
             raise ValidationError("license_plate updates are not supported.")
         if name is not None and "name" not in self.favorite_update_fields:
             raise ValidationError("name updates are not supported.")
-        self._log_operation_started("update_favorite")
+        self._plogger.operation_started("update_favorite")
         return await self._update_favorite_native(
             favorite_id,
             license_plate=license_plate,

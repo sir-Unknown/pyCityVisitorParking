@@ -178,7 +178,7 @@ def test_filter_chargeable_zone_validity_invalid() -> None:
 def test_mask_payload_redacts_login_and_license_plate_data() -> None:
     provider = _DummyProvider(_SequenceSession([]), _manifest(), base_url="https://example.com")
 
-    masked = provider._mask_payload(
+    masked = provider._plogger.mask_payload(
         {
             "identifier": "123456",
             "password": "secret",

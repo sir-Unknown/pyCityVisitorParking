@@ -69,7 +69,7 @@ class Provider(BaseProvider):
     ) -> None:
         """Authenticate against the provider."""
         async with self._operation_guard():
-            self._log_operation_started("login")
+            self._plogger.operation_started("login")
             await self._transport.fetch_app_env()
             merged = self._merge_credentials(credentials, **kwargs)
             username = merged.get("username")
@@ -104,13 +104,10 @@ class Provider(BaseProvider):
             error_message = data.get("ErrorMessage")
             requires_otp = data.get("RequiresOtp")
             if self._profile.is_login_error(data, status_value):
-                self._log_with_metadata(
+                self._plogger.log(
                     logging.WARNING,
-                    (
-                        "Provider %s login failed: LoginStatus=%r token_present=%s "
-                        "requires_otp=%r error_message=%r"
-                    ),
-                    self.provider_id,
+                    "login failed: LoginStatus=%r token_present=%s "
+                    "requires_otp=%r error_message=%r",
                     status_value,
                     bool(token),
                     requires_otp,
@@ -140,14 +137,14 @@ class Provider(BaseProvider):
                     # Some deployments include Permit/Permits in the login response
                     # before PermitMedias is fully populated. Fall back to getbase
                     # so a successful login does not regress into an auth failure.
-                    self._log_missing_response_data(
+                    self._plogger.missing_response_data(
                         "login", fallback="fetching base", response_data=permit
                     )
                     await self._fetch_base(operation="login", allow_reauth=False)
             else:
                 await self._fetch_base(operation="login", allow_reauth=False)
 
-            self._log_operation_completed(
+            self._plogger.operation_completed(
                 "login",
                 login_status=status_value,
                 token_present=bool(token),
@@ -157,20 +154,20 @@ class Provider(BaseProvider):
     async def get_permit(self) -> Permit:
         """Return the active permit for the account."""
         async with self._operation_guard():
-            self._log_operation_started("get_permit")
+            self._plogger.operation_started("get_permit")
             permit = await self._fetch_base(operation="get_permit")
             mapped = self._mapper.map_permit(permit)
-            self._log_operation_completed("get_permit")
+            self._plogger.operation_completed("get_permit")
             return mapped
 
     async def list_reservations(self) -> list[Reservation]:
         """Return active reservations."""
         async with self._operation_guard():
-            self._log_operation_started("list_reservations")
+            self._plogger.operation_started("list_reservations")
             reservations = self._mapper.reservations_from_permit(
                 await self._fetch_base(operation="list_reservations")
             )
-            self._log_operation_completed("list_reservations", count=len(reservations))
+            self._plogger.operation_completed("list_reservations", count=len(reservations))
             return reservations
 
     async def start_reservation(
@@ -182,7 +179,7 @@ class Provider(BaseProvider):
     ) -> Reservation:
         """Start a reservation for a license plate."""
         async with self._operation_guard():
-            self._log_operation_started("start_reservation")
+            self._plogger.operation_started("start_reservation")
             start_time_utc, end_time_utc = self._validate_reservation_times(
                 start_time,
                 end_time,
@@ -223,7 +220,7 @@ class Provider(BaseProvider):
             )
             if reservation is None:
                 raise ProviderError("Reservation was not returned by the provider.")
-            self._log_operation_completed("start_reservation")
+            self._plogger.operation_completed("start_reservation")
             return reservation
 
     async def update_reservation(
@@ -235,7 +232,7 @@ class Provider(BaseProvider):
     ) -> Reservation:
         """Update a reservation."""
         async with self._operation_guard():
-            self._log_operation_started("update_reservation")
+            self._plogger.operation_started("update_reservation")
             if not self.reservation_update_possible:
                 raise ProviderError("Reservation updates are not supported.")
             if start_time is not None or name is not None:
@@ -254,7 +251,7 @@ class Provider(BaseProvider):
                 reservation_id=reservation_id_value,
             )
             if existing is None:
-                self._log_operation_failed("update_reservation", "reservation_id not found")
+                self._plogger.operation_failed("update_reservation", "reservation_id not found")
                 raise ValidationError("reservation_id was not found.")
             if self._state.permit_media_type_id is None or self._state.permit_media_code is None:
                 raise ProviderError("Permit media defaults are missing.")
@@ -292,7 +289,7 @@ class Provider(BaseProvider):
             )
             if updated is None:
                 raise ProviderError("Reservation was not returned by the provider.")
-            self._log_operation_completed("update_reservation")
+            self._plogger.operation_completed("update_reservation")
             return updated
 
     async def end_reservation(
@@ -302,7 +299,7 @@ class Provider(BaseProvider):
     ) -> Reservation:
         """End a reservation."""
         async with self._operation_guard():
-            self._log_operation_started("end_reservation")
+            self._plogger.operation_started("end_reservation")
             end_dt = self._normalize_datetime(end_time)
             normalized_end_time = self._format_utc_timestamp(end_dt)
             await self._ensure_defaults(operation="end_reservation")
@@ -313,7 +310,7 @@ class Provider(BaseProvider):
                 reservation_id=reservation_id,
             )
             if existing is None:
-                self._log_operation_failed("end_reservation", "reservation_id not found")
+                self._plogger.operation_failed("end_reservation", "reservation_id not found")
                 raise ValidationError("reservation_id was not found.")
             payload = {
                 "permitMediaTypeID": self._state.permit_media_type_id,
@@ -339,28 +336,28 @@ class Provider(BaseProvider):
                 start_time=existing.start_time,
                 end_time=normalized_end_time,
             )
-            self._log_operation_completed("end_reservation")
+            self._plogger.operation_completed("end_reservation")
             return reservation
 
     async def list_favorites(self) -> list[Favorite]:
         """Return stored favorites."""
         async with self._operation_guard():
-            self._log_operation_started("list_favorites")
+            self._plogger.operation_started("list_favorites")
             favorites = self._mapper.favorites_from_permit(
                 await self._fetch_base(operation="list_favorites")
             )
-            self._log_operation_completed("list_favorites", count=len(favorites))
+            self._plogger.operation_completed("list_favorites", count=len(favorites))
             return favorites
 
     async def fetch_all(self) -> tuple[Permit, list[Reservation], list[Favorite]]:
         """Return permit, reservations, and favorites with a single provider fetch."""
         async with self._operation_guard():
-            self._log_operation_started("fetch_all")
+            self._plogger.operation_started("fetch_all")
             permit_raw = await self._fetch_base(operation="fetch_all")
             permit = self._mapper.map_permit(permit_raw)
             reservations = self._mapper.reservations_from_permit(permit_raw)
             favorites = self._mapper.favorites_from_permit(permit_raw)
-            self._log_operation_completed(
+            self._plogger.operation_completed(
                 "fetch_all",
                 reservations=len(reservations),
                 favorites=len(favorites),
@@ -370,14 +367,14 @@ class Provider(BaseProvider):
     async def add_favorite(self, license_plate: str, name: str | None = None) -> Favorite:
         """Add a favorite."""
         async with self._operation_guard():
-            self._log_operation_started("add_favorite")
+            self._plogger.operation_started("add_favorite")
             normalized_plate = self._normalize_license_plate(license_plate)
             favorites = self._mapper.favorites_from_permit(
                 await self._fetch_base(operation="add_favorite")
             )
             for favorite in favorites:
                 if favorite.license_plate == normalized_plate:
-                    self._log_operation_failed("add_favorite", "duplicate license_plate")
+                    self._plogger.operation_failed("add_favorite", "duplicate license_plate")
                     raise ValidationError("license_plate is already a favorite.")
             if self._state.permit_media_type_id is None or self._state.permit_media_code is None:
                 raise ProviderError("Permit media defaults are missing.")
@@ -400,11 +397,11 @@ class Provider(BaseProvider):
                 operation="add_favorite",
             )
             if data.get("ErrorMessage"):
-                self._log_provider_error_response(data, operation="favorite upsert")
+                self._plogger.provider_error_response(data, operation="favorite upsert")
             try:
                 favorites = self._mapper.favorites_from_permit(self._mapper.extract_permit(data))
             except ProviderError:
-                self._log_missing_response_data(
+                self._plogger.missing_response_data(
                     "favorite upsert", fallback="refetching list", response_data=data
                 )
                 favorites = self._mapper.favorites_from_permit(
@@ -413,7 +410,7 @@ class Provider(BaseProvider):
             favorite = self._mapper.select_favorite(favorites, normalized_plate)
             if favorite is None:
                 raise ProviderError("Favorite was not returned by the provider.")
-            self._log_operation_completed("add_favorite")
+            self._plogger.operation_completed("add_favorite")
             return favorite
 
     async def _update_favorite_native(
@@ -428,7 +425,7 @@ class Provider(BaseProvider):
     async def remove_favorite(self, favorite_id: str) -> None:
         """Remove a favorite."""
         async with self._operation_guard():
-            self._log_operation_started("remove_favorite")
+            self._plogger.operation_started("remove_favorite")
             normalized_plate = self._normalize_license_plate(favorite_id)
             favorites = self._mapper.favorites_from_permit(
                 await self._fetch_base(operation="remove_favorite")
@@ -452,7 +449,7 @@ class Provider(BaseProvider):
                 json=payload,
                 operation="remove_favorite",
             )
-            self._log_operation_completed("remove_favorite")
+            self._plogger.operation_completed("remove_favorite")
 
     async def _fetch_permit_media_type_id(self, *, operation: str = "login") -> str | int:
         """Return the default permit media type ID from the login bootstrap call."""
@@ -480,11 +477,11 @@ class Provider(BaseProvider):
     ) -> dict[str, Any]:
         """Extract permit from a response, falling back to a full fetch on failure."""
         if data.get("ErrorMessage"):
-            self._log_provider_error_response(data, operation=label)
+            self._plogger.provider_error_response(data, operation=label)
         try:
             permit = self._mapper.extract_permit(data)
         except ProviderError:
-            self._log_missing_response_data(label, response_data=data)
+            self._plogger.missing_response_data(label, response_data=data)
             return await self._fetch_base(operation=operation)
         self._mapper.cache_defaults(permit)
         return permit

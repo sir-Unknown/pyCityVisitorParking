@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import re
 from abc import ABC, abstractmethod
 from collections.abc import Awaitable, Callable, Iterable, Mapping
 from datetime import datetime
@@ -24,35 +23,9 @@ from ..util import (
     validate_reservation_times,
 )
 from .loader import ProviderManifest
-from .logger import get_provider_logger
+from .logger import ProviderLogger, get_provider_logger
 
 _DEFAULT_TIMEOUT = aiohttp.ClientTimeout(total=30)
-_MAX_LOG_BODY_CHARS = 600
-_HTML_TITLE_RE = re.compile(r"<title[^>]*>(.*?)</title>", re.IGNORECASE | re.DOTALL)
-_HTML_BASE_RE = re.compile(
-    r"""<base[^>]+href\s*=\s*["']?([^"'\s>]+)""",
-    re.IGNORECASE | re.DOTALL,
-)
-_SENSITIVE_KEYS = frozenset(
-    {
-        "Authorization",
-        "Token",
-        "asIdentifier",
-        "identifier",
-        "otp",
-        "password",
-        "permitId",
-        "permitMediaCode",
-        "permit_id",
-        "permit_media_code",
-        "resetCode",
-        "token",
-        "username",
-        "zipCode",
-    }
-)
-_SENSITIVE_OBJECT_KEYS = frozenset({"LicensePlate", "licensePlate", "updateLicensePlate"})
-_SENSITIVE_NESTED_KEYS = frozenset({"DisplayValue", "Name", "Value"})
 _T = TypeVar("_T")
 
 try:
@@ -96,10 +69,12 @@ class BaseProvider(ABC):
         self._request_context_name: str | None = None
         self._ha_cvp_version = "unknown"
         self._pycvp_version = PACKAGE_VERSION
-        self._logger = get_provider_logger(type(self).__module__)
-        self._logger.debug(
-            "Provider %s initialized base_url=%s api_uri=%s",
-            self._manifest.id,
+        self._plogger = ProviderLogger(
+            get_provider_logger(type(self).__module__),
+            self._request_log_metadata,
+        )
+        self._plogger.debug(
+            "initialized base_url=%s api_uri=%s",
             self._base_url,
             self._api_uri or "(none)",
         )
@@ -154,242 +129,6 @@ class BaseProvider(ABC):
             self._pycvp_version,
         )
 
-    def _log_with_metadata(self, level: int, message: str, *args: Any) -> None:
-        """Log a message with the standard provider metadata suffix."""
-        provider, city, ha_cvp, pycvp = self._request_log_metadata()
-        self._logger.log(
-            level,
-            f"{message} (provider=%s, city=%s, hacvp=%s, pycvp=%s)",
-            *args,
-            provider,
-            city,
-            ha_cvp,
-            pycvp,
-        )
-
-    def _log_warning_block(
-        self,
-        label: str,
-        fields: dict[str, Any],
-        *,
-        detail: str | None = None,
-    ) -> None:
-        """Log a warning as a labelled multi-line key=value block with provider metadata."""
-        provider, city, ha_cvp, pycvp = self._request_log_metadata()
-        all_fields = {k: v for k, v in fields.items() if v is not None}
-        all_fields.update({"provider": provider, "city": city, "hacvp": ha_cvp, "pycvp": pycvp})
-        width = max(len(k) for k in all_fields)
-        lines = [label]
-        if detail:
-            lines.append(f"  {detail}")
-        for key, value in all_fields.items():
-            lines.append(f"  {key:<{width}} = {value}")
-        self._logger.warning("%s", "\n".join(lines))
-
-    def _format_log_details(self, **details: Any) -> str:
-        """Serialize optional log details as a compact key=value suffix."""
-        if not details:
-            return ""
-        return " " + " ".join(f"{key}={value}" for key, value in details.items())
-
-    def _log_operation_started(self, operation: str, **details: Any) -> None:
-        """Log the start of a provider operation."""
-        self._logger.debug(
-            "Provider %s %s started%s",
-            self.provider_id,
-            operation,
-            self._format_log_details(**details),
-        )
-
-    def _log_operation_completed(self, operation: str, **details: Any) -> None:
-        """Log successful completion of a provider operation."""
-        self._logger.debug(
-            "Provider %s %s completed%s",
-            self.provider_id,
-            operation,
-            self._format_log_details(**details),
-        )
-
-    def _log_operation_failed(self, operation: str, reason: str, **details: Any) -> None:
-        """Log a provider operation failure before raising a validation/provider error."""
-        self._logger.debug(
-            "Provider %s %s failed: %s%s",
-            self.provider_id,
-            operation,
-            reason,
-            self._format_log_details(**details),
-        )
-
-    def _log_reauth_triggered(self) -> None:
-        """Log when a provider request falls back to reauthentication."""
-        self._log_warning_block("reauth triggered", {})
-
-    def _log_reauthenticating(self) -> None:
-        """Log when cached credentials are used to reauthenticate."""
-        self._logger.debug(
-            "Provider %s reauthenticating with cached credentials",
-            self.provider_id,
-        )
-
-    def _log_missing_response_data(self, label: str, fallback: str = "refetching") -> None:
-        """Log when a response is missing expected data and a fallback is used."""
-        self._log_warning_block(
-            "missing permit in response", {"operation": label, "fallback": fallback}
-        )
-
-    def _log_response_status(self, status: int) -> None:
-        """Log the HTTP response status returned by a provider."""
-        self._logger.debug("Provider %s response status=%s", self.provider_id, status)
-
-    def _summarize_log_text(self, value: str) -> str:
-        """Normalize and truncate response text for safe logging."""
-        compact = " ".join(value.split())
-        if len(compact) > _MAX_LOG_BODY_CHARS:
-            return compact[: _MAX_LOG_BODY_CHARS - 3] + "..."
-        return compact
-
-    def _response_kind(self, content_type: str | None, body: str | None) -> str:
-        """Classify a failed response body for compact diagnostics."""
-        if not body:
-            return "empty"
-
-        lowered_type = (content_type or "").lower()
-        if "html" in lowered_type:
-            return "html"
-
-        compact = body.lstrip().lower()
-        if compact.startswith("<!doctype html") or compact.startswith("<html"):
-            return "html"
-
-        return "text"
-
-    def _extract_html_log_fields(self, body: str) -> dict[str, str]:
-        """Return compact HTML diagnostics without logging the full page body."""
-        fields: dict[str, str] = {}
-
-        title_match = _HTML_TITLE_RE.search(body)
-        if title_match:
-            title = self._summarize_log_text(title_match.group(1))
-            if title:
-                fields["html_title"] = title
-
-        base_match = _HTML_BASE_RE.search(body)
-        if base_match:
-            base_href = self._summarize_log_text(base_match.group(1))
-            if base_href:
-                fields["html_base_href"] = base_href
-
-        if not fields:
-            fields["body_excerpt"] = self._summarize_log_text(body)
-
-        return fields
-
-    def _mask_payload(self, payload: Any) -> Any:
-        """Return a copy of payload with sensitive values replaced by '***'."""
-        return self._mask_log_value(payload)
-
-    def _mask_log_value(self, value: Any, *, parent_key: str | None = None) -> Any:
-        """Return a masked copy of structured log data."""
-        if parent_key in _SENSITIVE_KEYS:
-            return "***" if value is not None else None
-        if isinstance(value, dict):
-            return {
-                key: (
-                    "***" if key in _SENSITIVE_KEYS else self._mask_log_value(item, parent_key=key)
-                )
-                for key, item in value.items()
-            }
-        if isinstance(value, list):
-            return [self._mask_log_value(item, parent_key=parent_key) for item in value]
-        if parent_key in _SENSITIVE_OBJECT_KEYS:
-            return "***" if value is not None else None
-        if parent_key in _SENSITIVE_NESTED_KEYS:
-            return "***" if value is not None else None
-        return value
-
-    def _response_keys_summary(self, data: dict[str, Any]) -> str:
-        """Return a compact summary of top-level response keys."""
-        keys = sorted(str(key) for key in data)
-        if len(keys) > 12:
-            return ", ".join(keys[:12]) + ", ..."
-        return ", ".join(keys)
-
-    def _build_response_summary(self, data: Any) -> dict[str, Any]:
-        """Return a safe summary of provider response structure and metadata."""
-        if isinstance(data, dict):
-            summary: dict[str, Any] = {
-                "response-type": "dict",
-                "response-keys": self._response_keys_summary(data),
-            }
-            if "Result" in data:
-                summary["result"] = data.get("Result")
-            if "LoginStatus" in data:
-                summary["login-status"] = data.get("LoginStatus")
-            if "RequiresOtp" in data:
-                summary["requires-otp"] = data.get("RequiresOtp")
-            if "Redirect" in data:
-                summary["redirect"] = data.get("Redirect")
-            if "ErrorMessage" in data and data.get("ErrorMessage"):
-                summary["error-message"] = self._summarize_log_text(str(data["ErrorMessage"]))
-            if "Token" in data:
-                summary["token-present"] = bool(data.get("Token"))
-            if "Permit" in data:
-                summary["has-permit"] = isinstance(data.get("Permit"), dict)
-            permits = data.get("Permits")
-            if isinstance(permits, list):
-                summary["permits-count"] = len(permits)
-            permit_medias = data.get("PermitMedias")
-            if isinstance(permit_medias, list):
-                summary["permit-medias-count"] = len(permit_medias)
-            reservations = data.get("ActiveReservations")
-            if isinstance(reservations, list):
-                summary["active-reservations-count"] = len(reservations)
-            return summary
-        if isinstance(data, list):
-            return {"response-type": "list", "items": len(data)}
-        return {"response-type": type(data).__name__}
-
-    def _log_response_summary(self, data: Any) -> None:
-        """Log a safe debug summary of a successful JSON response."""
-        self._logger.debug(
-            "Provider %s response summary %s",
-            self.provider_id,
-            self._mask_log_value(self._build_response_summary(data)),
-        )
-
-    def _log_request_failure(
-        self,
-        status: int,
-        *,
-        method: str | None = None,
-        url: str | None = None,
-        operation: str | None = None,
-        payload: Any = None,
-        body: str | None = None,
-        content_type: str | None = None,
-    ) -> None:
-        """Log an unsuccessful provider HTTP response."""
-        is_auth = status in (401, 403)
-        label = "auth request failed" if is_auth else "request failed"
-        detail = f"{method.upper()} {url}" if method and url else url
-        fields: dict[str, Any] = {"status": status}
-        if operation:
-            fields["operation"] = operation
-        if content_type:
-            fields["content-type"] = content_type
-        fields["response_kind"] = self._response_kind(content_type, body)
-        if payload is not None:
-            fields["payload"] = self._mask_payload(payload)
-        if fields["response_kind"] == "html" and body:
-            fields.update(self._extract_html_log_fields(body))
-        elif body:
-            fields["body"] = self._summarize_log_text(body)
-        self._log_warning_block(label, fields, detail=detail)
-
-    def _log_invalid_json(self, body: str) -> None:
-        """Log an invalid JSON response body."""
-        self._log_warning_block("invalid json response", {"body": self._summarize_log_text(body)})
-
     async def _request_with_optional_reauth(
         self,
         *,
@@ -404,7 +143,7 @@ class BaseProvider(ABC):
                 return await request()
             except AuthError:
                 if allow_reauth and attempt == 0:
-                    self._log_reauth_triggered()
+                    self._plogger.reauth_triggered()
                     if on_reauth is None:
                         raise
                     await on_reauth()
@@ -590,28 +329,18 @@ class BaseProvider(ABC):
         last_error: Exception | None = None
         for attempt in range(attempts):
             if attempts > 1:
-                self._logger.debug(
-                    "Provider %s request %s %s (attempt %s/%s)",
-                    self.provider_id,
+                self._plogger.debug(
+                    "request %s %s (attempt %s/%s)",
                     method.upper(),
                     url,
                     attempt + 1,
                     attempts,
                 )
             else:
-                self._logger.debug(
-                    "Provider %s request %s %s",
-                    self.provider_id,
-                    method.upper(),
-                    url,
-                )
+                self._plogger.debug("request %s %s", method.upper(), url)
             payload = request_kwargs.get("json")
             if payload is not None:
-                self._logger.debug(
-                    "Provider %s request payload %s",
-                    self.provider_id,
-                    self._mask_payload(payload),
-                )
+                self._plogger.debug("request payload %s", self._plogger.mask_payload(payload))
             try:
                 timeout = request_kwargs.get("timeout", self._timeout)
                 if timeout is None:
@@ -627,7 +356,7 @@ class BaseProvider(ABC):
                 continue
             except (aiohttp.ClientError, TimeoutError) as exc:
                 last_error = exc
-                self._log_warning_block("network error", {"error": exc.__class__.__name__})
+                self._plogger.warning_block("network error", {"error": exc.__class__.__name__})
                 if attempt >= attempts - 1:
                     raise NetworkError("Network request failed.") from exc
         if last_error is not None:
@@ -652,7 +381,7 @@ class BaseProvider(ABC):
             _attempt: int,
             _attempts: int,
         ) -> Any:
-            self._log_response_status(response.status)
+            self._plogger.response_status(response.status)
             if not 200 <= response.status < 300:
                 self._raise_for_status(
                     response,
@@ -667,9 +396,9 @@ class BaseProvider(ABC):
                 try:
                     data = await response.json()
                 except (aiohttp.ContentTypeError, ValueError) as exc:
-                    self._log_invalid_json(await response.text())
+                    self._plogger.invalid_json(await response.text())
                     raise ProviderError("Response did not contain valid JSON.") from exc
-                self._log_response_summary(data)
+                self._plogger.response_summary(data)
                 return data
             return await response.text()
 
@@ -693,7 +422,7 @@ class BaseProvider(ABC):
     ) -> None:
         if 200 <= response.status < 300:
             return
-        self._log_request_failure(
+        self._plogger.request_failure(
             response.status,
             method=method,
             url=url,
@@ -799,16 +528,13 @@ class BaseProvider(ABC):
     ) -> Favorite:
         """Update a favorite."""
         if not self.favorite_update_possible:
-            self._logger.info(
-                "Provider %s favorite update requested but not supported",
-                self.provider_id,
-            )
+            self._plogger.info("favorite update requested but not supported")
             raise ProviderError("Favorite updates are not supported.")
         if license_plate is not None and "license_plate" not in self.favorite_update_fields:
             raise ValidationError("license_plate updates are not supported.")
         if name is not None and "name" not in self.favorite_update_fields:
             raise ValidationError("name updates are not supported.")
-        self._log_operation_started("update_favorite")
+        self._plogger.operation_started("update_favorite")
         return await self._update_favorite_native(
             favorite_id,
             license_plate=license_plate,

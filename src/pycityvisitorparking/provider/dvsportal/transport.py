@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, Any
 import aiohttp
 
 from ...exceptions import AuthError, ProviderError
-from ..logger import get_provider_logger
+from ..logger import ProviderLogger
 from .const import APP_ENV_SCRIPT, AUTH_HEADER, DEFAULT_HEADERS, RETRY_AFTER_HEADER, XSRF_HEADER
 
 _XSRF_COOKIE_NAME_RE = re.compile(r"window\.__env\.xsrfCookieName\s*=\s*['\"]([^'\"]+)['\"]")
@@ -17,9 +17,6 @@ _XSRF_COOKIE_NAME_RE = re.compile(r"window\.__env\.xsrfCookieName\s*=\s*['\"]([^
 if TYPE_CHECKING:
     from .profile import PortalProfile
     from .session import PortalSessionState
-
-
-_LOGGER = get_provider_logger(__name__)
 
 
 class PortalTransport:
@@ -30,11 +27,13 @@ class PortalTransport:
         provider: Any,
         state: PortalSessionState,
         profile: PortalProfile,
+        plogger: ProviderLogger,
     ) -> None:
         """Initialize transport helpers with shared provider state."""
         self._provider = provider
         self._state = state
         self._profile = profile
+        self._plogger = plogger
 
     async def fetch_app_env(self) -> None:
         """Bootstrap the XSRF cookie before login.
@@ -78,30 +77,26 @@ class PortalTransport:
                     if match:
                         cookie_name = match.group(1)
                         self._profile.update_xsrf_cookie_name(cookie_name)
-                        _LOGGER.debug(
-                            "Provider %s discovered xsrfCookieName=%r from %s",
-                            self._provider.provider_id,
+                        self._plogger.debug(
+                            "discovered xsrfCookieName=%r from %s",
                             cookie_name,
                             env_url,
                         )
                         step1_ok = True
                     else:
-                        _LOGGER.debug(
-                            "Provider %s app.env.js missing xsrfCookieName url=%s",
-                            self._provider.provider_id,
+                        self._plogger.debug(
+                            "app.env.js missing xsrfCookieName url=%s",
                             env_url,
                         )
                 else:
-                    _LOGGER.debug(
-                        "Provider %s app.env.js bootstrap status=%s url=%s",
-                        self._provider.provider_id,
+                    self._plogger.debug(
+                        "app.env.js bootstrap status=%s url=%s",
                         response.status,
                         env_url,
                     )
         except Exception as exc:
-            _LOGGER.debug(
-                "Provider %s app.env.js bootstrap failed url=%s error=%s",
-                self._provider.provider_id,
+            self._plogger.debug(
+                "app.env.js bootstrap failed url=%s error=%s",
                 env_url,
                 exc.__class__.__name__,
             )
@@ -114,9 +109,8 @@ class PortalTransport:
             async with self._provider._session.request(
                 "GET", html_url, timeout=timeout
             ) as response:
-                _LOGGER.debug(
-                    "Provider %s fetched app HTML status=%s url=%s",
-                    self._provider.provider_id,
+                self._plogger.debug(
+                    "fetched app HTML status=%s url=%s",
                     response.status,
                     html_url,
                 )
@@ -124,9 +118,8 @@ class PortalTransport:
                 if response.status == 200:
                     step2_ok = True
         except Exception as exc:
-            _LOGGER.debug(
-                "Provider %s app HTML bootstrap failed url=%s error=%s",
-                self._provider.provider_id,
+            self._plogger.debug(
+                "app HTML bootstrap failed url=%s error=%s",
                 html_url,
                 exc.__class__.__name__,
             )
@@ -232,7 +225,7 @@ class PortalTransport:
             if not 200 <= response.status < 300:
                 body = await response.text()
                 content_type = response.headers.get("Content-Type")
-                self._provider._log_request_failure(
+                self._plogger.request_failure(
                     response.status,
                     method=method,
                     url=url,
@@ -244,14 +237,14 @@ class PortalTransport:
                 if response.status in (401, 403):
                     raise AuthError("Authentication failed.")
                 raise ProviderError(f"Provider request failed with status {response.status}.")
-            self._provider._log_response_status(response.status)
+            self._plogger.response_status(response.status)
             if expect_json:
                 try:
                     data = await response.json()
                 except (aiohttp.ContentTypeError, ValueError) as exc:
-                    self._provider._log_invalid_json(await response.text())
+                    self._plogger.invalid_json(await response.text())
                     raise ProviderError("Response did not contain valid JSON.") from exc
-                self._provider._log_response_summary(data)
+                self._plogger.response_summary(data)
                 return data
             return await response.text()
 
@@ -281,7 +274,7 @@ class PortalTransport:
 
     async def _reauthenticate(self) -> None:
         """Clear auth state and re-login using cached credentials."""
-        self._provider._log_warning_block(
+        self._plogger.warning_block(
             "reauthenticating",
             {
                 "token-present": self._state.token is not None,
@@ -320,12 +313,11 @@ class PortalTransport:
         include_auth: bool,
     ) -> None:
         """Log safe request-context flags for troubleshooting auth/session issues."""
-        _LOGGER.debug(
-            "Provider %s request context method=%s url=%s include_auth=%s "
+        self._plogger.debug(
+            "request context method=%s url=%s include_auth=%s "
             "auth_header_present=%s xsrf_header_present=%s "
             "session_authenticated=%s token_present=%s "
             "permit_media_code=%s",
-            self._provider.provider_id,
             method.upper(),
             url,
             include_auth,
@@ -333,7 +325,7 @@ class PortalTransport:
             XSRF_HEADER in headers,
             self._state.session_authenticated,
             self._state.token is not None,
-            self._provider._mask_log_value(
+            self._plogger.mask_value(
                 self._state.permit_media_code,
                 parent_key="permit_media_code",
             ),

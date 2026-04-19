@@ -518,6 +518,9 @@ class Provider(BaseProvider):
                 message = await self._error_message_from_response(response)
                 if message:
                     raise ProviderError(message)
+            if response.status == 429:
+                self._plogger.response_status(response.status)
+                raise AuthError("Authentication failed.")
             self._plogger.response_status(response.status)
             self._raise_for_status(response)
             if expect_json:

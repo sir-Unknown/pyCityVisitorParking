@@ -112,6 +112,23 @@ async def test_error_message_from_response_uses_description() -> None:
 
 
 @pytest.mark.asyncio
+async def test_login_429_raises_auth_error() -> None:
+    session = _SequenceSession([_FakeResponse(None, status=429, text_data="")])
+    provider = Provider(
+        session,  # type: ignore[arg-type]
+        ProviderManifest(
+            id="the_hague",
+            name="The Hague",
+            favorite_update_fields=("license_plate", "name"),
+            reservation_update_fields=("end_time",),
+        ),
+        base_url="https://example",
+    )
+    with pytest.raises(AuthError):
+        await provider.login(username="wrong", password="creds")
+
+
+@pytest.mark.asyncio
 async def test_request_with_reauth_retries_on_auth_error(monkeypatch: pytest.MonkeyPatch) -> None:
     provider = _provider()
     provider._credentials = {"username": "user", "password": "pass"}

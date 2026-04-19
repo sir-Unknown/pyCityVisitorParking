@@ -58,15 +58,19 @@ Do not push release tags before the local checks and artifact validation pass.
    - `git push origin vX.Y.Z`
 6. Confirm the `CI` workflow passes for the tag.
 7. Publish the GitHub release for tag `vX.Y.Z`.
-8. The `Release` workflow will build from that tag and publish to PyPI using OIDC.
+8. The `Release` workflow resolves that tag to an exact commit, verifies the `CI` workflow passed on that commit, and checks whether package-shipping files changed since the previous published release.
+9. If package files changed, the workflow builds from that tagged commit and publishes to PyPI using OIDC. If not, it exits without publishing.
 
 ✅ **Understand what GitHub Actions does**
 - `CI` runs on pull requests, pushes to `main`, manual dispatch, and tags matching `v*`.
 - `Release Drafter` updates the draft release on `main` pushes and PR updates.
-- `Release` runs only when a GitHub release is published.
+- `Release` runs when a GitHub release is published and can also be run manually for an existing tag via `workflow_dispatch`.
 - The publish workflow:
-  - validates that the published release tag matches `vX.Y.Z`
-  - checks out the repository at that exact tag
+  - validates that the requested tag matches `vX.Y.Z`
+  - resolves the tag to its exact commit
+  - verifies the `CI` workflow succeeded for that commit
+  - compares the tagged commit with the previous published release and skips publishing when no package-shipping files changed
+  - checks out the repository at that exact commit
   - logs the resolved package version
   - builds `sdist` and `wheel`
   - runs `twine check`

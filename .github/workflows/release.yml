@@ -1,29 +1,206 @@
 # Builds and publishes the package to PyPI when a GitHub Release is published.
+# A manual dispatch can also rebuild a specific tag.
 #
 # Flow:
-#   1. Validate that the release tag matches vX.Y.Z exactly.
-#   2. Check out the exact tagged commit and verify the tag is present on HEAD.
-#   3. Build sdist + wheel, verify dist metadata with twine.
-#   4. Publish to PyPI using OIDC trusted publishing (no API token required).
+#   1. Resolve the release tag to an exact commit and verify it matches vX.Y.Z.
+#   2. Verify that the CI workflow passed on that tagged commit.
+#   3. Detect whether package-shipping files changed since the previous release.
+#   4. Build from the tagged commit, verify the artifacts, and publish to PyPI.
 #
-# Note: uv caching is disabled to prevent cache-poisoning of published artifacts.
-# Note: the release environment requires manual approval in GitHub settings.
+# Responsibility split:
+#   - release-drafter.yml prepares release drafts and notes.
+#   - ci.yml validates pull requests, main, and release tags.
+#   - This workflow publishes an already tagged and validated release.
+#
+# Note: uv caching is intentionally disabled to avoid cache-poisoning of
+# published artifacts.
+# Note: the pypi environment should require manual approval in GitHub settings.
 name: Release
 
 on:
   release:
     types:
       - published
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to process (e.g. v1.2.3)"
+        required: true
+        type: string
 
 permissions: {}
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.release.tag_name }}
+  group: ${{ github.workflow }}-${{ github.event.release.tag_name || inputs.tag || github.ref }}
   cancel-in-progress: true
 
 jobs:
+  validate:
+    name: Check CI status
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+    outputs:
+      release_sha: ${{ steps.resolve_tag.outputs.sha }}
+      should_release: ${{ steps.package_changes.outputs.should_release }}
+      tag: ${{ steps.resolve_tag.outputs.tag }}
+    steps:
+      - name: Resolve release tag to commit
+        id: resolve_tag
+        env:
+          RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.event.release.tag_name }}
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
+        with:
+          script: |
+            const tag = process.env.RELEASE_TAG;
+            if (!tag) {
+              core.setFailed("Missing release tag name.");
+              return;
+            }
+            if (!/^v[0-9]+\.[0-9]+\.[0-9]+$/.test(tag)) {
+              core.setFailed(`Release tag must match vX.Y.Z, got: ${tag}`);
+              return;
+            }
+
+            const { data: ref } = await github.rest.git.getRef({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              ref: `tags/${tag}`,
+            });
+
+            let sha = ref.object.sha;
+            if (ref.object.type === "tag") {
+              const { data: tagObject } = await github.rest.git.getTag({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                tag_sha: ref.object.sha,
+              });
+              sha = tagObject.object.sha;
+            }
+
+            core.setOutput("sha", sha);
+            core.setOutput("tag", tag);
+
+      - name: Detect package changes since previous release
+        id: package_changes
+        env:
+          RELEASE_SHA: ${{ steps.resolve_tag.outputs.sha }}
+          RELEASE_TAG: ${{ steps.resolve_tag.outputs.tag }}
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
+        with:
+          script: |
+            const currentTag = process.env.RELEASE_TAG;
+            const currentSha = process.env.RELEASE_SHA;
+            const packagePaths = [
+              "src/",
+              "pyproject.toml",
+              "README.md",
+              "CHANGELOG.md",
+              "LICENSE",
+              "docs/RELEASING.md",
+            ];
+
+            async function resolveTagSha(tag) {
+              const { data: ref } = await github.rest.git.getRef({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                ref: `tags/${tag}`,
+              });
+
+              if (ref.object.type === "tag") {
+                const { data: tagObject } = await github.rest.git.getTag({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  tag_sha: ref.object.sha,
+                });
+                return tagObject.object.sha;
+              }
+
+              return ref.object.sha;
+            }
+
+            const { data: releases } = await github.rest.repos.listReleases({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              per_page: 100,
+            });
+
+            const previousRelease = releases.find(
+              (release) =>
+                !release.draft &&
+                !release.prerelease &&
+                release.tag_name !== currentTag,
+            );
+
+            if (!previousRelease) {
+              core.info("No previous published release found; proceeding with release.");
+              core.setOutput("should_release", "true");
+              return;
+            }
+
+            const previousSha = await resolveTagSha(previousRelease.tag_name);
+            const comparison = await github.rest.repos.compareCommits({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              base: previousSha,
+              head: currentSha,
+            });
+
+            const changed = (comparison.data.files ?? []).some((file) =>
+              packagePaths.some(
+                (packagePath) =>
+                  file.filename === packagePath || file.filename.startsWith(packagePath),
+              ),
+            );
+
+            core.info(
+              `Previous release: ${previousRelease.tag_name}; package files changed: ${changed}`,
+            );
+            core.setOutput("should_release", changed ? "true" : "false");
+
+      - name: Verify CI workflow success
+        env:
+          RELEASE_SHA: ${{ steps.resolve_tag.outputs.sha }}
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
+        with:
+          script: |
+            const workflowName = "CI";
+            const sha = process.env.RELEASE_SHA;
+            const { data: workflows } = await github.rest.actions.listRepoWorkflows({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+            });
+            const workflow = workflows.workflows.find((item) => item.name === workflowName);
+            if (!workflow) {
+              core.setFailed(`Workflow not found: ${workflowName}`);
+              return;
+            }
+
+            const { data: runs } = await github.rest.actions.listWorkflowRuns({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: workflow.id,
+              head_sha: sha,
+              per_page: 100,
+            });
+
+            const successful = runs.workflow_runs.find(
+              (run) => run.status === "completed" && run.conclusion === "success",
+            );
+            if (!successful) {
+              const summary = runs.workflow_runs
+                .map((run) => `${run.status}/${run.conclusion || "none"} (${run.html_url})`)
+                .join(", ");
+              core.setFailed(
+                `No successful CI run found for ${sha}. Runs: ${summary || "none"}`,
+              );
+            }
+
   publish:
     name: Build and publish
+    needs: [validate]
+    if: needs.validate.outputs.should_release == 'true'
     runs-on: ubuntu-latest
     environment: pypi
     permissions:
@@ -31,24 +208,11 @@ jobs:
       id-token: write # Required for trusted publishing to PyPI via GitHub OIDC.
 
     steps:
-      - name: Validate release tag
-        env:
-          RELEASE_TAG: ${{ github.event.release.tag_name }}
-        run: |
-          if [[ -z "$RELEASE_TAG" ]]; then
-            echo "Missing release tag name."
-            exit 1
-          fi
-          if [[ ! "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "Release tag must match vX.Y.Z, got: $RELEASE_TAG"
-            exit 1
-          fi
-
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           persist-credentials: false
-          ref: ${{ github.event.release.tag_name }}
+          ref: ${{ needs.validate.outputs.release_sha }}
 
       - name: Set up uv
         uses: astral-sh/setup-uv@cec208311dfd045dd5311c1add060b2062131d57 # v8.0.0
@@ -57,7 +221,7 @@ jobs:
 
       - name: Confirm checked out tag
         env:
-          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          RELEASE_TAG: ${{ needs.validate.outputs.tag }}
         run: |
           if ! git tag --points-at HEAD | grep -Fx "$RELEASE_TAG" >/dev/null; then
             echo "Expected checkout to include tag $RELEASE_TAG, but it was not found on HEAD"
@@ -83,3 +247,14 @@ jobs:
 
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@ed0c53931b1dc9bd32cbe73a98c7f6766f8a527e # v1.13.0
+
+  skip-release:
+    name: Skip publish
+    needs: [validate]
+    if: needs.validate.outputs.should_release != 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Skip PyPI publish
+        run: |
+          echo "No package-shipping files changed since the previous published release."
+          echo "Skipping PyPI publish."

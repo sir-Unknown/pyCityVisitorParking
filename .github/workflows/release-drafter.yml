@@ -1,8 +1,8 @@
 # Maintains a draft GitHub Release that is kept up-to-date with every push to
-# main that touches src/. The draft is populated using the rules in
-# .github/release-drafter.yml (categories, version bump strategy, etc.).
-# When a release is ready, the draft is manually published which triggers the
-# release.yml workflow to build and publish to PyPI.
+# main that touches package-shipping files. The draft is populated using the
+# rules in .github/release-drafter.yml (categories, version bump strategy,
+# etc.). When a release is ready, the draft is manually published which
+# triggers the release.yml workflow to build and publish to PyPI.
 name: Release Drafter
 # yamllint disable-line rule:truthy
 
@@ -12,6 +12,11 @@ on:
       - main
     paths:
       - "src/**"
+      - "pyproject.toml"
+      - "README.md"
+      - "CHANGELOG.md"
+      - "LICENSE"
+      - "docs/RELEASING.md"
   workflow_dispatch:
 
 permissions: {}

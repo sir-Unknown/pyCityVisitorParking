@@ -8,6 +8,11 @@ sort-direction: ascending
 
 include-paths:
   - "src/"
+  - "pyproject.toml"
+  - "README.md"
+  - "CHANGELOG.md"
+  - "LICENSE"
+  - "docs/RELEASING.md"
 
 categories:
   - title: "Breaking changes"

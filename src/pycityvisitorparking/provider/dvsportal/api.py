@@ -11,6 +11,7 @@ from typing import Any
 
 import aiohttp
 
+from ...const import RESOLVED_PERMIT_MEDIA_TYPE_ID
 from ...exceptions import AuthError, ProviderError, ValidationError
 from ...models import Favorite, Permit, Reservation
 from ...util import parse_timestamp
@@ -61,6 +62,14 @@ class Provider(BaseProvider):
         self._transport = PortalTransport(self, self._state, self._profile, self._plogger)
         self._operation_lock = asyncio.Lock()
         self._lock_owner: asyncio.Task[Any] | None = None
+
+    @property
+    def resolved_login_params(self) -> dict[str, str]:
+        """Return provider-resolved login parameters from the last successful login."""
+        result: dict[str, str] = {}
+        if self._state.permit_media_type_id is not None:
+            result[RESOLVED_PERMIT_MEDIA_TYPE_ID] = str(self._state.permit_media_type_id)
+        return result
 
     async def login(
         self,

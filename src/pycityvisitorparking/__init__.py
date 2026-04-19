@@ -5,6 +5,7 @@ from __future__ import annotations
 from importlib.metadata import PackageNotFoundError, version
 
 from .client import Client
+from .const import RESOLVED_LOCATION, RESOLVED_PERMIT_MEDIA_TYPE_ID
 from .exceptions import (
     AuthError,
     ConfigError,
@@ -36,6 +37,8 @@ __all__ = [
     "BALANCE_UNIT_EURO",
     "BALANCE_UNIT_MINUTE",
     "BALANCE_UNIT_TIMES",
+    "RESOLVED_LOCATION",
+    "RESOLVED_PERMIT_MEDIA_TYPE_ID",
     "AuthError",
     "Client",
     "ConfigError",

@@ -12,6 +12,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import aiohttp
 
+from ...const import RESOLVED_LOCATION
 from ...exceptions import AuthError, ProviderError, ValidationError
 from ...models import Favorite, Permit, Reservation
 from ...util import format_utc_timestamp, parse_timestamp
@@ -73,6 +74,14 @@ class Provider(BaseProvider):
         self._product_id: str | None = None
         self._product_location: str | None = None
         self._api_timezone: ZoneInfo | None = None
+
+    @property
+    def resolved_login_params(self) -> dict[str, str]:
+        """Return provider-resolved login parameters from the last successful login."""
+        result: dict[str, str] = {}
+        if self._product_location is not None:
+            result[RESOLVED_LOCATION] = self._product_location
+        return result
 
     async def login(
         self,

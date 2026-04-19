@@ -183,6 +183,17 @@ class BaseProvider(ABC):
             reservation_update_fields=self._manifest.reservation_update_fields,
         )
 
+    @property
+    def resolved_login_params(self) -> dict[str, str]:
+        """Return provider-resolved login parameters from the last successful login.
+
+        Keys are only present when the provider discovered a value — omitted
+        when unknown. Excludes user-supplied credentials (username, password).
+        Callers may persist these and pass them back via login() kwargs on
+        subsequent starts to avoid redundant API calls.
+        """
+        return {}
+
     def _normalize_license_plate(self, plate: str) -> str:
         return normalize_license_plate(plate)
 

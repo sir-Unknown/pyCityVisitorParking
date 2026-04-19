@@ -9,6 +9,7 @@ from typing import Any
 
 import aiohttp
 
+from ...const import RESOLVED_PERMIT_MEDIA_TYPE_ID
 from ...exceptions import AuthError, ProviderError, ValidationError
 from ...models import BALANCE_UNIT_MINUTE, Favorite, Permit, Reservation, ZoneValidityBlock
 from ..base import BaseProvider
@@ -73,6 +74,14 @@ class Provider(BaseProvider):
         self._credentials: dict[str, str] | None = None
         self._permit_media_type_id: str | None = None
         self._logged_in = False
+
+    @property
+    def resolved_login_params(self) -> dict[str, str]:
+        """Return provider-resolved login parameters from the last successful login."""
+        result: dict[str, str] = {}
+        if self._permit_media_type_id is not None:
+            result[RESOLVED_PERMIT_MEDIA_TYPE_ID] = self._permit_media_type_id
+        return result
 
     async def login(
         self,

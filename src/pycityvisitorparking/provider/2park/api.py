@@ -12,6 +12,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import aiohttp
 
+from ...const import RESOLVED_LOCATION, RESOLVED_PERMIT_ID
 from ...exceptions import AuthError, ProviderError, ValidationError
 from ...models import Favorite, Permit, Reservation
 from ...util import format_utc_timestamp, parse_timestamp
@@ -74,6 +75,16 @@ class Provider(BaseProvider):
         self._product_location: str | None = None
         self._api_timezone: ZoneInfo | None = None
 
+    @property
+    def resolved_login_params(self) -> dict[str, str]:
+        """Return provider-resolved login parameters from the last successful login."""
+        result: dict[str, str] = {}
+        if self._product_id is not None:
+            result[RESOLVED_PERMIT_ID] = self._product_id
+        if self._product_location is not None:
+            result[RESOLVED_LOCATION] = self._product_location
+        return result
+
     async def login(
         self,
         credentials: Mapping[str, object] | None = None,
@@ -84,7 +95,7 @@ class Provider(BaseProvider):
         merged = self._merge_credentials(credentials, **kwargs)
         username = merged.get("username")
         password = merged.get("password")
-        product_id = merged.get("product_id")
+        product_id = merged.get("permit_id") or merged.get("product_id")
         location = merged.get("location")
 
         if not username:
@@ -110,7 +121,7 @@ class Provider(BaseProvider):
         self._product_location = location
         self._credentials = {"username": username, "password": password}
         if product_id:
-            self._credentials["product_id"] = product_id
+            self._credentials["permit_id"] = product_id
         if location:
             self._credentials["location"] = location
         self._plogger.operation_completed("login", product_id=product_id, location=location)

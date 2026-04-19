@@ -204,7 +204,7 @@ async def test_login_explicit_product_id_and_location() -> None:
         credentials={
             "username": "u@e.com",
             "password": "p",
-            "product_id": "BDABZRG_1317$abc",
+            "permit_id": "BDABZRG_1317$abc",
             "location": "BDA1317",
         }
     )

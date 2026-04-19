@@ -93,7 +93,7 @@ class Provider(BaseProvider):
         merged = self._merge_credentials(credentials, **kwargs)
         username = merged.get("username")
         password = merged.get("password")
-        product_id = merged.get("permit_id")
+        product_id = merged.get("permit_id") or merged.get("product_id")
         location = merged.get("location")
 
         if not username:

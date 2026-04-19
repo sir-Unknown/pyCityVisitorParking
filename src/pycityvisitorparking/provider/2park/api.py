@@ -93,7 +93,7 @@ class Provider(BaseProvider):
         merged = self._merge_credentials(credentials, **kwargs)
         username = merged.get("username")
         password = merged.get("password")
-        product_id = merged.get("product_id")
+        product_id = merged.get("permit_id")
         location = merged.get("location")
 
         if not username:
@@ -119,7 +119,7 @@ class Provider(BaseProvider):
         self._product_location = location
         self._credentials = {"username": username, "password": password}
         if product_id:
-            self._credentials["product_id"] = product_id
+            self._credentials["permit_id"] = product_id
         if location:
             self._credentials["location"] = location
         self._plogger.operation_completed("login", product_id=product_id, location=location)

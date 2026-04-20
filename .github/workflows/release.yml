@@ -50,7 +50,7 @@ jobs:
         id: resolve_tag
         env:
           RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.event.release.tag_name }}
-        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
           script: |
             const tag = process.env.RELEASE_TAG;
@@ -87,7 +87,7 @@ jobs:
         env:
           RELEASE_SHA: ${{ steps.resolve_tag.outputs.sha }}
           RELEASE_TAG: ${{ steps.resolve_tag.outputs.tag }}
-        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
           script: |
             const currentTag = process.env.RELEASE_TAG;
@@ -162,7 +162,7 @@ jobs:
       - name: Verify CI workflow success
         env:
           RELEASE_SHA: ${{ steps.resolve_tag.outputs.sha }}
-        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
           script: |
             const workflowName = "CI";
@@ -247,7 +247,7 @@ jobs:
           fi
 
       - name: Publish to PyPI
-        uses: pypa/gh-action-pypi-publish@ed0c53931b1dc9bd32cbe73a98c7f6766f8a527e # v1.13.0
+        uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b # v1.14.0
 
   skip-release:
     name: Skip publish

@@ -19,11 +19,6 @@ on:
       - ".github/codeql/**"
   pull_request:
     branches: [ "main" ]
-    paths:
-      - "src/**"
-      - "tests/**"
-      - ".github/workflows/**"
-      - ".github/codeql/**"
   schedule:
     - cron: '45 12 * * 1'
 

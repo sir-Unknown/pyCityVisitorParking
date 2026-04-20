@@ -1,0 +1,67 @@
+name-template: "v$RESOLVED_VERSION"
+tag-template: "v$RESOLVED_VERSION"
+committish: "main"
+change-template: "- $TITLE @$AUTHOR (#$NUMBER)"
+no-changes-template: "- No changes in `src/` since the last release."
+exclude-labels:
+  - "skip-changelog"
+  - "duplicate"
+  - "invalid"
+exclude-contributors:
+  - "sir-Unknown"
+  - "dependabot[bot]"
+  - "renovate[bot]"
+  - "github-actions[bot]"
+  - "codex[bot]"
+  - "claude[bot]"
+sort-direction: ascending
+include-paths:
+  - "src/"
+  - "pyproject.toml"
+categories:
+  - title: "Breaking changes"
+    labels:
+      - "breaking-change"
+      - "major"
+  - title: "New features"
+    labels:
+      - "new-feature"
+      - "feature"
+  - title: "Bug fixes"
+    labels:
+      - "bugfix"
+      - "bug"
+      - "fix"
+  - title: "Enhancements"
+    labels:
+      - "enhancement"
+      - "refactor"
+      - "performance"
+      - "schema"
+      - "tests"
+  - title: "Maintenance"
+    labels:
+      - "maintenance"
+      - "ci"
+      - "github-actions"
+  - title: "Documentation"
+    labels:
+      - "documentation"
+  - title: "Dependency updates"
+    labels:
+      - "dependencies"
+template: |
+  > [!WARNING]
+  > **This is a beta pre-release.**
+  > It may contain incomplete features or minor regressions.
+  > **Use with caution in production environments.**
+
+  ## What's Changed
+
+  $CHANGES
+
+  ## Contributors
+
+  $CONTRIBUTORS
+
+  [![Full changelog](https://img.shields.io/badge/Full%20changelog-blue?logo=github)](https://github.com/sir-Unknown/pyCityVisitorParking/compare/$PREVIOUS_TAG...v$RESOLVED_VERSION)

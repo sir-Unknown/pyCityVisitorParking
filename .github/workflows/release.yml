@@ -58,8 +58,8 @@ jobs:
               core.setFailed("Missing release tag name.");
               return;
             }
-            if (!/^v[0-9]+\.[0-9]+\.[0-9]+$/.test(tag)) {
-              core.setFailed(`Release tag must match vX.Y.Z, got: ${tag}`);
+            if (!/^v[0-9]+\.[0-9]+\.[0-9]+(b[0-9]+)?$/.test(tag)) {
+              core.setFailed(`Release tag must match vX.Y.Z or vX.Y.ZbN, got: ${tag}`);
               return;
             }
 

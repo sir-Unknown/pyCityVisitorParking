@@ -52,7 +52,7 @@ jobs:
       - name: Read current Python version
         id: current
         run: |
-          MINOR=$(sed -n 's/^requires-python = \">=\\([0-9]\\+\\.[0-9]\\+\\)\"$/\\1/p' pyproject.toml)
+          MINOR=$(sed -n 's/^requires-python = ">=\([0-9]\+\.[0-9]\+\)"$/\1/p' pyproject.toml)
           if [ -z "$MINOR" ]; then
             echo "Could not read requires-python from pyproject.toml"
             exit 1

@@ -1,50 +1,84 @@
-# pyCityVisitorParking
+<h1 align="center">
+  pyCityVisitorParking
+  <br>
+  <sub><span style="font-size: 0.7em;">Async Python library for Dutch municipal visitor parking providers</span></sub>
+</h1>
 
-[![PyPI version](https://img.shields.io/pypi/v/pycityvisitorparking)](https://pypi.org/project/pycityvisitorparking/)
-[![Python versions](https://img.shields.io/pypi/pyversions/pycityvisitorparking)](https://pypi.org/project/pycityvisitorparking/)
-[![CI](https://github.com/sir-Unknown/pyCityVisitorParking/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/sir-Unknown/pyCityVisitorParking/actions/workflows/ci.yml)
+<p align="center">
+  Provider-agnostic async Python library for Dutch municipal visitor parking systems.
+  <br>
+  Designed for Home Assistant, but usable in any async Python application.
+</p>
 
-Async Python library for Dutch municipal visitor parking providers.
+<p align="center">
+  <a href="https://pypi.org/project/pycityvisitorparking/">
+    <img src="https://img.shields.io/pypi/v/pycityvisitorparking" alt="PyPI version">
+  </a>
+  <a href="https://pypi.org/project/pycityvisitorparking/">
+    <img src="https://img.shields.io/pypi/pyversions/pycityvisitorparking" alt="Python versions">
+  </a>
+  <a href="https://github.com/sir-Unknown/pyCityVisitorParking/actions/workflows/ci.yml">
+    <img src="https://github.com/sir-Unknown/pyCityVisitorParking/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI">
+  </a>
+</p>
 
-The library exposes a small provider-agnostic API for:
+> [!TIP]
+> Looking for the Home Assistant integration? See: [ha_City-Visitor-Parking](https://github.com/sir-Unknown/ha_City-Visitor-Parking)
+
+---
+
+## About this library
+
+**pyCityVisitorParking** is an async Python library for Dutch municipal visitor parking providers.
+
+It exposes a small provider-agnostic API for:
+
 - provider discovery
 - permit lookup
 - reservation management
 - favorites management
 
-It is designed for Home Assistant use, but can also be used directly in any async Python application.
+The library is designed primarily for Home Assistant use, but it can also be used directly in any async Python application.
+
+---
 
 ## Status
 
-Current bundled providers:
+Currently bundled providers:
+
 - DVS Portal
 - The Hague
 - 2park
 
 Provider manifests are discovered from `src/pycityvisitorparking/provider/` without importing all providers up front.
 
-Provider documentation:
-- DVS Portal: <https://github.com/sir-Unknown/pyCityVisitorParking/blob/main/src/pycityvisitorparking/provider/dvsportal/README.md>
-- The Hague: <https://github.com/sir-Unknown/pyCityVisitorParking/blob/main/src/pycityvisitorparking/provider/the_hague/README.md>
-- 2park: <https://github.com/sir-Unknown/pyCityVisitorParking/blob/main/src/pycityvisitorparking/provider/2park/README.md>
+Provider-specific documentation:
+
+- [DVS Portal](https://github.com/sir-Unknown/pyCityVisitorParking/blob/main/src/pycityvisitorparking/provider/dvsportal/README.md)
+- [The Hague](https://github.com/sir-Unknown/pyCityVisitorParking/blob/main/src/pycityvisitorparking/provider/the_hague/README.md)
+- [2park](https://github.com/sir-Unknown/pyCityVisitorParking/blob/main/src/pycityvisitorparking/provider/2park/README.md)
+
+---
 
 ## Supported municipalities
 
 For the exact `base_url`, `api_uri`, and provider-specific notes, see the provider README files.
 
-- DVS Portal: Apeldoorn, Bloemendaal, Delft, Den Bosch, Doetinchem (via Buha), Groningen, Haarlem, Harlingen, Heemstede, Heerenveen, Heerlen, Hengelo, Katwijk, Leiden, Leidschendam-Voorburg, Middelburg, Nissewaard, Oldenzaal, Rijswijk, Roermond, Schouwen-Duiveland, Sittard-Geleen, Smallingerland, Sudwest-Fryslan, Veere, Venlo, Vlissingen, Waadhoeke, Waalwijk, Weert, Zaanstad, Zevenaar, Zutphen, Zwolle
-- The Hague: The Hague
-- 2park: Amstelveen, Assen, Bergen op Zoom, Breda, Deventer, Dordrecht, Eindhoven, Emmen, Etten-Leur, Gorinchem, Hardenberg, Harderwijk, Maastricht, Oosterhout, Oss, Roosendaal, Sluis, Terneuzen, Tiel, Veenendaal, Vlaardingen
+- **DVS Portal**: Apeldoorn, Bloemendaal, Delft, Den Bosch, Doetinchem (via Buha), Groningen, Haarlem, Harlingen, Heemstede, Heerenveen, Heerlen, Hengelo, Katwijk, Leiden, Leidschendam-Voorburg, Middelburg, Nissewaard, Oldenzaal, Rijswijk, Roermond, Schouwen-Duiveland, Sittard-Geleen, Smallingerland, Sudwest-Fryslan, Veere, Venlo, Vlissingen, Waadhoeke, Waalwijk, Weert, Zaanstad, Zevenaar, Zutphen, Zwolle
+- **The Hague**: The Hague
+- **2park**: Amstelveen, Assen, Bergen op Zoom, Breda, Deventer, Dordrecht, Eindhoven, Emmen, Etten-Leur, Gorinchem, Hardenberg, Harderwijk, Maastricht, Oosterhout, Oss, Roosendaal, Sluis, Terneuzen, Tiel, Veenendaal, Vlaardingen
 
-The 2park list is non-exhaustive. Check <https://mijn.2park.nl> for the current provider coverage.
+---
 
 ## Installation
 
-Requires Python 3.14 or newer.
+Requires **Python 3.14** or newer.
 
 ```bash
 pip install pycityvisitorparking
 ```
+
+---
 
 ## Quickstart
 
@@ -69,18 +103,21 @@ async def main() -> None:
 asyncio.run(main())
 ```
 
+---
+
 ## Public API
 
 ### Client
 
 `Client` is the main entry point.
 
-- `list_providers()` returns available `ProviderInfo` objects.
-- `get_provider(provider_id, ...)` loads a specific provider on demand.
-- `Client` accepts an optional injected `aiohttp.ClientSession`.
-- If you do not inject a session, the client creates and owns its own session.
+- `list_providers()` returns available `ProviderInfo` objects
+- `get_provider(provider_id, ...)` loads a specific provider on demand
+- `Client` accepts an optional injected `aiohttp.ClientSession`
+- if you do not inject a session, the client creates and owns its own session
 
 Configuration options:
+
 - `base_url`: provider base URL
 - `api_uri`: optional provider API path
 - `timeout`: optional `aiohttp.ClientTimeout`
@@ -88,7 +125,8 @@ Configuration options:
 
 ### Data models
 
-The public data models are:
+Public data models:
+
 - `ProviderInfo`
 - `Permit`
 - `ZoneValidityBlock`
@@ -96,6 +134,7 @@ The public data models are:
 - `Favorite`
 
 Model highlights:
+
 - `ProviderInfo` includes `id`, `favorite_update_fields`, `reservation_update_fields`, and `balance_units`
 - `Permit` includes `id`, `remaining_balance`, `balance_unit`, and `zone_validity`
 - `ZoneValidityBlock` contains UTC ISO 8601 `start_time` and `end_time`
@@ -104,14 +143,16 @@ Model highlights:
 
 ### Standardized behavior
 
-- Timestamps are returned as UTC ISO 8601 strings.
-- License plates are normalized and validated.
-- The public API stays provider-agnostic.
-- Some update operations may be unsupported by a provider; inspect `favorite_update_fields` and `reservation_update_fields`.
+- timestamps are returned as UTC ISO 8601 strings
+- license plates are normalized and validated
+- the public API stays provider-agnostic
+- some update operations may be unsupported by a provider; inspect `favorite_update_fields` and `reservation_update_fields`
+
+---
 
 ## Common usage
 
-List providers:
+### List providers
 
 ```python
 import asyncio
@@ -128,7 +169,7 @@ async def main() -> None:
 asyncio.run(main())
 ```
 
-Manage a reservation:
+### Manage a reservation
 
 ```python
 import asyncio
@@ -158,7 +199,7 @@ async def main() -> None:
 asyncio.run(main())
 ```
 
-Manage favorites:
+### Manage favorites
 
 ```python
 import asyncio
@@ -183,6 +224,8 @@ async def main() -> None:
 
 asyncio.run(main())
 ```
+
+---
 
 ## Error handling
 
@@ -219,6 +262,8 @@ async with Client(base_url=base_url, api_uri=api_uri) as client:
         handle_provider_issue(exc)
 ```
 
+---
+
 ## Logging
 
 The library logs to the `pycityvisitorparking` logger using the standard Python `logging` module.
@@ -226,6 +271,8 @@ The library logs to the `pycityvisitorparking` logger using the standard Python 
 - credentials are not logged
 - full license plates are not logged
 - request context can be attached for clearer diagnostics
+
+---
 
 ## Development
 
@@ -245,9 +292,15 @@ uvx twine check dist/*
 
 Release notes and publishing are handled through GitHub Actions. See [docs/RELEASING.md](docs/RELEASING.md).
 
+---
+
 ## Provider development
 
-Providers live under `src/pycityvisitorparking/provider/<provider_id>/`.
+Providers live under:
+
+```text
+src/pycityvisitorparking/provider/<provider_id>/
+```
 
 A provider folder typically contains:
 
@@ -261,10 +314,13 @@ src/pycityvisitorparking/provider/<provider_id>/
   CHANGELOG.md
 ```
 
-Related docs:
-- Provider framework: [src/pycityvisitorparking/provider/README.md](src/pycityvisitorparking/provider/README.md)
-- Provider template: [docs/provider-template/README.md](docs/provider-template/README.md)
-- Provider development guide: [docs/provider-development/README.md](docs/provider-development/README.md)
+Related documentation:
+
+- [Provider framework](src/pycityvisitorparking/provider/README.md)
+- [Provider template](docs/provider-template/README.md)
+- [Provider development guide](docs/provider-development/README.md)
+
+---
 
 ## License
 

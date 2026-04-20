@@ -43,6 +43,10 @@ jobs:
         with:
           enable-cache: false
 
+      - name: Verify lockfile is up to date
+        run: |
+          uv lock --check
+
       - name: Lint (ruff)
         run: |
           uv run --group lint ruff check .

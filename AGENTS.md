@@ -391,6 +391,17 @@ Update docs whenever public behavior changes, especially for:
 
 ## 18) Tooling and local workflow
 
+### Branch workflow
+
+- Treat `dev` as the default working branch for day-to-day changes and small fixes.
+- Use a dedicated feature branch only for larger, clearly scoped change sets, especially when work spans multiple maintained surfaces such as library code, provider implementations, docs, packaging, or CI.
+- Do not put partial, half-reviewed, or long-running multi-commit work directly on `dev` when isolated review would be safer or clearer.
+- Keep feature branches focused on one clustered change set and do not use long-lived catch-all branches for unrelated work.
+- Feature branches SHOULD use a conventional prefix such as `feat/`, `fix/`, `refactor/`, `docs/`, `ci/`, `deps/`, `test/`, or `tests/`.
+- Do not add agent-related prefixes or suffixes such as `[codex]`, `[agent]`, or similar markers in branch names, commit titles, or pull request titles.
+- Keep feature branches current with `dev` as needed, but do not rewrite shared history once review is in progress unless explicitly requested.
+- After a feature branch is merged, delete it on GitHub and clean up the local branch as soon as it is no longer needed unless there is an explicit reason to keep it temporarily.
+
 Use `uv` for local development commands.
 
 Common commands:
@@ -433,6 +444,7 @@ Rules:
 
 - every pull request title must use one of these prefixes
 - commits should use the same title structure whenever practical
+- do not add agent-related prefixes or suffixes such as `[codex]`, `[agent]`, or similar markers in commit titles or pull request titles
 - keep titles concise and descriptive
 - align the title with the actual change scope
 - avoid vague titles such as `update stuff` or `fix issues`

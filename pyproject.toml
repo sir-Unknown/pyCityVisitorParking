@@ -26,8 +26,8 @@ dependencies = [
 ]
 
 [dependency-groups]
-lint = ["ruff==0.15.11", "pylint==4.0.5"]
-security = ["zizmor==1.24.0"]
+lint = ["ruff==0.15.12", "pylint==4.0.5"]
+security = ["zizmor==1.24.1"]
 test = [
   "pytest==9.0.3",
   "pytest-asyncio==1.3.0",
@@ -35,9 +35,9 @@ test = [
   "jsonschema==4.26.0",
 ]
 schema = ["jsonschema==4.26.0", "pytest==9.0.3", "pytest-asyncio==1.3.0"]
-typecheck = ["pyright==1.1.408", "pytest==9.0.3"]
+typecheck = ["pyright==1.1.409", "pytest==9.0.3"]
 dev = [
-  "pre-commit==4.5.1",
+  "pre-commit==4.6.0",
   { include-group = "lint" },
   { include-group = "security" },
   { include-group = "test" },

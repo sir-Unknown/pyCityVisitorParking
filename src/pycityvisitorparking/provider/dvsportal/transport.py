@@ -236,6 +236,12 @@ class PortalTransport:
                 )
                 if response.status in (401, 403):
                     raise AuthError("Authentication failed.")
+                if (
+                    response.status >= 500
+                    and "html" in (content_type or "").lower()
+                    and self._state.credentials
+                ):
+                    raise AuthError("Session expired: HTML response to API call.")
                 raise ProviderError(f"Provider request failed with status {response.status}.")
             self._plogger.response_status(response.status)
             if expect_json:
@@ -285,6 +291,7 @@ class PortalTransport:
         self._state.token = None
         self._state.auth_header_value = None
         self._state.session_authenticated = False
+        self._state.app_env_fetched = False
         if not self._state.credentials:
             raise AuthError("Authentication required.")
         await self._provider.login(self._state.credentials)

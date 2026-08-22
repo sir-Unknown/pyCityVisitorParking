@@ -12,6 +12,7 @@ from pycityvisitorparking.provider.dvsportal.api import Provider
 from pycityvisitorparking.provider.dvsportal.const import (
     DEFAULT_API_URI,
     LOGIN_ENDPOINT,
+    LOGIN_GETBASE_ENDPOINT,
     RESERVATION_CREATE_ENDPOINT,
     RESERVATION_UPDATE_ENDPOINT,
     XSRF_HEADER,
@@ -82,6 +83,18 @@ PERMIT_SAMPLE_NAIVE = {
             "LicensePlates": [],
         }
     ],
+}
+
+
+SESSION_EXPIRED_HTML = (
+    "<!DOCTYPE html><html lang='nl'><head><title>Bezoekers App</title>"
+    "<base href='/DVSPortal/' /></head><body>Portal</body></html>"
+)
+
+CREDENTIALS_SAMPLE = {
+    "username": "user",
+    "password": "secret",
+    "permit_media_type_id": "1",
 }
 
 
@@ -967,6 +980,146 @@ async def test_non_html_invalid_json_stays_provider_error() -> None:
     with pytest.raises(ProviderError) as excinfo:
         await provider._transport.request_json("POST", "/login")
     assert not isinstance(excinfo.value, ServiceUnavailableError)
+
+
+class _ScriptedResponse(_FakeResponse):
+    def __init__(self, *, status: int, headers: dict[str, str], body: Any) -> None:
+        super().__init__(status=status, text_data=str(body), headers=headers)
+        self._body = body
+
+    async def json(self) -> object:
+        return self._body
+
+
+def _html_error(status: int = 500) -> _ScriptedResponse:
+    return _ScriptedResponse(
+        status=status,
+        headers={"Content-Type": "text/html; charset=utf-8"},
+        body=SESSION_EXPIRED_HTML,
+    )
+
+
+def _json_ok() -> _ScriptedResponse:
+    return _ScriptedResponse(
+        status=200,
+        headers={"Content-Type": "application/json"},
+        body={"ok": True},
+    )
+
+
+class _ScriptedSession:
+    def __init__(self, responses: list[_FakeResponse]) -> None:
+        self.cookie_jar = None
+        self._responses = responses
+        self.requests = 0
+
+    def request(self, method: str, url: str, **kwargs: Any) -> _FakeRequestContext:
+        self.requests += 1
+        return _FakeRequestContext(self._responses.pop(0))
+
+
+def _scripted_provider(
+    responses: list[_FakeResponse],
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    credentials: bool = True,
+) -> tuple[Provider, _ScriptedSession, list[int]]:
+    session = _ScriptedSession(responses)
+    provider = Provider(session, _manifest(), base_url="https://example")  # type: ignore[arg-type]
+    provider._state.session_authenticated = True
+    provider._state.app_env_fetched = True
+    if credentials:
+        provider._state.credentials = dict(CREDENTIALS_SAMPLE)
+    logins: list[int] = []
+
+    async def _fake_login(credentials: dict[str, str]) -> None:
+        logins.append(1)
+        provider._state.session_authenticated = True
+
+    monkeypatch.setattr(provider, "login", _fake_login)
+    return provider, session, logins
+
+
+@pytest.mark.asyncio
+async def test_html_500_reauthenticates_once_and_retries(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An HTML 500 with cached credentials is session expiry: re-login, retry once."""
+    provider, session, logins = _scripted_provider([_html_error(), _json_ok()], monkeypatch)
+
+    data = await provider._transport.request_json(
+        "POST", LOGIN_GETBASE_ENDPOINT, allow_reauth=True, include_auth=True
+    )
+
+    assert data == {"ok": True}
+    assert len(logins) == 1
+    assert session.requests == 2
+    assert provider._state.app_env_fetched is False
+
+
+@pytest.mark.asyncio
+async def test_html_500_after_reauth_is_service_unavailable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A persistent HTML 500 is an outage and must not surface as an auth failure."""
+    provider, session, logins = _scripted_provider([_html_error(), _html_error()], monkeypatch)
+
+    with pytest.raises(ServiceUnavailableError) as excinfo:
+        await provider._transport.request_json(
+            "POST", LOGIN_GETBASE_ENDPOINT, allow_reauth=True, include_auth=True
+        )
+
+    assert not isinstance(excinfo.value, AuthError)
+    assert len(logins) == 1
+    assert session.requests == 2
+
+
+@pytest.mark.asyncio
+async def test_html_500_without_reauth_is_service_unavailable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Login-style calls (no reauth) must not turn an HTML 500 into an auth failure."""
+    provider, _, logins = _scripted_provider([_html_error()], monkeypatch)
+
+    with pytest.raises(ServiceUnavailableError) as excinfo:
+        await provider._transport.request_json("POST", LOGIN_ENDPOINT, allow_reauth=False)
+
+    assert not isinstance(excinfo.value, AuthError)
+    assert logins == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("response", "credentials"),
+    [
+        pytest.param(_html_error(), False, id="html-500-without-credentials"),
+        pytest.param(
+            _ScriptedResponse(
+                status=500,
+                headers={"Content-Type": "application/json"},
+                body={"Error": "backend failure"},
+            ),
+            True,
+            id="json-500",
+        ),
+        pytest.param(_html_error(502), True, id="html-502"),
+        pytest.param(_html_error(503), True, id="html-503"),
+    ],
+)
+async def test_other_server_errors_do_not_trigger_reauth(
+    response: _FakeResponse,
+    credentials: bool,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    provider, _, logins = _scripted_provider([response], monkeypatch, credentials=credentials)
+
+    with pytest.raises(ProviderError) as excinfo:
+        await provider._transport.request_json(
+            "POST", LOGIN_GETBASE_ENDPOINT, allow_reauth=True, include_auth=True
+        )
+
+    assert not isinstance(excinfo.value, AuthError)
+    assert logins == []
 
 
 @pytest.mark.asyncio

@@ -19,6 +19,10 @@ if TYPE_CHECKING:
     from .session import PortalSessionState
 
 
+class _SessionExpiredError(AuthError):
+    """HTML 500 from the portal, which is how an expired session is reported."""
+
+
 class PortalTransport:
     """Encapsulate authenticated request behavior for portal variants."""
 
@@ -160,17 +164,30 @@ class PortalTransport:
             include_auth=include_auth,
         )
 
+        reauthenticated = False
+
         async def perform_request() -> Any:
-            return await self._request_with_backoff(
-                method,
-                url,
-                expect_json=True,
-                json=json,
-                headers=request_headers,
-                operation=operation,
-            )
+            try:
+                return await self._request_with_backoff(
+                    method,
+                    url,
+                    expect_json=True,
+                    json=json,
+                    headers=request_headers,
+                    operation=operation,
+                )
+            except _SessionExpiredError as exc:
+                if allow_reauth and not reauthenticated:
+                    raise
+                # Re-login did not help (or none is allowed): the portal is
+                # failing, not the session, so do not trigger an auth flow.
+                raise ServiceUnavailableError(
+                    "Provider returned an HTML error page instead of JSON."
+                ) from exc
 
         async def handle_reauth() -> None:
+            nonlocal reauthenticated
+            reauthenticated = True
             await self._reauthenticate()
             request_headers.clear()
             request_headers.update(
@@ -236,6 +253,12 @@ class PortalTransport:
                 )
                 if response.status in (401, 403):
                     raise AuthError("Authentication failed.")
+                if (
+                    response.status == 500
+                    and "html" in (content_type or "").lower()
+                    and self._state.credentials
+                ):
+                    raise _SessionExpiredError("Session expired: HTML response to API call.")
                 raise ProviderError(f"Provider request failed with status {response.status}.")
             self._plogger.response_status(response.status)
             if expect_json:
@@ -291,6 +314,7 @@ class PortalTransport:
         self._state.token = None
         self._state.auth_header_value = None
         self._state.session_authenticated = False
+        self._state.app_env_fetched = False
         if not self._state.credentials:
             raise AuthError("Authentication required.")
         await self._provider.login(self._state.credentials)

@@ -12,6 +12,7 @@ from pycityvisitorparking.provider.dvsportal.api import Provider
 from pycityvisitorparking.provider.dvsportal.const import (
     DEFAULT_API_URI,
     LOGIN_ENDPOINT,
+    LOGIN_GETBASE_ENDPOINT,
     RESERVATION_CREATE_ENDPOINT,
     RESERVATION_UPDATE_ENDPOINT,
     XSRF_HEADER,
@@ -82,6 +83,18 @@ PERMIT_SAMPLE_NAIVE = {
             "LicensePlates": [],
         }
     ],
+}
+
+
+SESSION_EXPIRED_HTML = (
+    "<!DOCTYPE html><html lang='nl'><head><title>Bezoekers App</title>"
+    "<base href='/DVSPortal/' /></head><body>Portal</body></html>"
+)
+
+CREDENTIALS_SAMPLE = {
+    "username": "user",
+    "password": "secret",
+    "permit_media_type_id": "1",
 }
 
 
@@ -929,6 +942,89 @@ async def test_start_reservation_failure_logs_compact_html_summary(
     assert "/DVSPortal/" in caplog.text
     assert "GRONINGEN-HTML-MARKER" not in caplog.text
     assert "body_excerpt" not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_html_error_with_credentials_raises_auth_error() -> None:
+    """An HTML 5xx on an API call is session expiry when credentials are cached."""
+    provider = Provider(
+        _FailingSession(
+            _FakeResponse(
+                status=500,
+                text_data=SESSION_EXPIRED_HTML,
+                headers={"Content-Type": "text/html; charset=utf-8"},
+            )
+        ),
+        _manifest(),
+        base_url="https://example",
+    )
+    provider._state.session_authenticated = True
+    provider._state.credentials = dict(CREDENTIALS_SAMPLE)
+
+    with pytest.raises(AuthError, match="Session expired"):
+        await provider._transport._request_with_backoff(
+            "POST",
+            f"https://example{DEFAULT_API_URI}{LOGIN_GETBASE_ENDPOINT}",
+            expect_json=True,
+            json={},
+            headers={},
+            operation="fetch_all",
+        )
+
+
+@pytest.mark.asyncio
+async def test_html_error_without_credentials_stays_provider_error() -> None:
+    """Without cached credentials there is nothing to reauthenticate with."""
+    provider = Provider(
+        _FailingSession(
+            _FakeResponse(
+                status=500,
+                text_data=SESSION_EXPIRED_HTML,
+                headers={"Content-Type": "text/html; charset=utf-8"},
+            )
+        ),
+        _manifest(),
+        base_url="https://example",
+    )
+    provider._state.session_authenticated = True
+
+    with pytest.raises(ProviderError, match="status 500"):
+        await provider._transport._request_with_backoff(
+            "POST",
+            f"https://example{DEFAULT_API_URI}{LOGIN_GETBASE_ENDPOINT}",
+            expect_json=True,
+            json={},
+            headers={},
+            operation="fetch_all",
+        )
+
+
+@pytest.mark.asyncio
+async def test_json_error_with_credentials_stays_provider_error() -> None:
+    """A JSON 5xx is a real backend fault and must not look like session expiry."""
+    provider = Provider(
+        _FailingSession(
+            _FakeResponse(
+                status=500,
+                text_data='{"Error": "backend failure"}',
+                headers={"Content-Type": "application/json; charset=utf-8"},
+            )
+        ),
+        _manifest(),
+        base_url="https://example",
+    )
+    provider._state.session_authenticated = True
+    provider._state.credentials = dict(CREDENTIALS_SAMPLE)
+
+    with pytest.raises(ProviderError, match="status 500"):
+        await provider._transport._request_with_backoff(
+            "POST",
+            f"https://example{DEFAULT_API_URI}{LOGIN_GETBASE_ENDPOINT}",
+            expect_json=True,
+            json={},
+            headers={},
+            operation="fetch_all",
+        )
 
 
 @pytest.mark.asyncio

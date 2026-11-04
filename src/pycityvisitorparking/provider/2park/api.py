@@ -38,6 +38,7 @@ from .const import (
     PARAM_TIMESTART,
     PARAM_VALID_UNTIL,
     PRODUCT_DETAILS_ENDPOINT,
+    SESSION_TIMEOUT_MINOR,
     START_ACTION_ENDPOINT,
     STOP_ACTION_ENDPOINT,
     TIME_FORMAT,
@@ -302,15 +303,12 @@ class Provider(BaseProvider):
         """Return permit, reservations, and favorites with two parallel provider fetches."""
         self._plogger.operation_started("fetch_all")
         await self._ensure_authenticated()
-        permit_data, details = await asyncio.gather(
-            self._post_form(
-                BALANCE_ENDPOINT,
-                {"product_id": self._product_id or "", "locale": LOCALE},
-            ),
-            self._post_form(
-                PRODUCT_DETAILS_ENDPOINT,
-                {"product_id": self._product_id or "", "locale": LOCALE},
-            ),
+        # Reauth around the pair, not per request: two parallel logins after a
+        # session timeout could invalidate each other's fresh session.
+        permit_data, details = await self._request_with_optional_reauth(
+            allow_reauth=True,
+            request=self._fetch_balance_and_details,
+            on_reauth=self._reauthenticate,
         )
         permit = self._map_permit(permit_data)
         reservations = self._map_reservation_list(details)
@@ -321,6 +319,13 @@ class Provider(BaseProvider):
             favorites=len(favorites),
         )
         return permit, reservations, favorites
+
+    async def _fetch_balance_and_details(self) -> tuple[Any, Any]:
+        form = {"product_id": self._product_id or "", "locale": LOCALE}
+        return await asyncio.gather(
+            self._post_form(BALANCE_ENDPOINT, form, allow_reauth=False),
+            self._post_form(PRODUCT_DETAILS_ENDPOINT, form, allow_reauth=False),
+        )
 
     async def add_favorite(self, license_plate: str, name: str | None = None) -> Favorite:
         """Add a favorite."""
@@ -587,10 +592,17 @@ class Provider(BaseProvider):
                 self._plogger.request_failure(response.status)
                 raise ProviderError(f"Provider request failed with status {response.status}.")
             try:
-                return await response.json(content_type=None)
+                data = await response.json(content_type=None)
             except (aiohttp.ContentTypeError, ValueError) as exc:
                 self._plogger.invalid_json(await response.text())
                 raise ProviderError("Response did not contain valid JSON.") from exc
+            if _is_session_timeout(data):
+                # 2park reports an expired session as HTTP 200 with this status
+                # and no data; without this the reads map to zero balance and
+                # no favorites instead of triggering a reauth.
+                self._plogger.request_failure(response.status)
+                raise AuthError("Session expired.")
+            return data
 
         return await self._request_with_retries(
             "POST",
@@ -598,6 +610,14 @@ class Provider(BaseProvider):
             request_kwargs={"data": form_data, "headers": DEFAULT_HEADERS},
             response_handler=handle_response,
         )
+
+
+def _is_session_timeout(data: Any) -> bool:
+    if not isinstance(data, dict):
+        return False
+    status = data.get("status")
+    code = status.get("code") if isinstance(status, dict) else None
+    return isinstance(code, dict) and code.get("minor") == SESSION_TIMEOUT_MINOR
 
 
 def _parse_balance_amount(balance: dict[str, Any]) -> float:

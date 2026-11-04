@@ -580,6 +580,61 @@ async def test_http_401_triggers_reauth_and_retries() -> None:
     assert permit.remaining_balance == 120
 
 
+_SESSION_TIMEOUT = {
+    "status": {"code": {"major": "FAIL", "minor": "SESSION_TIMEOUT"}, "message": ""}
+}
+
+
+async def test_session_timeout_triggers_reauth_and_retries() -> None:
+    # 2park answers an expired session with HTTP 200 and SESSION_TIMEOUT, no data.
+    provider, _ = await _logged_in_provider(
+        [
+            _FakeResponse(json_data=_AUTH_OK),
+            _FakeResponse(json_data=_CATEGORIES),
+            _FakeResponse(json_data=_SESSION_TIMEOUT),  # get_permit attempt 0
+            _FakeResponse(json_data=_AUTH_OK),  # reauth
+            _FakeResponse(json_data=_BALANCE),  # get_permit attempt 1
+        ]
+    )
+    permit = await provider.get_permit()
+    assert permit.remaining_balance == 120
+
+
+async def test_session_timeout_persisting_raises_auth_error() -> None:
+    provider, _ = await _logged_in_provider(
+        [
+            _FakeResponse(json_data=_AUTH_OK),
+            _FakeResponse(json_data=_CATEGORIES),
+            _FakeResponse(json_data=_SESSION_TIMEOUT),
+            _FakeResponse(json_data=_AUTH_OK),
+            _FakeResponse(json_data=_SESSION_TIMEOUT),
+        ]
+    )
+    with pytest.raises(AuthError):
+        await provider.get_permit()
+
+
+async def test_fetch_all_session_timeout_reauths_once_and_retries() -> None:
+    provider, session = await _logged_in_provider(
+        [
+            _FakeResponse(json_data=_AUTH_OK),
+            _FakeResponse(json_data=_CATEGORIES),
+            _FakeResponse(json_data=_SESSION_TIMEOUT),  # balance
+            _FakeResponse(json_data=_SESSION_TIMEOUT),  # product details
+            _FakeResponse(json_data=_AUTH_OK),  # single reauth
+            _FakeResponse(json_data=_BALANCE),
+            _FakeResponse(json_data=_PRODUCT_DETAILS_WITH_MEMBERS),
+        ]
+    )
+    permit, reservations, favorites = await provider.fetch_all()
+    assert session.calls == 7
+    auth_calls = [r for r in session.requests if r["url"].endswith("/check_credentials.json")]
+    assert len(auth_calls) == 2  # initial login + one reauth
+    assert permit.remaining_balance == 120
+    assert len(reservations) == 1
+    assert len(favorites) == 1
+
+
 async def test_http_500_raises_provider_error() -> None:
     provider, _ = await _logged_in_provider(
         [

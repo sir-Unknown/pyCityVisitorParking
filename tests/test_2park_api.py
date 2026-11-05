@@ -635,6 +635,29 @@ async def test_fetch_all_session_timeout_reauths_once_and_retries() -> None:
     assert len(favorites) == 1
 
 
+async def test_reauth_clears_provider_cookies_before_login() -> None:
+    class _Jar:
+        def __init__(self) -> None:
+            self.cleared: list[str] = []
+
+        def clear_domain(self, domain: str) -> None:
+            self.cleared.append(domain)
+
+    provider, session = await _logged_in_provider(
+        [
+            _FakeResponse(json_data=_AUTH_OK),
+            _FakeResponse(json_data=_CATEGORIES),
+            _FakeResponse(json_data=_SESSION_TIMEOUT),
+            _FakeResponse(json_data=_AUTH_OK),
+            _FakeResponse(json_data=_BALANCE),
+        ]
+    )
+    jar = _Jar()
+    session.cookie_jar = jar  # type: ignore[attr-defined]
+    await provider.get_permit()
+    assert jar.cleared == ["mijn.2park.nl"]
+
+
 async def test_http_500_raises_provider_error() -> None:
     provider, _ = await _logged_in_provider(
         [

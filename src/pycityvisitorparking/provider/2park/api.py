@@ -8,6 +8,7 @@ import re
 from collections.abc import Mapping
 from datetime import datetime
 from typing import Any
+from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import aiohttp
@@ -449,7 +450,17 @@ class Provider(BaseProvider):
         if not self._credentials:
             raise AuthError("Authentication required.")
         self._plogger.reauthenticating()
+        self._clear_session_cookies()
         await self.login(self._credentials)
+
+    def _clear_session_cookies(self) -> None:
+        # A login sent with the expired JSESSIONID still answers OK, but the
+        # following reads keep returning SESSION_TIMEOUT. Only a login without
+        # the old cookie (as after a restart) yields a working session.
+        cookie_jar = getattr(self._session, "cookie_jar", None)
+        host = urlsplit(self._base_url or "").hostname
+        if cookie_jar is not None and host:
+            cookie_jar.clear_domain(host)
 
     def _map_permit(self, data: Any) -> Permit:
         balance = data.get("data", {}).get("balance", {}) if isinstance(data, dict) else {}

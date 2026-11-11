@@ -80,8 +80,8 @@ A session with a dummy cookie jar cannot sign in.
 ## Reservation behavior
 
 - `start_reservation` uses the permit's only zone. A permit that covers several
-  zones is refused with `ProviderError`, because the generic contract has no
-  zone choice and a guess could park in the wrong zone.
+  zones is refused with `ProviderError` (`error_code="not_supported"`), because
+  the generic contract has no zone choice and a guess could park in the wrong zone.
 - The portal works with minutes: seconds are dropped from start and end times,
   and a start in the past starts the reservation in the current minute.
 - Like the portal's own client, the provider prices the parking action before

@@ -8,7 +8,8 @@ from typing import TYPE_CHECKING, Any
 
 import aiohttp
 
-from ...exceptions import AuthError, ProviderError, ServiceUnavailableError
+from ...exceptions import AuthError, RateLimitError, ServiceUnavailableError
+from ..base import raise_for_failed_status
 from ..logger import ProviderLogger
 from .const import APP_ENV_SCRIPT, AUTH_HEADER, DEFAULT_HEADERS, RETRY_AFTER_HEADER, XSRF_HEADER
 
@@ -242,6 +243,13 @@ class PortalTransport:
             if not 200 <= response.status < 300:
                 body = await response.text()
                 content_type = response.headers.get("Content-Type")
+                # The portal reports an expired session as an HTML 500; it is
+                # recovered by a re-login, so it is expected rather than actionable.
+                session_expired = (
+                    response.status == 500
+                    and "html" in (content_type or "").lower()
+                    and bool(self._state.credentials)
+                )
                 self._plogger.request_failure(
                     response.status,
                     method=method,
@@ -250,16 +258,13 @@ class PortalTransport:
                     payload=json,
                     body=body,
                     content_type=content_type,
+                    expected=True if session_expired else None,
                 )
                 if response.status in (401, 403):
                     raise AuthError("Authentication failed.")
-                if (
-                    response.status == 500
-                    and "html" in (content_type or "").lower()
-                    and self._state.credentials
-                ):
+                if session_expired:
                     raise _SessionExpiredError("Session expired: HTML response to API call.")
-                raise ProviderError(f"Provider request failed with status {response.status}.")
+                raise_for_failed_status(response.status)
             self._plogger.response_status(response.status)
             if expect_json:
                 try:
@@ -292,17 +297,14 @@ class PortalTransport:
         if delay > 0:
             await asyncio.sleep(delay)
         if method.upper() != "GET" or attempt >= attempts - 1:
-            raise ProviderError("Provider rate limit exceeded.")
+            raise RateLimitError("Provider rate limit exceeded.")
 
     async def _reauthenticate(self) -> None:
         """Clear auth state and re-login using cached credentials."""
-        self._plogger.warning_block(
-            "reauthenticating",
-            {
-                "token-present": self._state.token is not None,
-                "session-authenticated": self._state.session_authenticated,
-                "credentials-present": bool(self._state.credentials),
-            },
+        self._plogger.reauthenticating(
+            token_present=self._state.token is not None,
+            session_authenticated=self._state.session_authenticated,
+            credentials_present=bool(self._state.credentials),
         )
         self._state.token = None
         self._state.auth_header_value = None

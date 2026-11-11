@@ -23,12 +23,16 @@ Check [mijn.2park.nl](https://mijn.2park.nl) for the current list of supported m
 | `base_url`     | Yes      | Always `https://mijn.2park.nl` |
 | `username`     | Yes      | Your 2park account email address |
 | `password`     | Yes      | Your 2park account password |
-| `product_id`   | No       | Product ID to use (auto-detected if omitted) |
-| `location`     | No       | Parking location code (auto-detected if omitted) |
+| `permit_id`    | No       | Product ID to use (auto-detected if omitted); `product_id` is accepted as an alias |
 
-When you have a single parking product on your account, `product_id` and `location`
-can be omitted and are detected automatically at login. If you have multiple products,
-pass the `product_id` of the product you want to use.
+When you have a single parking product on your account, `permit_id` can be omitted
+and the product is detected automatically at login. If you have multiple products,
+pass the `permit_id` of the product you want to use. The parking location of the
+product is always resolved internally and reused on reauthentication; callers do
+not pass or persist it.
+
+A rejected action (status other than `OK`) raises `ProviderError` with
+`error_code="provider_rejected"`.
 
 ## Capabilities
 
@@ -55,12 +59,14 @@ pass the `product_id` of the product you want to use.
 import asyncio
 from pycityvisitorparking import Client
 
+
 async def main() -> None:
     async with Client(base_url="https://mijn.2park.nl") as client:
         provider = await client.get_provider("2park")
         await provider.login(credentials={"username": "user@example.com", "password": "secret"})
         permit = await provider.get_permit()
         print(permit.id, permit.remaining_balance)
+
 
 asyncio.run(main())
 ```

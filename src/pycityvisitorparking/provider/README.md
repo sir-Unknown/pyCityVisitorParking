@@ -77,6 +77,10 @@ Do not hardcode `base_url` or `api_uri` in provider code.
 fields when needed. Validate required keys and raise `ValidationError` for
 missing values. Raise `AuthError` for invalid credentials or expired sessions.
 
+Anything resolved during login (product, location, permit media type, tokens) is
+provider state: keep it internal, cache it for reauthentication, and do not expose
+it through the public API.
+
 Do not log credentials or tokens.
 
 ## Time handling (UTC required)
@@ -130,8 +134,8 @@ Set `capabilities.favorite_update_fields` in the manifest:
 - Include `license_plate` and/or `name` when updates are supported.
 
 When `favorite_update_fields` is empty, `update_favorite()` raises
-`ProviderError`. Providers should still implement `_update_favorite_native()` to
-raise `ProviderError` if called unexpectedly.
+`ProviderError` with `error_code=ErrorCode.NOT_SUPPORTED`. Providers should still
+implement `_update_favorite_native()` to raise the same error if called unexpectedly.
 
 ## Reservation update behavior
 
@@ -141,7 +145,7 @@ Set `capabilities.reservation_update_fields` in the manifest:
 - Include any supported fields: `start_time`, `end_time`, `name`.
 
 When `reservation_update_fields` is empty, `update_reservation()` should raise
-`ProviderError`.
+`ProviderError` with `error_code=ErrorCode.NOT_SUPPORTED`.
 
 ## Public models only
 

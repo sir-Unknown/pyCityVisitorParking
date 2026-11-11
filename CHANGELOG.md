@@ -3,6 +3,7 @@
 ## Unreleased
 
 - 2park: recover from an expired session. The provider answers it with HTTP 200 and status `SESSION_TIMEOUT`, which was mapped to a zero balance and no favorites until the integration was reloaded.
+- Log the internal "reauth triggered" step at debug instead of warning level; an expired session that is renewed transparently is an expected path.
 
 ## 0.5.16
 

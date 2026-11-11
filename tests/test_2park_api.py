@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import asyncio
+
 # Import via importlib since "2park" is not a valid Python identifier
 import importlib
 import json
+import logging
 from datetime import UTC, datetime
 from typing import Any
 
@@ -637,11 +640,13 @@ async def test_fetch_all_session_timeout_reauths_once_and_retries() -> None:
 
 async def test_reauth_clears_provider_cookies_before_login() -> None:
     class _Jar:
-        def __init__(self) -> None:
-            self.cleared: list[str] = []
+        def __init__(self, session: _SequenceSession) -> None:
+            self._session = session
+            self.cleared: list[tuple[str, int]] = []
 
         def clear_domain(self, domain: str) -> None:
-            self.cleared.append(domain)
+            # Remember how many requests were sent when the cookies were cleared.
+            self.cleared.append((domain, len(self._session.requests)))
 
     provider, session = await _logged_in_provider(
         [
@@ -652,10 +657,81 @@ async def test_reauth_clears_provider_cookies_before_login() -> None:
             _FakeResponse(json_data=_BALANCE),
         ]
     )
-    jar = _Jar()
+    jar = _Jar(session)
     session.cookie_jar = jar  # type: ignore[attr-defined]
     await provider.get_permit()
-    assert jar.cleared == ["mijn.2park.nl"]
+    # Cleared after the timed-out read (3 requests so far) and before the very next
+    # request, which must be the reauth login.
+    assert jar.cleared == [("mijn.2park.nl", 3)]
+    assert session.requests[3]["url"].endswith("/check_credentials.json")
+
+
+class _ExpiringSession:
+    """Session where reads fail with SESSION_TIMEOUT until a login renews it."""
+
+    def __init__(self) -> None:
+        self.expired = False
+        self.logins = 0
+
+    def request(self, method: str, url: str, **kwargs: Any) -> _ExpiringContext:
+        return _ExpiringContext(self, url)
+
+
+class _ExpiringContext:
+    def __init__(self, session: _ExpiringSession, url: str) -> None:
+        self._session = session
+        self._url = url
+
+    async def __aenter__(self) -> _FakeResponse:
+        await asyncio.sleep(0)  # let concurrent requests interleave
+        session = self._session
+        if self._url.endswith("/check_credentials.json"):
+            session.logins += 1
+            session.expired = False
+            return _FakeResponse(json_data=_AUTH_OK)
+        if self._url.endswith("/get_categories.json"):
+            return _FakeResponse(json_data=_CATEGORIES)
+        if session.expired:
+            return _FakeResponse(json_data=_SESSION_TIMEOUT)
+        if self._url.endswith("/get_balance.json"):
+            return _FakeResponse(json_data=_BALANCE)
+        return _FakeResponse(json_data=_PRODUCT_DETAILS_WITH_MEMBERS)
+
+    async def __aexit__(self, exc_type, exc, tb) -> bool:
+        return False
+
+
+async def test_concurrent_requests_share_one_reauth() -> None:
+    session = _ExpiringSession()
+    provider = _provider(session)
+    await provider.login(credentials={"username": "u@e.com", "password": "p"})
+    session.expired = True
+
+    # Three reads on the expired session at once: fetch_all (two requests) and get_permit.
+    (permit_all, _reservations, _favorites), permit = await asyncio.gather(
+        provider.fetch_all(), provider.get_permit()
+    )
+
+    assert session.logins == 2  # initial login + a single reauth for all of them
+    assert permit_all.remaining_balance == 120
+    assert permit.remaining_balance == 120
+
+
+async def test_session_timeout_reauth_does_not_log_warnings(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    provider, _ = await _logged_in_provider(
+        [
+            _FakeResponse(json_data=_AUTH_OK),
+            _FakeResponse(json_data=_CATEGORIES),
+            _FakeResponse(json_data=_SESSION_TIMEOUT),
+            _FakeResponse(json_data=_AUTH_OK),
+            _FakeResponse(json_data=_BALANCE),
+        ]
+    )
+    with caplog.at_level(logging.DEBUG):
+        await provider.get_permit()
+    assert [r for r in caplog.records if r.levelno >= logging.WARNING] == []
 
 
 async def test_http_500_raises_provider_error() -> None:

@@ -36,6 +36,9 @@ runtime package and is ignored by discovery.
   to `[]` and ensure `update_favorite()` raises `ProviderError`.
 - If reservation updates are unsupported, set `capabilities.reservation_update_fields`
   to `[]` and ensure `update_reservation()` raises `ProviderError`.
+- Call `_validate_zone_id(zone_id)` first in `start_reservation()`. Only set
+  `capabilities.zone_selection` to `true` when the provider fills `Permit.zones`
+  and books in the chosen zone (see the provider development README).
 
 ## Testing
 

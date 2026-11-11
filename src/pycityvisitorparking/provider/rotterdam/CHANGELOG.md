@@ -12,5 +12,13 @@
 - Permit data and the successful parking-action path are based on the portal's
   published data model and have not been verified against an account with a
   permit; see the provider README.
-- Document the deliberate design decisions (single zone, first permit, runtime
+- Document the deliberate design decisions (zones, first permit, runtime
   operation ids, minute resolution) in the README and mark them in the code.
+- Support zone selection per reservation: `Permit.zones` lists the permit's
+  zones (identified by name, default zone first) with their own parking times,
+  `start_reservation` accepts a `zone_id` and uses the default zone without
+  one, and `Reservation.zone_id` reports the zone of a parking action. Permits
+  with several zones are no longer refused.
+- Merge overlapping and touching parking-time windows into one (for example
+  `09:00-24:00` and `00:00-01:00` local become `09:00-01:00`), and report each
+  zone's windows separately instead of combining all zones.

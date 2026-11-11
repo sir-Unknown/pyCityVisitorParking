@@ -182,11 +182,16 @@ class BaseProvider(ABC):
         return self._manifest.reservation_update_fields
 
     @property
+    def zone_selection_possible(self) -> bool:
+        return self._manifest.zone_selection
+
+    @property
     def info(self) -> ProviderInfo:
         return ProviderInfo(
             id=self._manifest.id,
             favorite_update_fields=self._manifest.favorite_update_fields,
             reservation_update_fields=self._manifest.reservation_update_fields,
+            zone_selection=self._manifest.zone_selection,
         )
 
     @property
@@ -292,6 +297,16 @@ class BaseProvider(ABC):
         if not text:
             raise ValidationError(f"{field} is required.")
         return text
+
+    def _validate_zone_id(self, zone_id: str | None) -> str | None:
+        """Return the normalized ``zone_id`` of ``start_reservation`` (``None`` = default)."""
+        if zone_id is None:
+            return None
+        if not self.zone_selection_possible:
+            raise ValidationError("zone_id is not supported by this provider.")
+        if not isinstance(zone_id, str):
+            raise ValidationError("zone_id must be a string.")
+        return self._require_id(zone_id, "zone_id")
 
     def _coerce_response_id(self, value: Any, field: str) -> str:
         if value is None:
@@ -521,8 +536,13 @@ class BaseProvider(ABC):
         start_time: datetime,
         end_time: datetime,
         name: str | None = None,
+        zone_id: str | None = None,
     ) -> Reservation:
-        """Start a reservation for a license plate."""
+        """Start a reservation for a license plate.
+
+        ``zone_id`` selects one of ``Permit.zones``; ``None`` uses the default zone. Providers
+        validate it with ``_validate_zone_id`` before any request.
+        """
 
     @abstractmethod
     async def update_reservation(

@@ -185,10 +185,12 @@ class Provider(BaseProvider):
         start_time: datetime,
         end_time: datetime,
         name: str | None = None,
+        zone_id: str | None = None,
     ) -> Reservation:
         """Start a reservation for a license plate."""
         async with self._operation_guard():
             self._plogger.operation_started("start_reservation")
+            self._validate_zone_id(zone_id)
             start_time_utc, end_time_utc = self._validate_reservation_times(
                 start_time,
                 end_time,

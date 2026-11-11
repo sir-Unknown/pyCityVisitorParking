@@ -25,6 +25,7 @@ from .models import (
     Permit,
     ProviderInfo,
     Reservation,
+    Zone,
     ZoneValidityBlock,
 )
 
@@ -53,6 +54,7 @@ __all__ = [
     "ServiceUnavailableError",
     "TimeoutError",
     "ValidationError",
+    "Zone",
     "ZoneValidityBlock",
     "__version__",
 ]

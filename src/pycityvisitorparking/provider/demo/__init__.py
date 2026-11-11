@@ -6,8 +6,8 @@ import uuid
 from collections.abc import Mapping
 from datetime import datetime
 
-from ...exceptions import ProviderError
-from ...models import Favorite, Permit, Reservation, ZoneValidityBlock
+from ...exceptions import ProviderError, ValidationError
+from ...models import Favorite, Permit, Reservation, Zone, ZoneValidityBlock
 from ...util import parse_timestamp
 from ..base import BaseProvider
 
@@ -45,6 +45,8 @@ _FAVORITES_BY_CITY: dict[str, list[dict[str, str]]] = {
     ],
 }
 
+_DEFAULT_ZONE_ID = "zone-1"
+
 _RESERVATIONS: list[dict[str, str]] = [
     {
         "id": "res-1",
@@ -52,6 +54,7 @@ _RESERVATIONS: list[dict[str, str]] = [
         "license_plate": "TZ881V",
         "start_time": "2026-04-15T08:30:00Z",
         "end_time": "2026-04-15T14:00:00Z",
+        "zone_id": _DEFAULT_ZONE_ID,
     },
     {
         "id": "res-2",
@@ -59,6 +62,7 @@ _RESERVATIONS: list[dict[str, str]] = [
         "license_plate": "ZG188P",
         "start_time": "2026-04-15T10:00:00Z",
         "end_time": "2026-04-15T18:00:00Z",
+        "zone_id": _DEFAULT_ZONE_ID,
     },
     {
         "id": "res-3",
@@ -66,6 +70,7 @@ _RESERVATIONS: list[dict[str, str]] = [
         "license_plate": "NG66CT",
         "start_time": "2026-04-15T09:15:00Z",
         "end_time": "2026-04-15T12:30:00Z",
+        "zone_id": "zone-2",
     },
 ]
 
@@ -130,29 +135,31 @@ class Provider(BaseProvider):
 
     async def get_permit(self) -> Permit:
         cfg = self._demo_permit_config()
+        default_validity = [
+            ZoneValidityBlock(start_time=cfg["zone_start"], end_time=cfg["zone_end"])
+        ]
         return Permit(
             id="demo-permit",
             remaining_balance=cfg["remaining_balance"],
             balance_unit=cfg["balance_unit"],
-            zone_validity=[
-                ZoneValidityBlock(
-                    start_time=cfg["zone_start"],
-                    end_time=cfg["zone_end"],
-                )
+            zone_validity=default_validity,
+            zones=[
+                Zone(id=_DEFAULT_ZONE_ID, name="Zone 1", zone_validity=default_validity),
+                Zone(
+                    id="zone-2",
+                    name="Zone 2",
+                    zone_validity=[
+                        ZoneValidityBlock(
+                            start_time="2026-04-15T11:00:00Z",
+                            end_time="2026-04-15T23:00:00Z",
+                        )
+                    ],
+                ),
             ],
         )
 
     async def list_reservations(self) -> list[Reservation]:
-        return [
-            Reservation(
-                id=r["id"],
-                name=r["name"],
-                license_plate=self._normalize_license_plate(r["license_plate"]),
-                start_time=r["start_time"],
-                end_time=r["end_time"],
-            )
-            for r in self._reservations
-        ]
+        return [self._map_reservation(r) for r in self._reservations]
 
     async def start_reservation(
         self,
@@ -160,27 +167,24 @@ class Provider(BaseProvider):
         start_time: datetime,
         end_time: datetime,
         name: str | None = None,
+        zone_id: str | None = None,
     ) -> Reservation:
+        selected_zone = self._validate_zone_id(zone_id) or _DEFAULT_ZONE_ID
+        if selected_zone not in {zone.id for zone in (await self.get_permit()).zones}:
+            raise ValidationError("zone_id is not a zone of the permit.")
         start_time, end_time = self._validate_reservation_times(
             start_time, end_time, require_both=True
         )
-        reservation = Reservation(
-            id=str(uuid.uuid4()),
-            name=name or "",
-            license_plate=self._normalize_license_plate(license_plate),
-            start_time=self._format_utc_timestamp(self._normalize_datetime(start_time)),
-            end_time=self._format_utc_timestamp(self._normalize_datetime(end_time)),
-        )
-        self._reservations.append(
-            {
-                "id": reservation.id,
-                "name": reservation.name,
-                "license_plate": reservation.license_plate,
-                "start_time": reservation.start_time,
-                "end_time": reservation.end_time,
-            }
-        )
-        return reservation
+        record = {
+            "id": str(uuid.uuid4()),
+            "name": name or "",
+            "license_plate": self._normalize_license_plate(license_plate),
+            "start_time": self._format_utc_timestamp(self._normalize_datetime(start_time)),
+            "end_time": self._format_utc_timestamp(self._normalize_datetime(end_time)),
+            "zone_id": selected_zone,
+        }
+        self._reservations.append(record)
+        return self._map_reservation(record)
 
     async def update_reservation(
         self,
@@ -206,13 +210,7 @@ class Provider(BaseProvider):
                 r["end_time"] = self._format_utc_timestamp(effective_end)
                 if name is not None:
                     r["name"] = name
-                return Reservation(
-                    id=r["id"],
-                    name=r["name"],
-                    license_plate=r["license_plate"],
-                    start_time=r["start_time"],
-                    end_time=r["end_time"],
-                )
+                return self._map_reservation(r)
         raise ProviderError(f"Reservation {reservation_id!r} not found.")
 
     async def end_reservation(
@@ -222,16 +220,20 @@ class Provider(BaseProvider):
     ) -> Reservation:
         for i, r in enumerate(self._reservations):
             if r["id"] == reservation_id:
-                ended = Reservation(
-                    id=r["id"],
-                    name=r["name"],
-                    license_plate=r["license_plate"],
-                    start_time=r["start_time"],
-                    end_time=self._format_utc_timestamp(self._normalize_datetime(end_time)),
-                )
+                r["end_time"] = self._format_utc_timestamp(self._normalize_datetime(end_time))
                 self._reservations.pop(i)
-                return ended
+                return self._map_reservation(r)
         raise ProviderError(f"Reservation {reservation_id!r} not found.")
+
+    def _map_reservation(self, r: dict[str, str]) -> Reservation:
+        return Reservation(
+            id=r["id"],
+            name=r["name"],
+            license_plate=self._normalize_license_plate(r["license_plate"]),
+            start_time=r["start_time"],
+            end_time=r["end_time"],
+            zone_id=r["zone_id"],
+        )
 
     async def list_favorites(self) -> list[Favorite]:
         return [

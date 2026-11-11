@@ -39,6 +39,10 @@
             "enum": ["TIMES", "MINUTE", "EURO"]
           },
           "uniqueItems": true
+        },
+        "zone_selection": {
+          "type": "boolean",
+          "description": "Whether start_reservation accepts a zone_id from Permit.zones. When false or omitted, the provider rejects a zone_id and Permit.zones stays empty."
         }
       },
       "additionalProperties": false

@@ -47,7 +47,7 @@ A session with a dummy cookie jar cannot sign in.
 - `login`
 - `get_permit`
 - `list_reservations`
-- `start_reservation` (requires `start_time` and `end_time`)
+- `start_reservation` (requires `start_time` and `end_time`; optional `zone_id`)
 - `update_reservation` (`start_time` of a planned reservation, `end_time`)
 - `end_reservation`
 - `list_favorites`
@@ -67,21 +67,24 @@ A session with a dummy cookie jar cannot sign in.
   time of writing). Business-hours permits carry a balance per calendar month,
   other permits per year (Europe/Amsterdam). A missing balance row is reported
   as `0`.
-- `Permit.zone_validity` contains the upcoming parking-time windows stored for
-  the permit's zones. Every stored window is a chargeable window, so no free
-  windows exist to filter out. Duplicate windows are merged.
+- `Permit.zones` lists the permit's zones, default zone first (see D1), each
+  with the upcoming parking-time windows stored for that zone.
+  `Permit.zone_validity` equals the windows of the default zone. Every stored
+  window is a chargeable window, so no free windows exist to filter out.
+  Overlapping and touching windows are merged; the portal splits a window that
+  crosses midnight into two rows.
 - Reservations map to the permit's parking actions that are not cancelled and
   have not ended yet. Parking actions started by other users of the same permit
   are included. `Reservation.name` is the plate description, falling back to
-  the plate.
+  the plate. `Reservation.zone_id` is the zone name of the parking action.
 - Favorites map to the account's saved license plates. The portal's "default
   plate" flag is preserved on update but never set by this library.
 
 ## Reservation behavior
 
-- `start_reservation` uses the permit's only zone. A permit that covers several
-  zones is refused with `ProviderError`, because the generic contract has no
-  zone choice and a guess could park in the wrong zone.
+- `start_reservation` books in `zone_id` (a `Zone.id` from `Permit.zones`) or,
+  without it, in the default zone (see D1). A permit without zones is refused
+  with `ProviderError`.
 - The portal works with minutes: seconds are dropped from start and end times,
   and a start in the past starts the reservation in the current minute.
 - Like the portal's own client, the provider prices the parking action before
@@ -138,19 +141,34 @@ These are deliberate choices, not accidents. Each one is marked in the code with
 marked place, the tests named here, and this section together, and add a line to
 `CHANGELOG.md` (a behavior change is visible to integrations).
 
-### D1: A permit with several zones cannot start a reservation
+### D1: Zones are identified by name, and the first by name is the default
 
-- **Behavior**: `start_reservation` raises `ProviderError("The permit covers
-  multiple zones; zone selection is not supported.")` when the permit has more
-  than one zone. A permit without zones also raises `ProviderError`.
-- **Why**: the generic public contract has no zone parameter, and the portal
-  requires a zone for every parking action. Silently taking the first zone could
-  let a visitor park in a zone the visitor did not choose.
-- **Where**: `Provider._single_zone_name` in `api.py`.
-- **Tests**: `test_start_reservation_refuses_ambiguous_zone`.
-- **If this changes**: either pick a zone by a documented rule (for example the
-  first by name), or add a generic zone concept to the public contract first
-  (repository `AGENTS.md`: no provider-specific fields on public models).
+- **Behavior**:
+  - `Permit.zones` lists the permit's zones ordered by name (plain string order,
+    so `Zone 10` sorts before `Zone 9`). `Zone.id` and `Zone.name` are both the
+    zone name. Zones with the same name raise `ProviderError`.
+  - The first zone is the default: `start_reservation` without `zone_id` books
+    in it, and `Permit.zone_validity` holds its windows.
+  - `start_reservation` with a `zone_id` that is not in `Permit.zones` raises
+    `ValidationError` before anything is sent. A permit without zones raises
+    `ProviderError`.
+- **Why**: the portal books a parking action by zone name (`ZoneDisplayNaam`)
+  and reports the zone of a parking action by name (`ZoneNaam`), so the name is
+  the only identifier that round-trips into `Reservation.zone_id`. Multi-zone
+  permits are common in Rotterdam and the zones have different parking times
+  (reported on a real account), so the zone is chosen per reservation.
+- **Where**: `Provider._permit_zones` (ordering and uniqueness),
+  `Provider._zone_id`, `Provider._zone_name`, and `Provider._build_permit` in
+  `api.py`.
+- **Tests**: `test_start_reservation_without_zone_id_uses_first_zone_by_name`,
+  `test_start_reservation_books_in_the_requested_zone`,
+  `test_start_reservation_rejects_a_zone_outside_the_permit_before_saving`,
+  `test_zones_with_the_same_name_are_refused`,
+  `test_get_permit_lists_each_zone_with_its_own_merged_windows`.
+- **If this changes**: a different default (for example the portal's own
+  preference, if one exists) only changes the ordering in `_permit_zones`.
+  Switching `Zone.id` to the zone's object id requires mapping `ZoneNaam` of
+  parking actions back to that id.
 
 ### D2: With several usable permits the first one is used
 
@@ -218,9 +236,9 @@ marked place, the tests named here, and this section together, and add a line to
 ## Limitations
 
 - Only one permit is used when an account has several.
-- Permits with several zones cannot start reservations.
-- `Permit.zone_validity` stays empty when the portal has not stored parking
-  times for the permit's zones.
+- The zone of a reservation cannot be changed after it was started.
+- A zone's `zone_validity` stays empty when the portal has not stored parking
+  times for it.
 - Reservation updates cannot change the license plate or name.
 - The portal can change its page definitions or data model at any time. A
   changed nanoflow surfaces as `ProviderError("Provider operation could not be

@@ -31,6 +31,7 @@ class ProviderManifest:
     favorite_update_fields: tuple[str, ...]
     reservation_update_fields: tuple[str, ...]
     balance_units: tuple[str, ...] = ()
+    zone_selection: bool = False
 
 
 @dataclass(slots=True)
@@ -116,12 +117,16 @@ def _build_manifest(data: dict, folder_name: str) -> ProviderManifest:
         allowed=_BALANCE_UNITS,
         field_name="balance_units",
     )
+    zone_selection = capabilities.get("zone_selection", False)
+    if not isinstance(zone_selection, bool):
+        raise ProviderError("Provider manifest zone_selection must be a boolean.")
     return ProviderManifest(
         id=provider_id,
         name=name,
         favorite_update_fields=favorite_update_fields,
         reservation_update_fields=reservation_update_fields,
         balance_units=balance_units,
+        zone_selection=zone_selection,
     )
 
 
@@ -203,6 +208,7 @@ def list_providers(
             favorite_update_fields=manifest.favorite_update_fields,
             reservation_update_fields=manifest.reservation_update_fields,
             balance_units=manifest.balance_units,
+            zone_selection=manifest.zone_selection,
         )
         for manifest in load_manifests(refresh=refresh, cache_ttl=cache_ttl)
     ]

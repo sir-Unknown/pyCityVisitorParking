@@ -132,16 +132,18 @@ Public data models:
 
 - `ProviderInfo`
 - `Permit`
+- `Zone`
 - `ZoneValidityBlock`
 - `Reservation`
 - `Favorite`
 
 Model highlights:
 
-- `ProviderInfo` includes `id`, `favorite_update_fields`, `reservation_update_fields`, and `balance_units`
-- `Permit` includes `id`, `remaining_balance`, `balance_unit`, and `zone_validity`
+- `ProviderInfo` includes `id`, `favorite_update_fields`, `reservation_update_fields`, `balance_units`, and `zone_selection`
+- `Permit` includes `id`, `remaining_balance`, `balance_unit`, `zone_validity`, and `zones`
+- `Zone` includes an opaque `id`, a display `name`, and its own `zone_validity`
 - `ZoneValidityBlock` contains UTC ISO 8601 `start_time` and `end_time`
-- `Reservation` includes `id`, `name`, `license_plate`, `start_time`, and `end_time`
+- `Reservation` includes `id`, `name`, `license_plate`, `start_time`, `end_time`, and `zone_id` (`None` when the provider has no zones)
 - `Favorite` includes `id`, `name`, and `license_plate`
 
 ### Standardized behavior
@@ -150,6 +152,15 @@ Model highlights:
 - license plates are normalized and validated
 - the public API stays provider-agnostic
 - some update operations may be unsupported by a provider; inspect `favorite_update_fields` and `reservation_update_fields`
+
+### Zones
+
+When `ProviderInfo.zone_selection` is `true`, `Permit.zones` lists the zones a
+reservation can be started in and `start_reservation(..., zone_id=...)` books in
+one of them. The first zone is the default: it is used when `zone_id` is
+omitted, and `Permit.zone_validity` holds its windows. Other providers leave
+`Permit.zones` empty and raise `ValidationError` when a `zone_id` is passed.
+Updating a reservation never changes its zone.
 
 ---
 

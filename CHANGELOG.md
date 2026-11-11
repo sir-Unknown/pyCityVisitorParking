@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Add Rotterdam provider for the visitor parking portal at `bezoek.rotterdam.nl`: permit and balance, reservations, and saved license plates (favorites). Favorites and login are verified against the live portal; permit and reservation mapping follows the portal's published data model and is verified with mocked responses only, see the provider README.
+
 ## 0.5.28
 
 - Security: update locked dependencies to fix open advisories: aiohttp 3.14.5, virtualenv 21.15.6, filelock 4.2.10, idna 3.20, and multidict 7.2.1 ([#107](https://github.com/sir-Unknown/pyCityVisitorParking/pull/107), [#108](https://github.com/sir-Unknown/pyCityVisitorParking/pull/108), [#115](https://github.com/sir-Unknown/pyCityVisitorParking/pull/115)).

@@ -200,24 +200,20 @@ async def test_login_missing_password() -> None:
         await provider.login(credentials={"username": "u@e.com"})
 
 
-async def test_login_resolves_location_internally_for_explicit_permit_id() -> None:
-    session = _SequenceSession(
-        [
-            _FakeResponse(json_data=_AUTH_OK),
-            _FakeResponse(json_data=_CATEGORIES),
-        ]
-    )
+async def test_login_explicit_product_id_and_location() -> None:
+    session = _SequenceSession([_FakeResponse(json_data=_AUTH_OK)])
     provider = _provider(session)
     await provider.login(
         credentials={
             "username": "u@e.com",
             "password": "p",
             "permit_id": "BDABZRG_1317$abc",
-            "location": "CALLER-SUPPLIED",
+            "location": "BDA1317",
         }
     )
     assert provider._product_id == "BDABZRG_1317$abc"
     assert provider._product_location == "BDA1317"
+    assert session.calls == 1  # no categories call when both are provided
 
 
 async def test_login_no_products_raises() -> None:

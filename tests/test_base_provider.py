@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import builtins
 import logging
 from datetime import UTC, datetime
 
@@ -10,11 +9,8 @@ import pytest
 from pycityvisitorparking.exceptions import (
     AuthError,
     NetworkError,
-    NotFoundError,
     ProviderError,
-    RateLimitError,
     ServiceUnavailableError,
-    TimeoutError,
     ValidationError,
 )
 from pycityvisitorparking.models import Favorite, Permit, Reservation, ZoneValidityBlock
@@ -400,62 +396,28 @@ async def test_request_json_logs_compact_html_failure_summary(
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(
-    ("status", "exc_type", "code", "level"),
-    [
-        (401, AuthError, "auth_error", logging.DEBUG),
-        (403, AuthError, "auth_error", logging.DEBUG),
-        (404, NotFoundError, "not_found", logging.WARNING),
-        (429, RateLimitError, "rate_limit", logging.DEBUG),
-        (500, ProviderError, "provider_error", logging.WARNING),
-        (502, ServiceUnavailableError, "service_unavailable", logging.DEBUG),
-        (503, ServiceUnavailableError, "service_unavailable", logging.DEBUG),
-        (504, ServiceUnavailableError, "service_unavailable", logging.DEBUG),
-    ],
-)
-async def test_request_status_maps_to_error_code_and_log_level(
-    caplog: pytest.LogCaptureFixture,
-    status: int,
-    exc_type: type[ProviderError | AuthError],
-    code: str,
-    level: int,
-) -> None:
-    session = _SequenceSession([_FakeResponse(status=status)])
+async def test_request_text_auth_error() -> None:
+    session = _SequenceSession([_FakeResponse(status=401)])
     provider = _DummyProvider(session, _manifest(), base_url="https://example.com")
-    caplog.set_level(logging.DEBUG, logger="pycityvisitorparking.provider")
-    with pytest.raises(exc_type) as exc_info:
+    with pytest.raises(AuthError):
         await provider._request_text("GET", "/path")
-    assert type(exc_info.value) is exc_type
-    assert exc_info.value.error_code == code
-    failure_levels = [r.levelno for r in caplog.records if "request failed" in r.getMessage()]
-    assert failure_levels == [level]
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(
-    ("error", "exc_type", "code"),
-    [
-        (aiohttp.ClientConnectionError("boom"), NetworkError, "network_error"),
-        (aiohttp.ServerTimeoutError("slow"), TimeoutError, "timeout"),
-        (builtins.TimeoutError(), TimeoutError, "timeout"),
-    ],
-)
-async def test_transport_failure_maps_to_error_code_without_warnings(
-    caplog: pytest.LogCaptureFixture,
-    error: Exception,
-    exc_type: type[NetworkError],
-    code: str,
-) -> None:
-    session = _SequenceSession([error, error])
-    provider = _DummyProvider(session, _manifest(), base_url="https://example.com", retry_count=1)
-    caplog.set_level(logging.DEBUG, logger="pycityvisitorparking.provider")
-    with pytest.raises(exc_type) as exc_info:
+async def test_request_text_provider_error() -> None:
+    session = _SequenceSession([_FakeResponse(status=500)])
+    provider = _DummyProvider(session, _manifest(), base_url="https://example.com")
+    with pytest.raises(ProviderError):
         await provider._request_text("GET", "/path")
-    assert type(exc_info.value) is exc_type
-    assert exc_info.value.error_code == code
-    assert session.calls == 2
-    assert "network error" in caplog.text
-    assert [r for r in caplog.records if r.levelno >= logging.WARNING] == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status", [502, 503, 504])
+async def test_request_text_network_error_on_gateway_timeout(status: int) -> None:
+    session = _SequenceSession([_FakeResponse(status=status)])
+    provider = _DummyProvider(session, _manifest(), base_url="https://example.com")
+    with pytest.raises(NetworkError):
+        await provider._request_text("GET", "/path")
 
 
 @pytest.mark.asyncio

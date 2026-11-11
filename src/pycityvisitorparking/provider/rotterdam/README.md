@@ -1,5 +1,13 @@
 # Rotterdam
 
+> [!WARNING]
+> **Not yet tested with a real permit.** This provider was developed without
+> access to an account that holds a permit. Login and saved license plates
+> (favorites) were verified against the live portal. Permit, balance, zone
+> validity, and every successful reservation action (start, update, end, cancel)
+> are based on the portal's published data model and are only covered by tests
+> with mocked portal responses. See "Verification status" below.
+
 Rotterdam provider for visitor parking using the reverse engineered visitor
 parking portal of the municipality of Rotterdam.
 

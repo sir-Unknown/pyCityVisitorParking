@@ -31,6 +31,7 @@ class _FakeResponse:
         self._payload = payload
         self._text_data = text_data
         self._json_error = json_error
+        self.headers: dict[str, str] = {}
 
     async def json(self) -> Any:
         if self._json_error is not None:

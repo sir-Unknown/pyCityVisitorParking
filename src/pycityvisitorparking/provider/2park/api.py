@@ -626,8 +626,7 @@ class Provider(BaseProvider):
             try:
                 data = await response.json(content_type=None)
             except (aiohttp.ContentTypeError, ValueError) as exc:
-                self._plogger.invalid_json(await response.text())
-                raise ProviderError("Response did not contain valid JSON.") from exc
+                raise await self._invalid_json_error(response) from exc
             if _is_session_timeout(data):
                 # 2park reports an expired session as HTTP 200 with this status
                 # and no data; without this the reads map to zero balance and

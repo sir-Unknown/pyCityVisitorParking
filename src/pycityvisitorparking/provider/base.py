@@ -12,7 +12,13 @@ from urllib.parse import urlparse
 
 import aiohttp
 
-from ..exceptions import AuthError, NetworkError, ProviderError, ValidationError
+from ..exceptions import (
+    AuthError,
+    NetworkError,
+    ProviderError,
+    ServiceUnavailableError,
+    ValidationError,
+)
 from ..models import Favorite, Permit, ProviderInfo, Reservation, ZoneValidityBlock
 from ..util import (
     ensure_utc_timestamp,
@@ -407,8 +413,7 @@ class BaseProvider(ABC):
                 try:
                     data = await response.json()
                 except (aiohttp.ContentTypeError, ValueError) as exc:
-                    self._plogger.invalid_json(await response.text())
-                    raise ProviderError("Response did not contain valid JSON.") from exc
+                    raise await self._invalid_json_error(response) from exc
                 self._plogger.response_summary(data)
                 return data
             return await response.text()
@@ -419,6 +424,20 @@ class BaseProvider(ABC):
             request_kwargs=request_kwargs,
             response_handler=handle_response,
         )
+
+    async def _invalid_json_error(self, response: aiohttp.ClientResponse) -> ProviderError:
+        """Log a non-JSON body and return the error to raise.
+
+        A 2xx HTML body on an API endpoint is a maintenance, WAF or error page,
+        which is typically temporary: it is logged at debug level and mapped to
+        ``ServiceUnavailableError``. Any other non-JSON body is unexpected.
+        """
+        body = await response.text()
+        is_html = self._plogger.response_kind(response.headers.get("Content-Type"), body) == "html"
+        self._plogger.invalid_json(body, expected=is_html)
+        if is_html:
+            return ServiceUnavailableError("Provider returned an HTML page instead of JSON.")
+        return ProviderError("Response did not contain valid JSON.")
 
     def _raise_for_status(
         self,

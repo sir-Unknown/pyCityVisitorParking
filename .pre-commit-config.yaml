@@ -1,6 +1,6 @@
 repos:
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.15.8
+    rev: v0.17.3
     hooks:
       - id: ruff-check
         args:
@@ -12,14 +12,15 @@ repos:
           - --cache-dir
           - /tmp/ruff-cache
   - repo: https://github.com/zizmorcore/zizmor-pre-commit
-    rev: v1.23.1
+    rev: v1.32.0
     hooks:
       - id: zizmor
   - repo: https://github.com/codespell-project/codespell
-    rev: v2.4.2
+    rev: v2.4.3
     hooks:
       - id: codespell
         args:
+          - --ignore-words-list=astroid
           - --skip="./.*,*.csv,*.json"
           - --quiet-level=2
         exclude_types: [csv, json, html]

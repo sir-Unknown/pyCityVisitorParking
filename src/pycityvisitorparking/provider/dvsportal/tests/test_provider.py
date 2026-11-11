@@ -1043,9 +1043,11 @@ def _scripted_provider(
 @pytest.mark.asyncio
 async def test_html_500_reauthenticates_once_and_retries(
     monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     """An HTML 500 with cached credentials is session expiry: re-login, retry once."""
     provider, session, logins = _scripted_provider([_html_error(), _json_ok()], monkeypatch)
+    caplog.set_level(logging.DEBUG, logger="pycityvisitorparking.provider")
 
     data = await provider._transport.request_json(
         "POST", LOGIN_GETBASE_ENDPOINT, allow_reauth=True, include_auth=True
@@ -1055,6 +1057,9 @@ async def test_html_500_reauthenticates_once_and_retries(
     assert len(logins) == 1
     assert session.requests == 2
     assert provider._state.app_env_fetched is False
+    # Session expiry is an expected, recovered path: diagnosable at debug, no warnings.
+    assert "reauthenticating" in caplog.text
+    assert [r for r in caplog.records if r.levelno >= logging.WARNING] == []
 
 
 @pytest.mark.asyncio

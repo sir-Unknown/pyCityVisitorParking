@@ -148,6 +148,12 @@ Model highlights:
 - the public API stays provider-agnostic
 - some update operations may be unsupported by a provider; inspect `favorite_update_fields` and `reservation_update_fields`
 
+### Login and provider state
+
+`login()` takes `username` and `password`, plus the optional keys documented in the provider README (for example a `permit_id` to select a permit).
+
+Anything a provider resolves during login (product, location, permit media type, session tokens) stays internal to the provider. It is not part of the public contract and callers do not need to persist or replay it: reauthentication after an expired session reuses that state automatically.
+
 ---
 
 ## Common usage
@@ -204,7 +210,7 @@ asyncio.run(main())
 ```python
 import asyncio
 
-from pycityvisitorparking import Client
+from pycityvisitorparking import Client, ErrorCode
 from pycityvisitorparking.exceptions import ProviderError
 
 
@@ -218,7 +224,9 @@ async def main() -> None:
         try:
             updated = await provider.update_favorite(favorite.id, name="Visitor 2")
             print(updated)
-        except ProviderError:
+        except ProviderError as exc:
+            if exc.error_code != ErrorCode.NOT_SUPPORTED:
+                raise
             print("Favorite updates are not supported by this provider")
 
 
@@ -241,25 +249,56 @@ Public methods raise library exceptions instead of raw `aiohttp` exceptions:
 - `TimeoutError`
 - `ConfigError`
 
-Each exception includes normalized metadata such as `error_code`, `detail`, and optional `user_message`.
+Exceptions are technical and integration-facing. Branch on the exception type and/or `error_code`, never on the message text. User-facing and translated messages are the responsibility of the integration (for Home Assistant: translation keys), not of this library.
+
+Each exception carries:
+
+- `error_code`: a stable `ErrorCode` value (a `StrEnum`, so it also compares equal to its string)
+- `detail`: a technical, PII-free description for logs and diagnostics
+
+Supported error codes:
+
+| `error_code`          | Exception                 | Meaning                                                                   |
+| --------------------- | ------------------------- | ------------------------------------------------------------------------- |
+| `auth_error`          | `AuthError`               | Invalid credentials, or the session could not be renewed; reauthenticate |
+| `network_error`       | `NetworkError`            | Transport failure talking to the provider; retry later                    |
+| `timeout`             | `TimeoutError`            | The request timed out; retry later                                        |
+| `validation_error`    | `ValidationError`         | Invalid caller input                                                      |
+| `config_error`        | `ConfigError`             | Invalid or missing configuration                                          |
+| `provider_error`      | `ProviderError`           | Unexpected provider failure or response                                   |
+| `rate_limit`          | `RateLimitError`          | The provider rate limit was hit (HTTP 429); retry later                   |
+| `service_unavailable` | `ServiceUnavailableError` | The provider is temporarily unavailable (HTTP 502/503/504, maintenance)   |
+| `not_found`           | `NotFoundError`           | The requested provider resource does not exist                           |
+| `not_supported`       | `ProviderError`           | The operation is not supported by this provider or permit                |
+| `provider_rejected`   | `ProviderError`           | The provider refused the action (for example insufficient balance)       |
+
+`TimeoutError` is a subclass of `NetworkError`; `RateLimitError`, `ServiceUnavailableError` and `NotFoundError` are subclasses of `ProviderError`; `ConfigError` is a subclass of `ValidationError`.
 
 Example:
 
 ```python
-from pycityvisitorparking import Client
-from pycityvisitorparking.exceptions import AuthError, NetworkError, ProviderError, ValidationError
+from pycityvisitorparking import Client, ErrorCode
+from pycityvisitorparking.exceptions import (
+    AuthError,
+    NetworkError,
+    ProviderError,
+    ServiceUnavailableError,
+    ValidationError,
+)
 
 async with Client(base_url=base_url, api_uri=api_uri) as client:
     try:
         provider = await client.get_provider("dvsportal")
         await provider.login(credentials={"username": "user", "password": "secret"})
         permit = await provider.get_permit()
-    except (AuthError, ValidationError) as exc:
-        handle_auth_or_input_error(exc)
-    except NetworkError as exc:
-        handle_network_issue(exc)
+    except AuthError:
+        start_reauth_flow()
+    except ValidationError as exc:
+        handle_input_error(exc.error_code)
+    except NetworkError, ServiceUnavailableError:
+        retry_later()
     except ProviderError as exc:
-        handle_provider_issue(exc)
+        handle_provider_issue(exc.error_code)
 ```
 
 ---
@@ -271,6 +310,8 @@ The library logs to the `pycityvisitorparking` logger using the standard Python 
 - credentials are not logged
 - full license plates are not logged
 - request context can be attached for clearer diagnostics
+- expected, recoverable paths log at debug level: reauthentication after an expired session, transient network failures and timeouts, rate limits (HTTP 429), and temporary gateway errors (HTTP 502/503/504)
+- warnings are reserved for unexpected responses that need attention
 
 ---
 

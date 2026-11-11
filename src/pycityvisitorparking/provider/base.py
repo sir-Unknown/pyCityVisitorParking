@@ -14,11 +14,15 @@ import aiohttp
 
 from ..exceptions import (
     AuthError,
+    ErrorCode,
     NetworkError,
+    NotFoundError,
     ProviderError,
+    RateLimitError,
     ServiceUnavailableError,
     ValidationError,
 )
+from ..exceptions import TimeoutError as RequestTimeoutError
 from ..models import Favorite, Permit, ProviderInfo, Reservation, ZoneValidityBlock
 from ..util import (
     ensure_utc_timestamp,
@@ -38,6 +42,21 @@ try:
     PACKAGE_VERSION = version("pycityvisitorparking")
 except PackageNotFoundError:  # pragma: no cover - source tree fallback
     PACKAGE_VERSION = "0.0.0"
+
+
+def raise_for_failed_status(status: int) -> None:
+    """Raise the normalized library error for a non-2xx HTTP status."""
+    if 200 <= status < 300:
+        return
+    if status in (401, 403):
+        raise AuthError("Authentication failed.")
+    if status == 404:
+        raise NotFoundError("Provider resource not found (status 404).")
+    if status == 429:
+        raise RateLimitError("Provider rate limit exceeded (status 429).")
+    if status in (502, 503, 504):
+        raise ServiceUnavailableError(f"Provider temporarily unavailable (status {status}).")
+    raise ProviderError(f"Provider request failed with status {status}.")
 
 
 class _HttpSession(Protocol):
@@ -188,17 +207,6 @@ class BaseProvider(ABC):
             favorite_update_fields=self._manifest.favorite_update_fields,
             reservation_update_fields=self._manifest.reservation_update_fields,
         )
-
-    @property
-    def resolved_login_params(self) -> dict[str, str]:
-        """Return provider-resolved login parameters from the last successful login.
-
-        Keys are only present when the provider discovered a value — omitted
-        when unknown. Excludes user-supplied credentials (username, password).
-        Callers may persist these and pass them back via login() kwargs on
-        subsequent starts to avoid redundant API calls.
-        """
-        return {}
 
     def _normalize_license_plate(self, plate: str) -> str:
         return normalize_license_plate(plate)
@@ -373,11 +381,12 @@ class BaseProvider(ABC):
                 continue
             except (aiohttp.ClientError, TimeoutError) as exc:
                 last_error = exc
-                self._plogger.warning_block("network error", {"error": exc.__class__.__name__})
+                # Transient transport failures are recovered by the caller; keep them quiet.
+                self._plogger.debug_block("network error", {"error": exc.__class__.__name__})
                 if attempt >= attempts - 1:
-                    raise NetworkError("Network request failed.") from exc
+                    raise _network_error(exc) from exc
         if last_error is not None:
-            raise NetworkError("Network request failed.") from last_error
+            raise _network_error(last_error) from last_error
         raise ProviderError("Request failed.")
 
     async def _request_json(self, method: str, path: str, **kwargs: Any) -> Any:
@@ -461,11 +470,7 @@ class BaseProvider(ABC):
             body=body,
             content_type=content_type,
         )
-        if response.status in (401, 403):
-            raise AuthError("Authentication failed.")
-        if response.status in (502, 503, 504):
-            raise NetworkError(f"Provider temporarily unavailable (status {response.status}).")
-        raise ProviderError(f"Provider request failed with status {response.status}.")
+        raise_for_failed_status(response.status)
 
     def _normalize_base_url(self, base_url: str | None) -> str | None:
         if base_url is None:
@@ -559,7 +564,9 @@ class BaseProvider(ABC):
         """Update a favorite."""
         if not self.favorite_update_possible:
             self._plogger.info("favorite update requested but not supported")
-            raise ProviderError("Favorite updates are not supported.")
+            raise ProviderError(
+                "Favorite updates are not supported.", error_code=ErrorCode.NOT_SUPPORTED
+            )
         if license_plate is not None and "license_plate" not in self.favorite_update_fields:
             raise ValidationError("license_plate updates are not supported.")
         if name is not None and "name" not in self.favorite_update_fields:
@@ -583,3 +590,10 @@ class BaseProvider(ABC):
     @abstractmethod
     async def remove_favorite(self, favorite_id: str) -> None:
         """Remove a favorite."""
+
+
+def _network_error(exc: BaseException) -> NetworkError:
+    """Map a transport exception to the normalized network error."""
+    if isinstance(exc, TimeoutError):
+        return RequestTimeoutError("Network request timed out.")
+    return NetworkError("Network request failed.")

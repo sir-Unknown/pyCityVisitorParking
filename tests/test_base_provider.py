@@ -130,12 +130,14 @@ def _manifest(
     *,
     favorite_update_fields: tuple[str, ...] = (),
     reservation_update_fields: tuple[str, ...] = (),
+    zone_selection: bool = False,
 ) -> ProviderManifest:
     return ProviderManifest(
         id="dummy",
         name="Dummy",
         favorite_update_fields=favorite_update_fields,
         reservation_update_fields=reservation_update_fields,
+        zone_selection=zone_selection,
     )
 
 
@@ -243,6 +245,19 @@ async def test_update_favorite_calls_native() -> None:
     favorite = await provider.update_favorite("fav", license_plate="AA11BB", name="Car")
     assert favorite.id == "fav"
     assert favorite.license_plate == "AA11BB"
+
+
+def test_validate_zone_id_follows_the_zone_selection_capability() -> None:
+    unsupported = _DummyProvider(_SequenceSession([]), _manifest(), base_url="https://e.com")
+    assert unsupported._validate_zone_id(None) is None
+    with pytest.raises(ValidationError, match="not supported"):
+        unsupported._validate_zone_id("zone-1")
+    supported = _DummyProvider(
+        _SequenceSession([]), _manifest(zone_selection=True), base_url="https://e.com"
+    )
+    assert supported._validate_zone_id(" zone-1 ") == "zone-1"
+    with pytest.raises(ValidationError):
+        supported._validate_zone_id("  ")
 
 
 @pytest.mark.asyncio

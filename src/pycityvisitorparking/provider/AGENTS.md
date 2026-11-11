@@ -48,6 +48,7 @@
   - `name`
   - `capabilities.favorite_update_fields`
   - `capabilities.reservation_update_fields`
+  - optional `capabilities.balance_units` and `capabilities.zone_selection`
 - Validate `manifest.json` against:
   `src/pycityvisitorparking/provider/manifest.schema.json`
 - ❌ Avoid imports or side effects when defining the manifest.

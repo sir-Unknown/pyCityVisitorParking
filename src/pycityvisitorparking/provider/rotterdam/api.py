@@ -14,7 +14,14 @@ from zoneinfo import ZoneInfo
 import aiohttp
 
 from ...exceptions import AuthError, NotFoundError, ProviderError, ValidationError
-from ...models import BALANCE_UNIT_MINUTE, Favorite, Permit, Reservation, ZoneValidityBlock
+from ...models import (
+    BALANCE_UNIT_MINUTE,
+    Favorite,
+    Permit,
+    Reservation,
+    Zone,
+    ZoneValidityBlock,
+)
 from ..base import BaseProvider
 from ..loader import ProviderManifest
 from .const import (
@@ -370,15 +377,19 @@ class Provider(BaseProvider):
 
     async def _build_permit(self, authorization: MendixObject) -> Permit:
         permit_guid = self._permit_guid(authorization)
-        balance, zones = await asyncio.gather(
+        balance, zone_objects = await asyncio.gather(
             self._remaining_balance(authorization, permit_guid),
             self._permit_zones(permit_guid),
         )
+        zones = await self._zones(zone_objects)
         return Permit(
             id=self._authorization_id(authorization),
             remaining_balance=balance,
-            zone_validity=await self._zone_validity(zones),
+            # DESIGN DECISION D1 (see README "Design decisions"): the permit-level windows
+            # are those of the default zone, the first of ``zones``.
+            zone_validity=zones[0].zone_validity if zones else [],
             balance_unit=BALANCE_UNIT_MINUTE,
+            zones=zones,
         )
 
     async def _remaining_balance(self, authorization: MendixObject, permit_guid: str) -> float:
@@ -400,6 +411,7 @@ class Provider(BaseProvider):
         return float(units * self._minutes_per_unit())
 
     async def _permit_zones(self, permit_guid: str) -> list[MendixObject]:
+        """Return the permit's zones ordered by name; the first one is the default zone."""
         relations = await self._retrieve(
             f"//{ENTITY_ZONE_RELATION}[{ASSOC_ZONE_RELATION_PERMIT} = '{permit_guid}']",
             operation="retrieve_zone_relations",
@@ -423,31 +435,55 @@ class Provider(BaseProvider):
             if zone.value("isDeleted") is not True
             and zone.text("TypeZone") in (None, ZONE_TYPE_ZONE)
         ]
-        zones.sort(key=lambda zone: (zone.text("Naam") or "", zone.guid))
+        names = [self._zone_id(zone) for zone in zones]
+        if len(set(names)) != len(names):
+            # Parking actions address a zone by name, so names must identify a zone.
+            raise ProviderError("Provider returned several zones with the same name.")
+        zones.sort(key=self._zone_id)
         return zones
 
-    async def _zone_validity(self, zones: list[MendixObject]) -> list[ZoneValidityBlock]:
-        """Return the upcoming parking-time windows of the permit's zones.
+    def _zone_id(self, zone: MendixObject) -> str:
+        """Return the public zone id: the zone name, which parking actions are booked by."""
+        name = zone.text("Naam")
+        if not name:
+            raise ProviderError("Provider response included a zone without a name.")
+        return name
+
+    async def _zones(self, zones: list[MendixObject]) -> list[Zone]:
+        """Map the permit's zones, each with its upcoming chargeable windows."""
+        windows = await asyncio.gather(
+            *(self._zone_validity(xpath_guid(zone.guid, "zone id")) for zone in zones)
+        )
+        return [
+            Zone(id=self._zone_id(zone), name=self._zone_id(zone), zone_validity=validity)
+            for zone, validity in zip(zones, windows, strict=True)
+        ]
+
+    async def _zone_validity(self, zone_guid: str) -> list[ZoneValidityBlock]:
+        """Return the upcoming parking-time windows of one zone.
 
         Every stored parking-time window is a chargeable window, so no free windows exist
-        to filter out.
+        to filter out. Overlapping and touching windows are merged; the portal splits a
+        window that crosses midnight into two rows.
         """
-        if not zones:
-            return []
-        zone_constraint = " or ".join(
-            f"{ASSOC_PARKING_TIME_ZONE} = '{xpath_guid(zone.guid, 'zone id')}'" for zone in zones
-        )
         rows = await self._retrieve(
-            f"//{ENTITY_PARKING_TIME}[({zone_constraint}) and TotTijd > '[%CurrentDateTime%]']",
+            f"//{ENTITY_PARKING_TIME}[{ASSOC_PARKING_TIME_ZONE} = '{zone_guid}' "
+            "and TotTijd > '[%CurrentDateTime%]']",
             operation="retrieve_parking_times",
         )
-        windows: set[tuple[datetime, datetime]] = set()
+        windows: list[tuple[datetime, datetime]] = []
         for row in rows:
             start = datetime_from_milliseconds(row.value("VanafTijd"))
             end = datetime_from_milliseconds(row.value("TotTijd"))
             if start is None or end is None or end <= start:
                 raise ProviderError("Provider returned invalid zone validity data.")
-            windows.add((start, end))
+            windows.append((start, end))
+        merged: list[tuple[datetime, datetime]] = []
+        for start, end in sorted(windows):
+            if merged and start <= merged[-1][1]:
+                merged[-1] = (merged[-1][0], max(merged[-1][1], end))
+            else:
+                merged.append((start, end))
         entries = [
             (
                 ZoneValidityBlock(
@@ -456,7 +492,7 @@ class Provider(BaseProvider):
                 ),
                 True,
             )
-            for start, end in sorted(windows)
+            for start, end in merged
         ]
         return self._filter_chargeable_zone_validity(entries)
 
@@ -489,16 +525,18 @@ class Provider(BaseProvider):
         start_time: datetime,
         end_time: datetime,
         name: str | None = None,
+        zone_id: str | None = None,
     ) -> Reservation:
-        """Start a reservation for a license plate."""
+        """Start a reservation for a license plate, in ``zone_id`` or the default zone."""
         self._plogger.operation_started("start_reservation")
+        requested_zone = self._validate_zone_id(zone_id)
         start_dt, end_dt = self._validate_reservation_times(start_time, end_time, require_both=True)
         plate = self._normalize_license_plate(license_plate)
         landcode = self._landcode(plate)
         start_dt, end_dt = self._reservation_window(start_dt, end_dt, clamp_start=True)
         authorization = await self._select_authorization()
         permit_guid = self._permit_guid(authorization)
-        zone_name = await self._single_zone_name(permit_guid)
+        zone_name = await self._zone_name(permit_guid, requested_zone)
         values: dict[str, Any] = {
             "Kenteken": plate,
             "Landcode": landcode,
@@ -629,21 +667,19 @@ class Provider(BaseProvider):
             raise ValidationError("end_time must be after start_time.")
         return start_minute, end_minute
 
-    async def _single_zone_name(self, permit_guid: str) -> str:
+    async def _zone_name(self, permit_guid: str, zone_id: str | None) -> str:
+        """Return the name of the zone to park in; ``None`` selects the default zone."""
         zones = await self._permit_zones(permit_guid)
         if not zones:
             raise ProviderError("The permit has no zones to park in.")
-        if len(zones) > 1:
-            # DESIGN DECISION D1 (see README "Design decisions"): refuse instead of guessing.
-            # The generic contract carries no zone choice, so a guess could park in the
-            # wrong zone.
-            raise ProviderError(
-                "The permit covers multiple zones; zone selection is not supported."
-            )
-        name = zones[0].text("Naam")
-        if name is None:
-            raise ProviderError("Provider response included a zone without a name.")
-        return name
+        if zone_id is None:
+            # DESIGN DECISION D1 (see README "Design decisions"): the default zone is the
+            # first one in the order of ``_permit_zones``.
+            return self._zone_id(zones[0])
+        for zone in zones:
+            if self._zone_id(zone) == zone_id:
+                return zone_id
+        raise ValidationError("zone_id is not a zone of the permit.")
 
     async def _find_action(self, reservation_id: str, *, active_only: bool) -> MendixObject:
         active = " and Eindtijd > '[%CurrentDateTime%]'" if active_only else ""
@@ -804,6 +840,7 @@ class Provider(BaseProvider):
             license_plate=plate,
             start_time=self._format_utc_timestamp(start),
             end_time=self._format_utc_timestamp(end),
+            zone_id=action.text("ZoneNaam"),
         )
 
     # ------------------------------------------------------------------

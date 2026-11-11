@@ -242,6 +242,7 @@ def _provider(portal: _Portal) -> Provider:
             name="Rotterdam",
             favorite_update_fields=("license_plate", "name"),
             reservation_update_fields=("start_time", "end_time"),
+            zone_selection=True,
         ),
         base_url="https://portal.example",
     )
@@ -461,6 +462,7 @@ async def test_start_reservation_prices_then_saves_like_the_web_client() -> None
     reservation = await provider.start_reservation("ab-12-cd", NOW, NOW + timedelta(hours=1))
     assert reservation.id == "new"
     assert reservation.license_plate == "AB12CD"
+    assert reservation.zone_id == "Zone A"
     (cost_call,) = portal.operation_calls("OP_COST")
     (save_call,) = portal.operation_calls("OP_SAVE")
     assert cost_call["params"]["MachtigingId"] == {"value": "auth-100"}
@@ -515,15 +517,112 @@ async def test_start_reservation_rejection_raises_without_leaking_the_plate() ->
     assert "no balance" in (excinfo.value.detail or "")
 
 
-@pytest.mark.asyncio
-async def test_start_reservation_refuses_ambiguous_zone() -> None:
-    portal = _permit_portal()
-    portal.zone_objects.append(
-        _obj("Masterdata.Zone", "501", {"Naam": "Zone B", "TypeZone": "Zone", "isDeleted": False})
+def _add_second_zone(portal: _Portal, name: str = "Zone 10") -> None:
+    portal.zone_objects.insert(
+        0,
+        _obj("Masterdata.Zone", "501", {"Naam": name, "TypeZone": "Zone", "isDeleted": False}),
     )
+
+
+def _save_zone(portal: _Portal) -> dict[str, Any]:
+    (save_call,) = portal.operation_calls("OP_SAVE")
+    helper_guid = save_call["params"]["ParkeeractieHelper"]["guid"]
+    return save_call["changes"][helper_guid]["ZoneDisplayNaam"]
+
+
+def _multi_zone_booking_portal() -> _Portal:
+    portal = _permit_portal()
+    _add_second_zone(portal)
+    portal.operations = {"OP_COST": _cost, "OP_SAVE": _accepted({"objects": []})}
+    portal.xpath_results.append(
+        ("Parkeren.Parkeeractie", [_action("new", "AB12CD", NOW, NOW + timedelta(hours=1))])
+    )
+    return portal
+
+
+@pytest.mark.asyncio
+async def test_start_reservation_without_zone_id_uses_first_zone_by_name() -> None:
+    portal = _multi_zone_booking_portal()
     provider = await _logged_in(portal)
-    with pytest.raises(ProviderError, match="multiple zones"):
-        await provider.start_reservation("AB12CD", NOW, NOW + timedelta(hours=1))
+    await provider.start_reservation("AB12CD", NOW, NOW + timedelta(hours=1))
+    assert _save_zone(portal) == {"value": "Zone 10"}
+
+
+@pytest.mark.asyncio
+async def test_start_reservation_books_in_the_requested_zone() -> None:
+    portal = _multi_zone_booking_portal()
+    provider = await _logged_in(portal)
+    await provider.start_reservation("AB12CD", NOW, NOW + timedelta(hours=1), zone_id="Zone A")
+    assert _save_zone(portal) == {"value": "Zone A"}
+
+
+@pytest.mark.asyncio
+async def test_start_reservation_rejects_a_zone_outside_the_permit_before_saving() -> None:
+    portal = _multi_zone_booking_portal()
+    provider = await _logged_in(portal)
+    with pytest.raises(ValidationError, match="zone_id"):
+        await provider.start_reservation("AB12CD", NOW, NOW + timedelta(hours=1), zone_id="Zone B")
+    assert portal.operation_calls("OP_COST") == []
+    assert portal.operation_calls("OP_SAVE") == []
+
+
+@pytest.mark.asyncio
+async def test_zones_with_the_same_name_are_refused() -> None:
+    portal = _permit_portal()
+    _add_second_zone(portal, name="Zone A")
+    provider = await _logged_in(portal)
+    with pytest.raises(ProviderError, match="same name"):
+        await provider.get_permit()
+
+
+def _parking_times(zone_guid: str, windows: list[tuple[datetime, datetime]]) -> tuple:
+    return (
+        f"Masterdata.Parkeertijd_Zone = '{zone_guid}'",
+        [
+            _obj(
+                "Masterdata.Parkeertijd",
+                f"{zone_guid}-{index}",
+                {"VanafTijd": _ms(start), "TotTijd": _ms(end)},
+            )
+            for index, (start, end) in enumerate(windows)
+        ],
+    )
+
+
+def _utc(value: datetime) -> str:
+    return value.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+@pytest.mark.asyncio
+async def test_get_permit_lists_each_zone_with_its_own_merged_windows() -> None:
+    portal = _permit_portal()
+    _add_second_zone(portal)
+    day = (NOW + timedelta(days=1)).replace(hour=0, minute=0, second=0)
+    hours = [day + timedelta(hours=offset) for offset in range(32)]
+    portal.xpath_results = [
+        # Zone 10: Friday 09:00-01:00 local is stored as overlapping rows split at midnight.
+        _parking_times(
+            "501",
+            [(hours[8], hours[22]), (hours[8], hours[23]), (hours[23], hours[24])],
+        ),
+        _parking_times("500", [(hours[8], hours[22]), (hours[30], hours[31])]),
+        *portal.xpath_results,
+    ]
+    provider = await _logged_in(portal)
+    permit = await provider.get_permit()
+    assert [(zone.id, zone.name) for zone in permit.zones] == [
+        ("Zone 10", "Zone 10"),
+        ("Zone A", "Zone A"),
+    ]
+    windows = {
+        zone.id: [(b.start_time, b.end_time) for b in zone.zone_validity] for zone in permit.zones
+    }
+    assert windows == {
+        "Zone 10": [(_utc(hours[8]), _utc(hours[24]))],
+        "Zone A": [(_utc(hours[8]), _utc(hours[22])), (_utc(hours[30]), _utc(hours[31]))],
+    }
+    # The permit-level windows are those of the default zone.
+    assert permit.zone_validity == permit.zones[0].zone_validity
 
 
 @pytest.mark.asyncio

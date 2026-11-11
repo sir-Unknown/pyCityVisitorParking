@@ -31,7 +31,10 @@ class Provider(BaseProvider):
         start_time: datetime,
         end_time: datetime,
         name: str | None = None,
+        zone_id: str | None = None,
     ) -> Reservation:
+        # Rejects zone_id unless the manifest sets capabilities.zone_selection.
+        self._validate_zone_id(zone_id)
         self._normalize_license_plate(license_plate)
         self._validate_reservation_times(start_time, end_time, require_both=True)
         raise ProviderError("Template provider does not implement start_reservation.")

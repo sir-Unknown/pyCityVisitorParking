@@ -29,12 +29,13 @@ Each provider must include a `manifest.json` with:
   "name": "Display Name",
   "capabilities": {
     "favorite_update_fields": ["license_plate", "name"],
-    "reservation_update_fields": ["start_time", "end_time", "name"]
+    "reservation_update_fields": ["start_time", "end_time", "name"],
+    "zone_selection": false
   }
 }
 ```
 
-Manifests are validated against:
+`balance_units` and `zone_selection` are optional. Manifests are validated against:
 `src/pycityvisitorparking/provider/manifest.schema.json`.
 
 ## Provider class export
@@ -147,6 +148,20 @@ Set `capabilities.reservation_update_fields` in the manifest:
 When `reservation_update_fields` is empty, `update_reservation()` should raise
 `ProviderError` with `error_code=ErrorCode.NOT_SUPPORTED`.
 
+## Zone selection
+
+Set `capabilities.zone_selection` to `true` only when a permit can park in
+several zones and the provider can book a reservation in a chosen zone. Then:
+
+- fill `Permit.zones` with every bookable zone, default zone first, and set
+  `Permit.zone_validity` to the windows of that default zone;
+- accept `zone_id` in `start_reservation()`, use the default zone when it is
+  `None`, and raise `ValidationError` for a zone that is not in `Permit.zones`;
+- set `Reservation.zone_id` to the zone the reservation was booked in.
+
+Every provider calls `self._validate_zone_id(zone_id)` at the start of
+`start_reservation()`; without the capability it rejects any `zone_id`.
+
 ## Public models only
 
 Map all provider responses to strict public dataclasses in
@@ -154,6 +169,7 @@ Map all provider responses to strict public dataclasses in
 
 - `ProviderInfo`
 - `Permit`
+- `Zone`
 - `ZoneValidityBlock`
 - `Reservation`
 - `Favorite`

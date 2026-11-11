@@ -35,9 +35,6 @@ _SENSITIVE_KEYS = frozenset(
 )
 _SENSITIVE_OBJECT_KEYS = frozenset({"LicensePlate", "licensePlate", "updateLicensePlate"})
 _SENSITIVE_NESTED_KEYS = frozenset({"DisplayValue", "Name", "Value"})
-# Statuses the library recovers from (reauth) or maps to a temporary error; these
-# are expected in normal operation and are logged at debug level.
-_EXPECTED_FAILURE_STATUSES = frozenset({401, 403, 429, 502, 503, 504})
 
 
 def get_provider_logger(module_name: str | None = None) -> logging.Logger:
@@ -185,16 +182,6 @@ class ProviderLogger:
         """Emit a WARNING as a labelled multi-line key=value block with metadata."""
         self._block(logging.WARNING, label, fields, detail=detail)
 
-    def debug_block(
-        self,
-        label: str,
-        fields: dict[str, Any],
-        *,
-        detail: str | None = None,
-    ) -> None:
-        """Emit a DEBUG as a labelled multi-line key=value block with metadata."""
-        self._block(logging.DEBUG, label, fields, detail=detail)
-
     def _block(
         self,
         level: int,
@@ -240,9 +227,9 @@ class ProviderLogger:
         """Log when a request falls back to reauthentication."""
         self.debug("reauth triggered")
 
-    def reauthenticating(self, **details: Any) -> None:
+    def reauthenticating(self) -> None:
         """Log when cached credentials are used to reauthenticate."""
-        self.debug("reauthenticating with cached credentials%s", self._format_details(**details))
+        self.debug("reauthenticating with cached credentials")
 
     # ------------------------------------------------------------------
     # HTTP response / request
@@ -266,16 +253,8 @@ class ProviderLogger:
         payload: Any = None,
         body: str | None = None,
         content_type: str | None = None,
-        expected: bool | None = None,
     ) -> None:
-        """Log an unsuccessful provider HTTP response.
-
-        Expected failures (auth errors that trigger a reauth, rate limits and
-        temporary gateway errors) are logged at debug level; everything else at
-        warning level. Pass *expected* to override the status-based default.
-        """
-        if expected is None:
-            expected = status in _EXPECTED_FAILURE_STATUSES
+        """Log an unsuccessful provider HTTP response."""
         is_auth = status in (401, 403)
         label = "auth request failed" if is_auth else "request failed"
         detail = f"{method.upper()} {url}" if method and url else url
@@ -291,7 +270,7 @@ class ProviderLogger:
             fields.update(self._extract_html_log_fields(body))
         elif body:
             fields["body"] = self.summarize_text(body)
-        self._block(logging.DEBUG if expected else logging.WARNING, label, fields, detail=detail)
+        self.warning_block(label, fields, detail=detail)
 
     def invalid_json(self, body: str, *, expected: bool = False) -> None:
         """Log an invalid JSON response body; *expected* logs at debug level."""

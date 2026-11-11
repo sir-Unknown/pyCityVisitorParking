@@ -3,8 +3,6 @@
 ## Unreleased
 
 - A 2xx HTML response (maintenance or WAF page) instead of JSON raises `ServiceUnavailableError` and is logged at debug level.
-- Breaking: the provider no longer exposes `resolved_login_params`. A `permit_media_type_id` passed to `login()` is cached internally and reused on reauthentication.
-- Provider error responses (HTTP 400 with a known error code) raise `ProviderError` with `error_code="provider_rejected"`; unsupported reservation updates use `error_code="not_supported"`.
 - Map permit zone validity from `zone` when `zone_validity` is missing.
 
 ## 0.5.3

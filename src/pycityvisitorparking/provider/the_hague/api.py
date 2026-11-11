@@ -9,7 +9,8 @@ from typing import Any
 
 import aiohttp
 
-from ...exceptions import AuthError, ErrorCode, ProviderError, ValidationError
+from ...const import RESOLVED_PERMIT_MEDIA_TYPE_ID
+from ...exceptions import AuthError, ProviderError, ValidationError
 from ...models import BALANCE_UNIT_MINUTE, Favorite, Permit, Reservation, ZoneValidityBlock
 from ..base import BaseProvider
 from ..loader import ProviderManifest
@@ -73,6 +74,14 @@ class Provider(BaseProvider):
         self._credentials: dict[str, str] | None = None
         self._permit_media_type_id: str | None = None
         self._logged_in = False
+
+    @property
+    def resolved_login_params(self) -> dict[str, str]:
+        """Return provider-resolved login parameters from the last successful login."""
+        result: dict[str, str] = {}
+        if self._permit_media_type_id is not None:
+            result[RESOLVED_PERMIT_MEDIA_TYPE_ID] = self._permit_media_type_id
+        return result
 
     async def login(
         self,
@@ -172,9 +181,7 @@ class Provider(BaseProvider):
         """Update a reservation."""
         self._plogger.operation_started("update_reservation")
         if not self.reservation_update_possible:
-            raise ProviderError(
-                "Reservation updates are not supported.", error_code=ErrorCode.NOT_SUPPORTED
-            )
+            raise ProviderError("Reservation updates are not supported.")
         if start_time is not None or name is not None:
             raise ValidationError("Only end_time can be updated.")
         if end_time is None:
@@ -510,7 +517,7 @@ class Provider(BaseProvider):
             if response.status == 400:
                 message = await self._error_message_from_response(response)
                 if message:
-                    raise ProviderError(message, error_code=ErrorCode.PROVIDER_REJECTED)
+                    raise ProviderError(message)
             if response.status == 429:
                 self._plogger.response_status(response.status)
                 raise AuthError("Authentication failed.")

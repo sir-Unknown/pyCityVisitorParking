@@ -213,7 +213,7 @@ class ProviderLogger:
 
     def reauth_triggered(self) -> None:
         """Log when a request falls back to reauthentication."""
-        self.warning_block("reauth triggered", {})
+        self.debug("reauth triggered")
 
     def reauthenticating(self) -> None:
         """Log when cached credentials are used to reauthenticate."""

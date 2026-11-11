@@ -8,6 +8,7 @@ import re
 from collections.abc import Mapping
 from datetime import datetime
 from typing import Any
+from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import aiohttp
@@ -38,6 +39,7 @@ from .const import (
     PARAM_TIMESTART,
     PARAM_VALID_UNTIL,
     PRODUCT_DETAILS_ENDPOINT,
+    SESSION_TIMEOUT_MINOR,
     START_ACTION_ENDPOINT,
     STOP_ACTION_ENDPOINT,
     TIME_FORMAT,
@@ -74,6 +76,11 @@ class Provider(BaseProvider):
         self._product_id: str | None = None
         self._product_location: str | None = None
         self._api_timezone: ZoneInfo | None = None
+        # Serializes every login. ``_session_generation`` counts completed logins so a
+        # request that timed out on an older session skips a reauth another task
+        # already finished instead of logging in (and invalidating that session) again.
+        self._auth_lock = asyncio.Lock()
+        self._session_generation = 0
 
     @property
     def resolved_login_params(self) -> dict[str, str]:
@@ -91,6 +98,14 @@ class Provider(BaseProvider):
         **kwargs: object,
     ) -> None:
         """Authenticate against the provider."""
+        async with self._auth_lock:
+            await self._login(credentials, **kwargs)
+
+    async def _login(
+        self,
+        credentials: Mapping[str, object] | None = None,
+        **kwargs: object,
+    ) -> None:
         self._plogger.operation_started("login")
         merged = self._merge_credentials(credentials, **kwargs)
         username = merged.get("username")
@@ -125,6 +140,7 @@ class Provider(BaseProvider):
         if location:
             self._credentials["location"] = location
         self._plogger.operation_completed("login", product_id=product_id, location=location)
+        self._session_generation += 1
 
     async def get_permit(self) -> Permit:
         """Return the active permit for the account."""
@@ -302,15 +318,13 @@ class Provider(BaseProvider):
         """Return permit, reservations, and favorites with two parallel provider fetches."""
         self._plogger.operation_started("fetch_all")
         await self._ensure_authenticated()
-        permit_data, details = await asyncio.gather(
-            self._post_form(
-                BALANCE_ENDPOINT,
-                {"product_id": self._product_id or "", "locale": LOCALE},
-            ),
-            self._post_form(
-                PRODUCT_DETAILS_ENDPOINT,
-                {"product_id": self._product_id or "", "locale": LOCALE},
-            ),
+        # Reauth around the pair, not per request: two parallel logins after a
+        # session timeout could invalidate each other's fresh session.
+        generation = self._session_generation
+        permit_data, details = await self._request_with_optional_reauth(
+            allow_reauth=True,
+            request=self._fetch_balance_and_details,
+            on_reauth=lambda: self._reauthenticate(generation),
         )
         permit = self._map_permit(permit_data)
         reservations = self._map_reservation_list(details)
@@ -321,6 +335,13 @@ class Provider(BaseProvider):
             favorites=len(favorites),
         )
         return permit, reservations, favorites
+
+    async def _fetch_balance_and_details(self) -> tuple[Any, Any]:
+        form = {"product_id": self._product_id or "", "locale": LOCALE}
+        return await asyncio.gather(
+            self._post_form(BALANCE_ENDPOINT, form, allow_reauth=False),
+            self._post_form(PRODUCT_DETAILS_ENDPOINT, form, allow_reauth=False),
+        )
 
     async def add_favorite(self, license_plate: str, name: str | None = None) -> Favorite:
         """Add a favorite."""
@@ -435,16 +456,31 @@ class Provider(BaseProvider):
 
     async def _ensure_authenticated(self) -> None:
         if self._product_id is None:
+            async with self._auth_lock:
+                if self._product_id is None:
+                    if not self._credentials:
+                        raise AuthError("Authentication required.")
+                    await self._login(self._credentials)
+
+    async def _reauthenticate(self, seen_generation: int) -> None:
+        async with self._auth_lock:
+            if self._session_generation != seen_generation:
+                return  # another task already renewed the session
+            self._product_id = None
             if not self._credentials:
                 raise AuthError("Authentication required.")
-            await self.login(self._credentials)
+            self._plogger.reauthenticating()
+            self._clear_session_cookies()
+            await self._login(self._credentials)
 
-    async def _reauthenticate(self) -> None:
-        self._product_id = None
-        if not self._credentials:
-            raise AuthError("Authentication required.")
-        self._plogger.reauthenticating()
-        await self.login(self._credentials)
+    def _clear_session_cookies(self) -> None:
+        # A login sent with the expired JSESSIONID still answers OK, but the
+        # following reads keep returning SESSION_TIMEOUT. Only a login without
+        # the old cookie (as after a restart) yields a working session.
+        cookie_jar = getattr(self._session, "cookie_jar", None)
+        host = urlsplit(self._base_url or "").hostname
+        if cookie_jar is not None and host:
+            cookie_jar.clear_domain(host)
 
     def _map_permit(self, data: Any) -> Permit:
         balance = data.get("data", {}).get("balance", {}) if isinstance(data, dict) else {}
@@ -567,10 +603,11 @@ class Provider(BaseProvider):
         allow_reauth: bool = True,
     ) -> Any:
         url = self._build_url(endpoint)
+        generation = self._session_generation
         return await self._request_with_optional_reauth(
             allow_reauth=allow_reauth,
             request=lambda: self._do_post_form(url, form_data),
-            on_reauth=self._reauthenticate,
+            on_reauth=lambda: self._reauthenticate(generation),
         )
 
     async def _do_post_form(self, url: str, form_data: dict[str, Any]) -> Any:
@@ -587,10 +624,17 @@ class Provider(BaseProvider):
                 self._plogger.request_failure(response.status)
                 raise ProviderError(f"Provider request failed with status {response.status}.")
             try:
-                return await response.json(content_type=None)
+                data = await response.json(content_type=None)
             except (aiohttp.ContentTypeError, ValueError) as exc:
                 self._plogger.invalid_json(await response.text())
                 raise ProviderError("Response did not contain valid JSON.") from exc
+            if _is_session_timeout(data):
+                # 2park reports an expired session as HTTP 200 with this status
+                # and no data; without this the reads map to zero balance and
+                # no favorites instead of triggering a reauth.
+                self._plogger.operation_failed("request", "session expired")
+                raise AuthError("Session expired.")
+            return data
 
         return await self._request_with_retries(
             "POST",
@@ -598,6 +642,14 @@ class Provider(BaseProvider):
             request_kwargs={"data": form_data, "headers": DEFAULT_HEADERS},
             response_handler=handle_response,
         )
+
+
+def _is_session_timeout(data: Any) -> bool:
+    if not isinstance(data, dict):
+        return False
+    status = data.get("status")
+    code = status.get("code") if isinstance(status, dict) else None
+    return isinstance(code, dict) and code.get("minor") == SESSION_TIMEOUT_MINOR
 
 
 def _parse_balance_amount(balance: dict[str, Any]) -> float:

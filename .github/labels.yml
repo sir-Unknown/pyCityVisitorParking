@@ -70,14 +70,6 @@
   color: fbca04
   description: "Issue or pull request is currently being worked on."
 
-- name: "stale"
-  color: fef2c0
-  description: "There has not been activity on this issue or PR for quite some time."
-
-- name: "no-stale"
-  color: fef2c0
-  description: "This issue or PR is exempted from stale automation."
-
 - name: "needs-more-information"
   color: fef2c0
   description: "More information is needed before this can be triaged further."

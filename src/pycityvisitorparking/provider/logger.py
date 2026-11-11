@@ -180,6 +180,18 @@ class ProviderLogger:
         detail: str | None = None,
     ) -> None:
         """Emit a WARNING as a labelled multi-line key=value block with metadata."""
+        self._block(logging.WARNING, label, fields, detail=detail)
+
+    def _block(
+        self,
+        level: int,
+        label: str,
+        fields: dict[str, Any],
+        *,
+        detail: str | None,
+    ) -> None:
+        if not self._logger.isEnabledFor(level):
+            return
         provider, city, ha_cvp, pycvp = self._get_metadata()
         all_fields = {k: v for k, v in fields.items() if v is not None}
         all_fields.update({"provider": provider, "city": city, "hacvp": ha_cvp, "pycvp": pycvp})
@@ -189,7 +201,7 @@ class ProviderLogger:
             lines.append(f"  {detail}")
         for key, value in all_fields.items():
             lines.append(f"  {key:<{width}} = {value}")
-        self._logger.warning("%s", "\n".join(lines))
+        self._logger.log(level, "%s", "\n".join(lines))
 
     # ------------------------------------------------------------------
     # Operation lifecycle
@@ -251,7 +263,7 @@ class ProviderLogger:
             fields["operation"] = operation
         if content_type:
             fields["content-type"] = content_type
-        fields["response_kind"] = self._response_kind(content_type, body)
+        fields["response_kind"] = self.response_kind(content_type, body)
         if payload is not None:
             fields["payload"] = self.mask_payload(payload)
         if fields["response_kind"] == "html" and body:
@@ -260,9 +272,14 @@ class ProviderLogger:
             fields["body"] = self.summarize_text(body)
         self.warning_block(label, fields, detail=detail)
 
-    def invalid_json(self, body: str) -> None:
-        """Log an invalid JSON response body."""
-        self.warning_block("invalid json response", {"body": self.summarize_text(body)})
+    def invalid_json(self, body: str, *, expected: bool = False) -> None:
+        """Log an invalid JSON response body; *expected* logs at debug level."""
+        self._block(
+            logging.DEBUG if expected else logging.WARNING,
+            "invalid json response",
+            {"body": self.summarize_text(body)},
+            detail=None,
+        )
 
     # ------------------------------------------------------------------
     # Domain events
@@ -316,8 +333,8 @@ class ProviderLogger:
     # Private helpers
     # ------------------------------------------------------------------
 
-    def _response_kind(self, content_type: str | None, body: str | None) -> str:
-        """Classify a failed response body for compact diagnostics."""
+    def response_kind(self, content_type: str | None, body: str | None) -> str:
+        """Classify a response body (``empty``, ``html`` or ``text``) for diagnostics."""
         if not body:
             return "empty"
         lowered_type = (content_type or "").lower()

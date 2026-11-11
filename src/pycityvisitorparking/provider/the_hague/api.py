@@ -527,8 +527,7 @@ class Provider(BaseProvider):
                 try:
                     return await response.json()
                 except (aiohttp.ContentTypeError, ValueError) as exc:
-                    self._plogger.invalid_json(await response.text())
-                    raise ProviderError("Response did not contain valid JSON.") from exc
+                    raise await self._invalid_json_error(response) from exc
             return await response.text()
 
         return await self._request_with_retries(

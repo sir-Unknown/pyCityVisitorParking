@@ -6,7 +6,13 @@ from datetime import UTC, datetime
 import aiohttp
 import pytest
 
-from pycityvisitorparking.exceptions import AuthError, NetworkError, ProviderError, ValidationError
+from pycityvisitorparking.exceptions import (
+    AuthError,
+    NetworkError,
+    ProviderError,
+    ServiceUnavailableError,
+    ValidationError,
+)
 from pycityvisitorparking.models import Favorite, Permit, Reservation, ZoneValidityBlock
 from pycityvisitorparking.provider.base import BaseProvider
 from pycityvisitorparking.provider.loader import ProviderManifest
@@ -274,6 +280,31 @@ async def test_request_json_invalid_response() -> None:
     provider = _DummyProvider(session, _manifest(), base_url="https://example.com")
     with pytest.raises(ProviderError):
         await provider._request_json("GET", "/path")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "headers",
+    [{"Content-Type": "text/html; charset=utf-8"}, {}],
+    ids=["html-content-type", "html-body-without-content-type"],
+)
+async def test_request_json_html_body_is_temporary_and_debug_logged(
+    caplog: pytest.LogCaptureFixture,
+    headers: dict[str, str],
+) -> None:
+    response = _FakeResponse(
+        json_error=ValueError("bad"),
+        text_data="<!DOCTYPE html><html></html>",
+        headers=headers,
+    )
+    provider = _DummyProvider(
+        _SequenceSession([response]), _manifest(), base_url="https://example.com"
+    )
+    with caplog.at_level(logging.DEBUG), pytest.raises(ServiceUnavailableError):
+        await provider._request_json("GET", "/path")
+    records = [r for r in caplog.records if "invalid json response" in r.getMessage()]
+    assert records
+    assert all(r.levelno == logging.DEBUG for r in records)
 
 
 @pytest.mark.asyncio

@@ -265,14 +265,7 @@ class PortalTransport:
                 try:
                     data = await response.json()
                 except (aiohttp.ContentTypeError, ValueError) as exc:
-                    self._plogger.invalid_json(await response.text())
-                    if "html" in response.headers.get("Content-Type", "").lower():
-                        # A 2xx HTML body on an API endpoint is a maintenance,
-                        # WAF or error page, which is typically temporary.
-                        raise ServiceUnavailableError(
-                            "Provider returned an HTML page instead of JSON."
-                        ) from exc
-                    raise ProviderError("Response did not contain valid JSON.") from exc
+                    raise await self._provider._invalid_json_error(response) from exc
                 self._plogger.response_summary(data)
                 return data
             return await response.text()

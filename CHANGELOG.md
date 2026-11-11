@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Add Rotterdam provider for the visitor parking portal at `bezoek.rotterdam.nl`: permit and balance, reservations, and saved license plates (favorites). Favorites and login are verified against the live portal; permit and reservation mapping follows the portal's published data model and is verified with mocked responses only, see the provider README.
+
 ## 0.5.30
 
 - DVS Portal: fix write requests (reservations, favorites) failing with HTTP 401 on portals that publish the XSRF token in the `__Host-Xsrf-DVSPortal` cookie and do not serve `app.env.js` (Rijswijk). The cookie value is now sent as `X-XSRF-TOKEN` by default ([#128](https://github.com/sir-Unknown/pyCityVisitorParking/issues/128)).

@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Any
 
 import aiohttp
 
-from ...exceptions import AuthError, ProviderError
+from ...exceptions import AuthError, ProviderError, ServiceUnavailableError
 from ..logger import ProviderLogger
 from .const import APP_ENV_SCRIPT, AUTH_HEADER, DEFAULT_HEADERS, RETRY_AFTER_HEADER, XSRF_HEADER
 
@@ -243,6 +243,12 @@ class PortalTransport:
                     data = await response.json()
                 except (aiohttp.ContentTypeError, ValueError) as exc:
                     self._plogger.invalid_json(await response.text())
+                    if "html" in response.headers.get("Content-Type", "").lower():
+                        # A 2xx HTML body on an API endpoint is a maintenance,
+                        # WAF or error page, which is typically temporary.
+                        raise ServiceUnavailableError(
+                            "Provider returned an HTML page instead of JSON."
+                        ) from exc
                     raise ProviderError("Response did not contain valid JSON.") from exc
                 self._plogger.response_summary(data)
                 return data

@@ -6,7 +6,7 @@ import aiohttp
 import pytest
 from yarl import URL
 
-from pycityvisitorparking.exceptions import AuthError, ProviderError
+from pycityvisitorparking.exceptions import AuthError, ProviderError, ServiceUnavailableError
 from pycityvisitorparking.models import Reservation, ZoneValidityBlock
 from pycityvisitorparking.provider.dvsportal.api import Provider
 from pycityvisitorparking.provider.dvsportal.const import (
@@ -929,6 +929,44 @@ async def test_start_reservation_failure_logs_compact_html_summary(
     assert "/DVSPortal/" in caplog.text
     assert "GRONINGEN-HTML-MARKER" not in caplog.text
     assert "body_excerpt" not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_html_response_to_json_request_is_service_unavailable() -> None:
+    """A 2xx HTML page on a JSON endpoint is a temporary outage, not a plain error."""
+    provider = Provider(
+        _FailingSession(
+            _FakeResponse(
+                status=200,
+                text_data="<html><body>Onderhoud</body></html>",
+                headers={"Content-Type": "text/html; charset=utf-8"},
+            )
+        ),
+        _manifest(),
+        base_url="https://example",
+    )
+
+    with pytest.raises(ServiceUnavailableError):
+        await provider._transport.request_json("POST", "/login")
+
+
+@pytest.mark.asyncio
+async def test_non_html_invalid_json_stays_provider_error() -> None:
+    provider = Provider(
+        _FailingSession(
+            _FakeResponse(
+                status=200,
+                text_data="not json",
+                headers={"Content-Type": "text/plain"},
+            )
+        ),
+        _manifest(),
+        base_url="https://example",
+    )
+
+    with pytest.raises(ProviderError) as excinfo:
+        await provider._transport.request_json("POST", "/login")
+    assert not isinstance(excinfo.value, ServiceUnavailableError)
 
 
 @pytest.mark.asyncio

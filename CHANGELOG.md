@@ -2,7 +2,6 @@
 
 ## Unreleased
 
-- Add Rotterdam provider for the visitor parking portal at `bezoek.rotterdam.nl`: permit and balance, reservations, and saved license plates (favorites). Favorites and login are verified against the live portal; permit and reservation mapping follows the portal's published data model and is verified with mocked responses only, see the provider README.
 - Security: update locked dependencies to fix open advisories: aiohttp 3.14.5, virtualenv 21.15.6, filelock 4.2.10, idna 3.20, and multidict 7.2.1 ([#107](https://github.com/sir-Unknown/pyCityVisitorParking/pull/107), [#108](https://github.com/sir-Unknown/pyCityVisitorParking/pull/108), [#115](https://github.com/sir-Unknown/pyCityVisitorParking/pull/115)).
 - Refresh `uv.lock` so it matches `pyproject.toml` again (`uv lock --check` passes) and bump dev tooling: pylint 4.0.9, pytest 9.1.0, pytest-asyncio 1.4.0, ruff 0.15.18, pyright 1.1.410, pre-commit 4.6.0, and zizmor 1.25.2 ([#115](https://github.com/sir-Unknown/pyCityVisitorParking/pull/115)).
 - Update pre-commit hooks (ruff-pre-commit 0.17.3, zizmor-pre-commit 1.32.0, codespell 2.4.3) and the GitHub Actions dependency group (11 updates) ([#113](https://github.com/sir-Unknown/pyCityVisitorParking/pull/113), [#109](https://github.com/sir-Unknown/pyCityVisitorParking/pull/109), [#95](https://github.com/sir-Unknown/pyCityVisitorParking/pull/95), [#97](https://github.com/sir-Unknown/pyCityVisitorParking/pull/97)).

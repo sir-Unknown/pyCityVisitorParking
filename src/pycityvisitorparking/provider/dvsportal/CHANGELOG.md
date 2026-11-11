@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.5.28
+
 - Added the refactored `dvsportal_new` provider package with split session, profile,
   transport, and mapping modules.
 - Fixed re-authentication on portals that report an expired session as an HTML HTTP 500

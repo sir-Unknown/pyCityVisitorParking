@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.5.28
+
 - A 2xx HTML response (maintenance or WAF page) instead of JSON raises `ServiceUnavailableError` and is logged at debug level.
 - Map permit zone validity from `zone` when `zone_validity` is missing.
 

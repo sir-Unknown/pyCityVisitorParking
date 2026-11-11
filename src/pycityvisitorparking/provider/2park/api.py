@@ -13,11 +13,10 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import aiohttp
 
-from ...const import RESOLVED_LOCATION, RESOLVED_PERMIT_ID
-from ...exceptions import AuthError, ProviderError, ValidationError
+from ...exceptions import AuthError, ErrorCode, ProviderError, ValidationError
 from ...models import Favorite, Permit, Reservation
 from ...util import format_utc_timestamp, parse_timestamp
-from ..base import BaseProvider
+from ..base import BaseProvider, raise_for_failed_status
 from ..loader import ProviderManifest
 from .const import (
     API_TIMEZONE,
@@ -82,36 +81,31 @@ class Provider(BaseProvider):
         self._auth_lock = asyncio.Lock()
         self._session_generation = 0
 
-    @property
-    def resolved_login_params(self) -> dict[str, str]:
-        """Return provider-resolved login parameters from the last successful login."""
-        result: dict[str, str] = {}
-        if self._product_id is not None:
-            result[RESOLVED_PERMIT_ID] = self._product_id
-        if self._product_location is not None:
-            result[RESOLVED_LOCATION] = self._product_location
-        return result
-
     async def login(
         self,
         credentials: Mapping[str, object] | None = None,
         **kwargs: object,
     ) -> None:
-        """Authenticate against the provider."""
-        async with self._auth_lock:
-            await self._login(credentials, **kwargs)
+        """Authenticate against the provider.
 
-    async def _login(
-        self,
-        credentials: Mapping[str, object] | None = None,
-        **kwargs: object,
-    ) -> None:
-        self._plogger.operation_started("login")
+        Accepts ``username``, ``password`` and an optional ``permit_id`` (alias
+        ``product_id``). The parking location is always resolved internally.
+        """
         merged = self._merge_credentials(credentials, **kwargs)
-        username = merged.get("username")
-        password = merged.get("password")
+        login_credentials = {key: merged[key] for key in ("username", "password") if key in merged}
         product_id = merged.get("permit_id") or merged.get("product_id")
-        location = merged.get("location")
+        if product_id:
+            login_credentials["permit_id"] = product_id
+        async with self._auth_lock:
+            await self._login(login_credentials)
+
+    async def _login(self, credentials: Mapping[str, str]) -> None:
+        """Log in; *credentials* may carry the internally cached ``location``."""
+        self._plogger.operation_started("login")
+        username = credentials.get("username")
+        password = credentials.get("password")
+        product_id = credentials.get("permit_id")
+        location = credentials.get("location")
 
         if not username:
             raise ValidationError("username is required.")
@@ -198,10 +192,7 @@ class Provider(BaseProvider):
                 "data": _json.dumps(action_payload),
             },
         )
-        major = data.get("status", {}).get("code", {}).get("major")
-        if major != "OK":
-            message = data.get("status", {}).get("message", "Unknown error")
-            raise ProviderError(f"Failed to start reservation: {message}")
+        _ensure_ok(data, "start reservation")
 
         action = data.get("data") or {}
         reservation = self._map_action(action, normalized_plate, name)
@@ -254,10 +245,7 @@ class Provider(BaseProvider):
                 PARAM_VALID_UNTIL: valid_until_str,
             },
         )
-        major = data.get("status", {}).get("code", {}).get("major")
-        if major != "OK":
-            message = data.get("status", {}).get("message", "Unknown error")
-            raise ProviderError(f"Failed to update reservation: {message}")
+        _ensure_ok(data, "update reservation")
 
         self._plogger.operation_completed("update_reservation")
         return Reservation(
@@ -291,10 +279,7 @@ class Provider(BaseProvider):
                 "locale": LOCALE,
             },
         )
-        major = data.get("status", {}).get("code", {}).get("major")
-        if major != "OK":
-            message = data.get("status", {}).get("message", "Unknown error")
-            raise ProviderError(f"Failed to end reservation: {message}")
+        _ensure_ok(data, "end reservation")
 
         reservation = Reservation(
             id=existing.id,
@@ -370,10 +355,7 @@ class Provider(BaseProvider):
                 "product_id": self._product_id or "",
             },
         )
-        major = data.get("status", {}).get("code", {}).get("major")
-        if major != "OK":
-            message = data.get("status", {}).get("message", "Unknown error")
-            raise ProviderError(f"Failed to add favorite: {message}")
+        _ensure_ok(data, "add favorite")
 
         favorites = await self.list_favorites()
         favorite = next((f for f in favorites if f.license_plate == normalized_plate), None)
@@ -389,7 +371,9 @@ class Provider(BaseProvider):
         name: str | None = None,
     ) -> Favorite:
         """Native favorite update implementation."""
-        raise ProviderError("Favorite updates are not supported.")
+        raise ProviderError(
+            "Favorite updates are not supported.", error_code=ErrorCode.NOT_SUPPORTED
+        )
 
     async def remove_favorite(self, favorite_id: str) -> None:
         """Remove a favorite."""
@@ -418,10 +402,7 @@ class Provider(BaseProvider):
                 "product_id": self._product_id or "",
             },
         )
-        major = data.get("status", {}).get("code", {}).get("major")
-        if major != "OK":
-            message = data.get("status", {}).get("message", "Unknown error")
-            raise ProviderError(f"Failed to remove favorite: {message}")
+        _ensure_ok(data, "remove favorite")
         self._plogger.operation_completed("remove_favorite")
 
     async def _detect_product(self, product_id: str | None) -> tuple[str, str | None]:
@@ -617,12 +598,9 @@ class Provider(BaseProvider):
             _attempts: int,
         ) -> Any:
             self._plogger.response_status(response.status)
-            if response.status in (401, 403):
-                self._plogger.request_failure(response.status)
-                raise AuthError("Authentication failed.")
             if not 200 <= response.status < 300:
                 self._plogger.request_failure(response.status)
-                raise ProviderError(f"Provider request failed with status {response.status}.")
+                raise_for_failed_status(response.status)
             try:
                 data = await response.json(content_type=None)
             except (aiohttp.ContentTypeError, ValueError) as exc:
@@ -641,6 +619,15 @@ class Provider(BaseProvider):
             request_kwargs={"data": form_data, "headers": DEFAULT_HEADERS},
             response_handler=handle_response,
         )
+
+
+def _ensure_ok(data: Any, action: str) -> None:
+    """Raise when 2park rejected an action (status major other than ``OK``)."""
+    status = data.get("status", {}) if isinstance(data, dict) else {}
+    if status.get("code", {}).get("major") == "OK":
+        return
+    message = status.get("message", "Unknown error")
+    raise ProviderError(f"Failed to {action}: {message}", error_code=ErrorCode.PROVIDER_REJECTED)
 
 
 def _is_session_timeout(data: Any) -> bool:

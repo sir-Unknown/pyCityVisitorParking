@@ -13,7 +13,7 @@ from zoneinfo import ZoneInfo
 
 import aiohttp
 
-from ...exceptions import AuthError, NotFoundError, ProviderError, ValidationError
+from ...exceptions import AuthError, ErrorCode, NotFoundError, ProviderError, ValidationError
 from ...models import BALANCE_UNIT_MINUTE, Favorite, Permit, Reservation, ZoneValidityBlock
 from ..base import BaseProvider
 from ..loader import ProviderManifest
@@ -526,7 +526,9 @@ class Provider(BaseProvider):
         """Update the start and/or end time of a reservation."""
         self._plogger.operation_started("update_reservation")
         if not self.reservation_update_possible:
-            raise ProviderError("Reservation updates are not supported.")
+            raise ProviderError(
+                "Reservation updates are not supported.", error_code=ErrorCode.NOT_SUPPORTED
+            )
         if name is not None:
             raise ValidationError("name cannot be updated.")
         start_dt, end_dt = self._validate_reservation_times(
@@ -638,7 +640,8 @@ class Provider(BaseProvider):
             # The generic contract carries no zone choice, so a guess could park in the
             # wrong zone.
             raise ProviderError(
-                "The permit covers multiple zones; zone selection is not supported."
+                "The permit covers multiple zones; zone selection is not supported.",
+                error_code=ErrorCode.NOT_SUPPORTED,
             )
         name = zones[0].text("Naam")
         if name is None:
@@ -755,7 +758,7 @@ class Provider(BaseProvider):
             )
         raise ProviderError(
             "Provider rejected the parking action.",
-            error_code="provider_rejected",
+            error_code=ErrorCode.PROVIDER_REJECTED,
             detail=detail,
         )
 

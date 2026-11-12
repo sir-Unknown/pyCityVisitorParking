@@ -3,7 +3,7 @@
 ✅ **Use the current release source of truth**
 - The package version is derived from git tags via `hatch-vcs`.
 - Do not edit a version string in the repository for releases.
-- The release tag must match `vX.Y.Z`.
+- The release tag must match `vX.Y.Z` (stable) or `vX.Y.ZbN` (beta pre-release, see below).
 
 ✅ **Use SemVer and keep changelogs accurate**
 - Use SemVer for release tags.
@@ -61,12 +61,23 @@ Do not push release tags before the local checks and artifact validation pass.
 8. The `Release` workflow resolves that tag to an exact commit, verifies the `CI` workflow passed on that commit, and checks whether package-shipping files changed since the previous published release.
 9. If package files changed, the workflow builds from that tagged commit and publishes to PyPI using OIDC. If not, it exits without publishing.
 
+✅ **Release a beta first when a change is risky or breaking**
+- Beta tags use the PEP 440 form `vX.Y.ZbN` (for example `v0.5.29b1`), where `X.Y.Z` is the intended stable version.
+- Number betas sequentially (`b1`, `b2`, ...). Fix problems with a new beta; never reuse or move a published beta tag.
+- Keep the changelog entries under `Unreleased` for betas. Move them into the versioned section only for the stable release.
+- The tag may be created on the commit of an open pull request, as long as `CI` passed for that exact commit. Tag pushes also run `CI`.
+- Create the tag the same way as a stable tag, then publish a GitHub release marked as **pre-release** (`gh release create vX.Y.ZbN --verify-tag --prerelease`).
+- The `Release` workflow publishes betas through the same `pypi` environment, which requires manual approval.
+- Pip and uv do not install betas by default. Test with `pip install --pre pycityvisitorparking==X.Y.ZbN`.
+- The package-change check compares against the previous published stable release, never a pre-release.
+- Merge the pull request only after the beta has been verified, then release the stable version from `main`.
+
 ✅ **Understand what GitHub Actions does**
 - `CI` runs on pull requests, pushes to `main`, manual dispatch, and tags matching `v*`.
 - `Release Drafter` updates the draft release on `main` pushes and PR updates.
 - `Release` runs when a GitHub release is published and can also be run manually for an existing tag via `workflow_dispatch`.
 - The publish workflow:
-  - validates that the requested tag matches `vX.Y.Z`
+  - validates that the requested tag matches `vX.Y.Z` or `vX.Y.ZbN`
   - resolves the tag to its exact commit
   - verifies the `CI` workflow succeeded for that commit
   - compares the tagged commit with the previous published release and skips publishing when no package-shipping files changed

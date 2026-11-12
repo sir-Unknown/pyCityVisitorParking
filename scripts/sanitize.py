@@ -1,14 +1,17 @@
-"""Sanitize JSON payloads for safe sharing."""
+"""Sanitize JSON payloads and browser HAR recordings for safe sharing."""
 
 from __future__ import annotations
 
 import argparse
+import base64
+import binascii
 import json
 import sys
 from collections.abc import Mapping
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 _SENSITIVE_KEYS = {
     "password",
@@ -74,6 +77,21 @@ _NON_SENSITIVE_KEYS = {
     "validfrom",
     "validuntil",
 }
+# HAR header values are kept only for these names; all others are masked
+# (Authorization, Cookie, Set-Cookie, Referer, Location, custom tokens, ...).
+_HAR_SAFE_HEADERS = {
+    "accept",
+    "accept-language",
+    "allow",
+    "cache-control",
+    "content-language",
+    "content-length",
+    "content-type",
+    "date",
+    "vary",
+    "x-requested-with",
+}
+_HAR_OMITTED_BODY = "<omitted: not JSON>"
 
 
 def mask_value(value: Any) -> Any:
@@ -191,18 +209,169 @@ def sanitize_headers(headers: Mapping[str, Any]) -> dict[str, Any]:
     return sanitized
 
 
+def is_har(data: Any) -> bool:
+    """Return True when the data looks like a browser HAR recording."""
+    return (
+        isinstance(data, Mapping)
+        and isinstance(data.get("log"), Mapping)
+        and isinstance(data["log"].get("entries"), list)
+    )
+
+
+def _is_har_api_entry(entry: Mapping[str, Any]) -> bool:
+    """Keep API calls; drop preflights, pages, scripts, styles, and images."""
+    request = entry.get("request") or {}
+    method = str(request.get("method") or "").upper()
+    if method == "OPTIONS":
+        return False
+    if method != "GET":
+        return True
+    content = (entry.get("response") or {}).get("content") or {}
+    return "json" in str(content.get("mimeType") or "").lower()
+
+
+def _sanitize_pairs(pairs: list[tuple[str, str]]) -> list[tuple[str, Any]]:
+    return [(name, _mask_value_for_key(name, value)) for name, value in pairs]
+
+
+def _is_id_segment(segment: str) -> bool:
+    """Return True for numeric IDs and UUID/hex-like tokens in URL paths."""
+    if segment.isdigit():
+        return True
+    return len(segment) >= 16 and all(ch in "0123456789abcdefABCDEF-" for ch in segment)
+
+
+def _sanitize_url(url: Any) -> Any:
+    if not isinstance(url, str):
+        return url
+    parts = urlsplit(url)
+    path = "/".join(
+        mask_value(segment) if _is_id_segment(segment) else segment
+        for segment in parts.path.split("/")
+    )
+    query = urlencode(
+        _sanitize_pairs(parse_qsl(parts.query, keep_blank_values=True)),
+        safe="*",
+    )
+    return urlunsplit((parts.scheme, parts.hostname or "", path, query, ""))
+
+
+def _sanitize_har_headers(headers: Any) -> list[dict[str, Any]]:
+    if not isinstance(headers, list):
+        return []
+    sanitized: list[dict[str, Any]] = []
+    for header in headers:
+        if not isinstance(header, Mapping):
+            continue
+        name = str(header.get("name") or "")
+        value = header.get("value")
+        if name.lower() not in _HAR_SAFE_HEADERS:
+            value = mask_value(value)
+        sanitized.append({"name": name, "value": value})
+    return sanitized
+
+
+def _sanitize_body_text(text: Any, mime_type: str) -> Any:
+    if not isinstance(text, str) or not text:
+        return text
+    if "x-www-form-urlencoded" in mime_type.lower():
+        return urlencode(_sanitize_pairs(parse_qsl(text, keep_blank_values=True)), safe="*")
+    try:
+        parsed = json.loads(text)
+    except ValueError:
+        return _HAR_OMITTED_BODY
+    return json.dumps(sanitize_data(parsed), ensure_ascii=True, sort_keys=True)
+
+
+def _sanitize_har_post_data(post_data: Any) -> dict[str, Any] | None:
+    if not isinstance(post_data, Mapping):
+        return None
+    mime_type = str(post_data.get("mimeType") or "")
+    return {
+        "mimeType": mime_type,
+        "text": _sanitize_body_text(post_data.get("text"), mime_type),
+    }
+
+
+def _sanitize_har_content(content: Any) -> dict[str, Any]:
+    if not isinstance(content, Mapping):
+        return {}
+    mime_type = str(content.get("mimeType") or "")
+    text = content.get("text")
+    if content.get("encoding") == "base64" and isinstance(text, str):
+        try:
+            text = base64.b64decode(text, validate=True).decode("utf-8")
+        except binascii.Error, UnicodeDecodeError:
+            text = _HAR_OMITTED_BODY
+    return {
+        "mimeType": mime_type,
+        "size": content.get("size"),
+        "text": _sanitize_body_text(text, mime_type),
+    }
+
+
+def _sanitize_har_entry(entry: Mapping[str, Any]) -> dict[str, Any]:
+    request = entry.get("request") or {}
+    response = entry.get("response") or {}
+    sanitized_request: dict[str, Any] = {
+        "method": request.get("method"),
+        "url": _sanitize_url(request.get("url")),
+        "headers": _sanitize_har_headers(request.get("headers")),
+    }
+    post_data = _sanitize_har_post_data(request.get("postData"))
+    if post_data is not None:
+        sanitized_request["postData"] = post_data
+    return {
+        "startedDateTime": entry.get("startedDateTime"),
+        "time": entry.get("time"),
+        "request": sanitized_request,
+        "response": {
+            "status": response.get("status"),
+            "statusText": response.get("statusText"),
+            "headers": _sanitize_har_headers(response.get("headers")),
+            "content": _sanitize_har_content(response.get("content")),
+        },
+    }
+
+
+def sanitize_har(data: Mapping[str, Any]) -> dict[str, Any]:
+    """Return a sanitized HAR with only API calls.
+
+    The output is an allowlist rebuild: cookies, pages, and unknown fields are
+    dropped; header values outside a small safe set are masked; JSON and form
+    bodies are sanitized like other JSON dumps; other bodies are omitted.
+    """
+    log = data["log"]
+    creator = log.get("creator") if isinstance(log.get("creator"), Mapping) else {}
+    return {
+        "log": {
+            "version": log.get("version"),
+            "creator": {"name": creator.get("name"), "version": creator.get("version")},
+            "entries": [
+                _sanitize_har_entry(entry)
+                for entry in log["entries"]
+                if isinstance(entry, Mapping) and _is_har_api_entry(entry)
+            ],
+        }
+    }
+
+
 def sanitize_file(path: Path) -> Any:
-    """Load and sanitize a JSON file."""
+    """Load and sanitize a JSON file or a browser HAR recording."""
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as exc:
         raise ValueError(f"Invalid JSON: {exc}") from exc
+    if is_har(data):
+        return sanitize_har(data)
     return sanitize_data(data)
 
 
 def _parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Sanitize a JSON file for sharing.")
-    parser.add_argument("input", help="Path to the JSON file.")
+    parser = argparse.ArgumentParser(
+        description="Sanitize a JSON file or a browser HAR recording for sharing."
+    )
+    parser.add_argument("input", help="Path to the JSON or HAR file.")
     parser.add_argument(
         "--output",
         dest="output",

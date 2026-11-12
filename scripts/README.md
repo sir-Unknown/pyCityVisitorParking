@@ -116,6 +116,17 @@ Additional sanitize options:
 - `--indent <n>` sets JSON indentation (default: 2) for easier reading or compact
   output.
 
+Browser recordings (HAR files exported from the developer tools Network tab)
+are detected automatically. Only API calls are kept (JSON responses and non-GET
+requests); cookies are dropped, header values outside a small safe set
+(`Content-Type`, `Accept`, ...) are masked, numeric and UUID-like URL path
+segments and sensitive query values are masked, JSON and form bodies are
+sanitized, and other bodies are omitted:
+
+```bash
+python scripts/sanitize.py session.har --output .tmp/session.sanitized.json
+```
+
 ## Safety reminders
 
 - Never share raw credentials or full license plates.

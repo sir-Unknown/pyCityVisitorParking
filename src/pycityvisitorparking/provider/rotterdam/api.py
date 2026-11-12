@@ -13,7 +13,7 @@ from zoneinfo import ZoneInfo
 
 import aiohttp
 
-from ...exceptions import AuthError, NotFoundError, ProviderError, ValidationError
+from ...exceptions import AuthError, ErrorCode, NotFoundError, ProviderError, ValidationError
 from ...models import (
     BALANCE_UNIT_MINUTE,
     Favorite,
@@ -791,7 +791,7 @@ class Provider(BaseProvider):
             )
         raise ProviderError(
             "Provider rejected the parking action.",
-            error_code="provider_rejected",
+            error_code=ErrorCode.PROVIDER_REJECTED,
             detail=detail,
         )
 

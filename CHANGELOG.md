@@ -4,6 +4,7 @@
 
 - Add Amsterdam provider (meldcode and pincode login) with optional parking machine selection, based on the reverse engineered Parkeervergunningen Amsterdam API ([#1](https://github.com/sir-Unknown/pyCityVisitorParking/issues/1)).
 - Restore `scripts/provider_live_check.py` and `scripts/sanitize.py` for provider live checks, as referenced by `docs/provider-development/README.md`.
+- `scripts/sanitize.py` now sanitizes browser HAR recordings, so a session recorded in the provider's web portal can be shared safely. The provider development guide describes how to record one.
 
 ## 0.5.30
 

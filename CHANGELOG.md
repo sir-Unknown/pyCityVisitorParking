@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Add Amsterdam provider (meldcode and pincode login) with optional parking machine selection, based on the reverse engineered Parkeervergunningen Amsterdam API ([#1](https://github.com/sir-Unknown/pyCityVisitorParking/issues/1)).
+- Restore `scripts/provider_live_check.py` and `scripts/sanitize.py` for provider live checks, as referenced by `docs/provider-development/README.md`.
+
 ## 0.5.30
 
 - DVS Portal: fix write requests (reservations, favorites) failing with HTTP 401 on portals that publish the XSRF token in the `__Host-Xsrf-DVSPortal` cookie and do not serve `app.env.js` (Rijswijk). The cookie value is now sent as `X-XSRF-TOKEN` by default ([#128](https://github.com/sir-Unknown/pyCityVisitorParking/issues/128)).

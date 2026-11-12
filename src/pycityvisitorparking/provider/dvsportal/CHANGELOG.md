@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.5.30
+
+- Fixed write requests failing with HTTP 401 on portals that publish the XSRF token in the `__Host-Xsrf-DVSPortal` cookie and do not serve `app.env.js` (seen on Rijswijk). The provider now sends that cookie's value as `X-XSRF-TOKEN` by default.
+
 ## 0.5.29
 
 - Breaking: the provider no longer exposes `resolved_login_params`. The resolved `permit_media_type_id` is cached internally and reused on reauthentication. The optional `permit_media_type_id` login key is unchanged.

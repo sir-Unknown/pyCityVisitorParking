@@ -250,6 +250,35 @@ async def test_request_json_auth_includes_auth_and_xsrf_headers(
 
 
 @pytest.mark.asyncio
+async def test_request_json_auth_uses_host_prefixed_xsrf_cookie(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async with aiohttp.ClientSession() as session:
+        session.cookie_jar.update_cookies(
+            {"__Host-Xsrf-DVSPortal": "host-xsrf"},
+            response_url=URL("https://example/"),
+        )
+        provider = Provider(session, _manifest(), base_url="https://example")
+        provider._session_authenticated = True
+        captured: dict[str, Any] = {}
+
+        async def _fake_request_with_retries(
+            method: str,
+            url: str,
+            *,
+            request_kwargs: dict[str, Any],
+            response_handler: Any,
+        ) -> Any:
+            captured["request_kwargs"] = request_kwargs
+            return {"ok": True}
+
+        monkeypatch.setattr(provider, "_request_with_retries", _fake_request_with_retries)
+        await provider._request_json_auth("POST", RESERVATION_CREATE_ENDPOINT, json={})
+
+    assert captured["request_kwargs"]["headers"][XSRF_HEADER] == "host-xsrf"
+
+
+@pytest.mark.asyncio
 async def test_request_json_auth_omits_xsrf_header_without_cookie(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.5.29
+
 - Breaking: remove the provider-specific `RESOLVED_LOCATION` and `RESOLVED_PERMIT_MEDIA_TYPE_ID` exports (and the `pycityvisitorparking.const` module) and `BaseProvider.resolved_login_params`. Provider-resolved login state stays internal and is reused on reauthentication; callers no longer persist or replay it. 2park's `login()` no longer accepts `location` ([#63](https://github.com/sir-Unknown/pyCityVisitorParking/issues/63), [#64](https://github.com/sir-Unknown/pyCityVisitorParking/issues/64)).
 - Breaking: remove `user_message` from library exceptions. Exceptions are technical; user-facing and translated messages belong to the integration ([#65](https://github.com/sir-Unknown/pyCityVisitorParking/issues/65)).
 - Add the `ErrorCode` `StrEnum` with the supported, stable `error_code` values and document the code-based error contract in the README. Common failure paths now carry a specific code: HTTP 404 raises `NotFoundError`, HTTP 429 raises `RateLimitError`, HTTP 502/503/504 raise `ServiceUnavailableError` (was `NetworkError`), request timeouts raise `TimeoutError`, unsupported operations use `not_supported`, and provider rejections use `provider_rejected` ([#66](https://github.com/sir-Unknown/pyCityVisitorParking/issues/66)).

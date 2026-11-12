@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.5.29
+
 - Breaking: `login()` no longer accepts a `location` key and the provider no longer exposes `resolved_login_params`. The location is resolved from the selected product and cached internally for reauthentication. `permit_id` (alias `product_id`) remains the way to select a product.
 - Rejected actions raise `ProviderError` with `error_code="provider_rejected"`; unsupported favorite updates use `error_code="not_supported"`. HTTP errors use the shared status mapping (`AuthError`, `NotFoundError`, `RateLimitError`, `ServiceUnavailableError`, `ProviderError`).
 - Log 401/403 responses during an expected reauthentication at debug level.

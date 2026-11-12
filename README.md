@@ -288,6 +288,8 @@ Supported error codes:
 
 `TimeoutError` is a subclass of `NetworkError`; `RateLimitError`, `ServiceUnavailableError` and `NotFoundError` are subclasses of `ProviderError`; `ConfigError` is a subclass of `ValidationError`.
 
+`ProviderError` with `error_code="provider_rejected"` means the provider processed the request and refused it, for example because the balance is used up or the time is outside the planning horizon. The session works, so a re-login does not help; `detail` carries the provider's reason when it gives one (without license plates).
+
 Example:
 
 ```python

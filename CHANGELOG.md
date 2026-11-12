@@ -3,7 +3,8 @@
 ## Unreleased
 
 - Add Rotterdam provider for the visitor parking portal at `bezoek.rotterdam.nl`: permit and balance, reservations, and saved license plates (favorites). Favorites and login are verified against the live portal; permit and reservation mapping follows the portal's published data model and is verified with mocked responses only, see the provider README.
-- Add per-reservation zone selection: `Permit.zones` (new public `Zone` model with `id`, `name`, and `zone_validity`), an optional `zone_id` argument on `start_reservation`, `Reservation.zone_id`, and the manifest capability `zone_selection` (exposed as `ProviderInfo.zone_selection`). All additions are optional with defaults; providers without zones reject a `zone_id` with `ValidationError`. Rotterdam and the demo provider support it.
+- Add per-reservation zone selection: `Permit.zones` (new public `Zone` model with `id`, `name`, and `zone_validity`), an optional `zone_id` argument on `start_reservation`, `Reservation.zone_id`, and the manifest capability `zone_selection` (exposed as `ProviderInfo.zone_selection`). All additions are optional with defaults; providers without zones reject a `zone_id` with `ValidationError`. Rotterdam supports it.
+- Demo provider: a municipality name containing "Rotterdam" gets a test permit with zones 10, 630 and 632 and the Rotterdam paid hours for the coming week (zone 10 is paid until 01:00 on Friday and Saturday), plus a running and a planned reservation in different zones. The other demo permits have no zones, so both paths can be tested.
 
 ## 0.5.30
 

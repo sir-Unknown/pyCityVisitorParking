@@ -4,12 +4,15 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Mapping
-from datetime import datetime
+from datetime import UTC, datetime, time, timedelta
+from zoneinfo import ZoneInfo
 
 from ...exceptions import ProviderError, ValidationError
 from ...models import Favorite, Permit, Reservation, Zone, ZoneValidityBlock
 from ...util import parse_timestamp
 from ..base import BaseProvider
+
+_LOCAL_TZ = ZoneInfo("Europe/Amsterdam")
 
 _FAVORITES_BY_CITY: dict[str, list[dict[str, str]]] = {
     "groningen": [
@@ -40,12 +43,20 @@ _FAVORITES_BY_CITY: dict[str, list[dict[str, str]]] = {
         {"id": "e6", "name": "Robin Claes", "license_plate": "PF-812-S"},
         {"id": "e7", "name": "Fleur Verstegen", "license_plate": "TX-37-HN"},
     ],
+    "rotterdam": [
+        {"id": "r1", "name": "Sanne Bosman", "license_plate": "RT-502-K"},
+        {"id": "r2", "name": "Youssef Amrani", "license_plate": "MZ-118-D"},
+        {"id": "r3", "name": "Bram Koster", "license_plate": "KX-73-PL"},
+        {"id": "r4", "name": "Ilse Verbeek", "license_plate": "HB-904-S"},
+    ],
     "default": [
         {"id": "d1", "name": "Demo Gebruiker", "license_plate": "XX-000-X"},
     ],
 }
 
-_DEFAULT_ZONE_ID = "zone-1"
+# Rotterdam demo zones: (zone id, paid until 01:00 on Friday and Saturday).
+# The first zone is the default zone.
+_ROTTERDAM_ZONES: tuple[tuple[str, bool], ...] = (("10", True), ("630", False), ("632", False))
 
 _RESERVATIONS: list[dict[str, str]] = [
     {
@@ -54,7 +65,6 @@ _RESERVATIONS: list[dict[str, str]] = [
         "license_plate": "TZ881V",
         "start_time": "2026-04-15T08:30:00Z",
         "end_time": "2026-04-15T14:00:00Z",
-        "zone_id": _DEFAULT_ZONE_ID,
     },
     {
         "id": "res-2",
@@ -62,7 +72,6 @@ _RESERVATIONS: list[dict[str, str]] = [
         "license_plate": "ZG188P",
         "start_time": "2026-04-15T10:00:00Z",
         "end_time": "2026-04-15T18:00:00Z",
-        "zone_id": _DEFAULT_ZONE_ID,
     },
     {
         "id": "res-3",
@@ -70,7 +79,6 @@ _RESERVATIONS: list[dict[str, str]] = [
         "license_plate": "NG66CT",
         "start_time": "2026-04-15T09:15:00Z",
         "end_time": "2026-04-15T12:30:00Z",
-        "zone_id": "zone-2",
     },
 ]
 
@@ -81,7 +89,7 @@ class Provider(BaseProvider):
     def __init__(self, *args, **kwargs) -> None:  # type: ignore[no-untyped-def]
         super().__init__(*args, **kwargs)
         self._favorites: list[dict[str, str]] | None = None
-        self._reservations: list[dict[str, str]] = [dict(r) for r in _RESERVATIONS]
+        self._reservations: list[dict[str, str | None]] | None = None
 
     def _get_favorites(self) -> list[dict[str, str]]:
         """Lazy-initialize favorites so the city context is available."""
@@ -125,6 +133,14 @@ class Provider(BaseProvider):
                 "zone_start": "2026-04-15T07:30:00Z",
                 "zone_end": "2026-04-15T18:30:00Z",
             }
+        if self._is_rotterdam():
+            # Windows come from the zones (see ``_zones``).
+            return {
+                "remaining_balance": 10450,
+                "balance_unit": "MINUTE",
+                "zone_start": "",
+                "zone_end": "",
+            }
         # fallback
         return {
             "remaining_balance": 100.0,
@@ -135,31 +151,87 @@ class Provider(BaseProvider):
 
     async def get_permit(self) -> Permit:
         cfg = self._demo_permit_config()
-        default_validity = [
-            ZoneValidityBlock(start_time=cfg["zone_start"], end_time=cfg["zone_end"])
-        ]
+        zones = self._zones()
         return Permit(
             id="demo-permit",
             remaining_balance=cfg["remaining_balance"],
             balance_unit=cfg["balance_unit"],
-            zone_validity=default_validity,
-            zones=[
-                Zone(id=_DEFAULT_ZONE_ID, name="Zone 1", zone_validity=default_validity),
-                Zone(
-                    id="zone-2",
-                    name="Zone 2",
-                    zone_validity=[
-                        ZoneValidityBlock(
-                            start_time="2026-04-15T11:00:00Z",
-                            end_time="2026-04-15T23:00:00Z",
-                        )
-                    ],
-                ),
-            ],
+            # With zones, the permit-level windows are those of the default zone.
+            zone_validity=zones[0].zone_validity
+            if zones
+            else [ZoneValidityBlock(start_time=cfg["zone_start"], end_time=cfg["zone_end"])],
+            zones=zones,
         )
 
+    def _is_rotterdam(self) -> bool:
+        return "rotterdam" in (self._request_context_name or "").lower()
+
+    def _now(self) -> datetime:
+        return datetime.now(UTC)
+
+    def _zones(self) -> list[Zone]:
+        """Return the demo zones; only the Rotterdam demo permit has zones."""
+        if not self._is_rotterdam():
+            return []
+        return [
+            Zone(id=zone_id, name=zone_id, zone_validity=self._rotterdam_windows(late))
+            for zone_id, late in _ROTTERDAM_ZONES
+        ]
+
+    def _rotterdam_windows(self, late_weekend: bool) -> list[ZoneValidityBlock]:
+        """Return the upcoming paid windows of a Rotterdam demo zone for one week.
+
+        Mirrors the portal: 09:00-23:00, Sunday 12:00-23:00, and for late zones
+        Friday and Saturday until 01:00 the next day (Europe/Amsterdam).
+        """
+        now = self._now()
+        today = now.astimezone(_LOCAL_TZ).date()
+        windows: list[ZoneValidityBlock] = []
+        for offset in range(8):
+            day = today + timedelta(days=offset)
+            start = datetime.combine(day, time(12 if day.weekday() == 6 else 9), _LOCAL_TZ)
+            if late_weekend and day.weekday() in (4, 5):
+                end = datetime.combine(day + timedelta(days=1), time(1), _LOCAL_TZ)
+            else:
+                end = datetime.combine(day, time(23), _LOCAL_TZ)
+            if end > now:
+                windows.append(
+                    ZoneValidityBlock(
+                        start_time=self._format_utc_timestamp(start),
+                        end_time=self._format_utc_timestamp(end),
+                    )
+                )
+        return windows
+
+    def _get_reservations(self) -> list[dict[str, str | None]]:
+        """Lazy-initialize reservations so the city context is available."""
+        if self._reservations is None:
+            if self._is_rotterdam():
+                now = self._now().replace(second=0, microsecond=0)
+                self._reservations = [
+                    {
+                        "id": "rot-1",
+                        "name": "Sanne Bosman",
+                        "license_plate": "RT502K",
+                        "start_time": self._format_utc_timestamp(now - timedelta(minutes=30)),
+                        "end_time": self._format_utc_timestamp(now + timedelta(hours=2)),
+                        "zone_id": "630",
+                    },
+                    {
+                        "id": "rot-2",
+                        "name": "Youssef Amrani",
+                        "license_plate": "MZ118D",
+                        "start_time": self._format_utc_timestamp(now + timedelta(days=1)),
+                        "end_time": self._format_utc_timestamp(now + timedelta(days=1, hours=3)),
+                        "zone_id": "10",
+                    },
+                ]
+            else:
+                self._reservations = [{**r, "zone_id": None} for r in _RESERVATIONS]
+        return self._reservations
+
     async def list_reservations(self) -> list[Reservation]:
-        return [self._map_reservation(r) for r in self._reservations]
+        return [self._map_reservation(r) for r in self._get_reservations()]
 
     async def start_reservation(
         self,
@@ -169,21 +241,23 @@ class Provider(BaseProvider):
         name: str | None = None,
         zone_id: str | None = None,
     ) -> Reservation:
-        selected_zone = self._validate_zone_id(zone_id) or _DEFAULT_ZONE_ID
-        if selected_zone not in {zone.id for zone in (await self.get_permit()).zones}:
+        requested_zone = self._validate_zone_id(zone_id)
+        zone_ids = [zone.id for zone in self._zones()]
+        if requested_zone is not None and requested_zone not in zone_ids:
             raise ValidationError("zone_id is not a zone of the permit.")
         start_time, end_time = self._validate_reservation_times(
             start_time, end_time, require_both=True
         )
-        record = {
+        record: dict[str, str | None] = {
             "id": str(uuid.uuid4()),
             "name": name or "",
             "license_plate": self._normalize_license_plate(license_plate),
             "start_time": self._format_utc_timestamp(self._normalize_datetime(start_time)),
             "end_time": self._format_utc_timestamp(self._normalize_datetime(end_time)),
-            "zone_id": selected_zone,
+            # Without a requested zone the default (first) zone is used.
+            "zone_id": requested_zone or (zone_ids[0] if zone_ids else None),
         }
-        self._reservations.append(record)
+        self._get_reservations().append(record)
         return self._map_reservation(record)
 
     async def update_reservation(
@@ -193,17 +267,17 @@ class Provider(BaseProvider):
         end_time: datetime | None = None,
         name: str | None = None,
     ) -> Reservation:
-        for r in self._reservations:
+        for r in self._get_reservations():
             if r["id"] == reservation_id:
                 effective_start = (
                     self._normalize_datetime(start_time)
                     if start_time is not None
-                    else parse_timestamp(r["start_time"])
+                    else parse_timestamp(str(r["start_time"]))
                 )
                 effective_end = (
                     self._normalize_datetime(end_time)
                     if end_time is not None
-                    else parse_timestamp(r["end_time"])
+                    else parse_timestamp(str(r["end_time"]))
                 )
                 self._validate_reservation_times(effective_start, effective_end, require_both=True)
                 r["start_time"] = self._format_utc_timestamp(effective_start)
@@ -218,20 +292,21 @@ class Provider(BaseProvider):
         reservation_id: str,
         end_time: datetime,
     ) -> Reservation:
-        for i, r in enumerate(self._reservations):
+        reservations = self._get_reservations()
+        for i, r in enumerate(reservations):
             if r["id"] == reservation_id:
                 r["end_time"] = self._format_utc_timestamp(self._normalize_datetime(end_time))
-                self._reservations.pop(i)
+                reservations.pop(i)
                 return self._map_reservation(r)
         raise ProviderError(f"Reservation {reservation_id!r} not found.")
 
-    def _map_reservation(self, r: dict[str, str]) -> Reservation:
+    def _map_reservation(self, r: dict[str, str | None]) -> Reservation:
         return Reservation(
-            id=r["id"],
-            name=r["name"],
-            license_plate=self._normalize_license_plate(r["license_plate"]),
-            start_time=r["start_time"],
-            end_time=r["end_time"],
+            id=str(r["id"]),
+            name=str(r["name"]),
+            license_plate=self._normalize_license_plate(str(r["license_plate"])),
+            start_time=str(r["start_time"]),
+            end_time=str(r["end_time"]),
             zone_id=r["zone_id"],
         )
 

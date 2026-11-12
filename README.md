@@ -50,6 +50,7 @@ Currently bundled providers:
 - The Hague
 - 2park
 - Rotterdam
+- Amsterdam (meldcode and pincode login)
 
 Provider manifests are discovered from `src/pycityvisitorparking/provider/` without importing all providers up front.
 
@@ -59,6 +60,7 @@ Provider-specific documentation:
 - [The Hague](https://github.com/sir-Unknown/pyCityVisitorParking/blob/main/src/pycityvisitorparking/provider/the_hague/README.md)
 - [2park](https://github.com/sir-Unknown/pyCityVisitorParking/blob/main/src/pycityvisitorparking/provider/2park/README.md)
 - [Rotterdam](https://github.com/sir-Unknown/pyCityVisitorParking/blob/main/src/pycityvisitorparking/provider/rotterdam/README.md)
+- [Amsterdam](https://github.com/sir-Unknown/pyCityVisitorParking/blob/main/src/pycityvisitorparking/provider/amsterdam/README.md)
 
 ---
 
@@ -70,6 +72,7 @@ For the exact `base_url`, `api_uri`, and provider-specific notes, see the provid
 - **The Hague**: The Hague
 - **2park**: Amstelveen, Assen, Bergen op Zoom, Breda, Deventer, Dordrecht, Eindhoven, Emmen, Etten-Leur, Gorinchem, Hardenberg, Harderwijk, Maastricht, Oosterhout, Oss, Roosendaal, Sluis, Terneuzen, Tiel, Veenendaal, Vlaardingen
 - **Rotterdam**: Rotterdam
+- **Amsterdam**: Amsterdam
 
 ---
 

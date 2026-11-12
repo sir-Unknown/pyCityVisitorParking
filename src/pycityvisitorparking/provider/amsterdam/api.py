@@ -12,7 +12,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import aiohttp
 
-from ...exceptions import AuthError, ProviderError, ValidationError
+from ...exceptions import AuthError, ErrorCode, ProviderError, ValidationError
 from ...models import Favorite, Permit, Reservation, ZoneValidityBlock
 from ..base import BaseProvider
 from ..loader import ProviderManifest
@@ -243,7 +243,9 @@ class Provider(BaseProvider):
         """Update a reservation."""
         self._plogger.operation_started("update_reservation")
         if not self.reservation_update_possible:
-            raise ProviderError("Reservation updates are not supported.")
+            raise ProviderError(
+                "Reservation updates are not supported.", error_code=ErrorCode.NOT_SUPPORTED
+            )
         if start_time is not None or name is not None:
             raise ValidationError("Only end_time can be updated.")
         if end_time is None:
@@ -343,7 +345,9 @@ class Provider(BaseProvider):
         name: str | None = None,
     ) -> Favorite:
         """Native favorite update implementation."""
-        raise ProviderError("Favorite updates are not supported.")
+        raise ProviderError(
+            "Favorite updates are not supported.", error_code=ErrorCode.NOT_SUPPORTED
+        )
 
     async def remove_favorite(self, favorite_id: str) -> None:
         """Remove a favorite."""
@@ -447,7 +451,7 @@ class Provider(BaseProvider):
             if response.status == 400:
                 message = await self._error_message_from_response(response)
                 if message:
-                    raise ProviderError(message)
+                    raise ProviderError(message, error_code=ErrorCode.PROVIDER_REJECTED)
             self._raise_for_status(response)
             if expect_json:
                 try:
@@ -690,7 +694,11 @@ class Provider(BaseProvider):
                 auth_required=True,
             )
         except ProviderError as exc:
-            if str(exc).lower().removeprefix("provider error: ") in _INVALID_MACHINE_MESSAGES:
+            upstream = exc.detail.lower().removeprefix("provider error: ")
+            if (
+                exc.error_code == ErrorCode.PROVIDER_REJECTED
+                and upstream in _INVALID_MACHINE_MESSAGES
+            ):
                 raise ValidationError("machine_number is not valid for this permit.") from None
             raise
         zone = data.get("zone") if isinstance(data, dict) else None

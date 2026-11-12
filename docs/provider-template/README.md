@@ -32,10 +32,16 @@ runtime package and is ignored by discovery.
   `end_time > start_time`.
 - Filter `zone_validity` to chargeable windows only.
 - Raise library exceptions (`AuthError`, `NetworkError`, `ValidationError`, `ProviderError`).
+  Use `raise_for_failed_status()` from `provider/base.py` for HTTP status mapping and
+  set a specific `ErrorCode` where one applies (`not_supported`, `provider_rejected`).
+- Keep provider-resolved login state (location, media type, tokens) internal and
+  reuse it on reauthentication; do not expose it through the public API.
 - If favorite updates are unsupported, set `capabilities.favorite_update_fields`
-  to `[]` and ensure `update_favorite()` raises `ProviderError`.
+  to `[]` and ensure `update_favorite()` raises `ProviderError` with
+  `error_code=ErrorCode.NOT_SUPPORTED`.
 - If reservation updates are unsupported, set `capabilities.reservation_update_fields`
-  to `[]` and ensure `update_reservation()` raises `ProviderError`.
+  to `[]` and ensure `update_reservation()` raises `ProviderError` with
+  `error_code=ErrorCode.NOT_SUPPORTED`.
 
 ## Testing
 

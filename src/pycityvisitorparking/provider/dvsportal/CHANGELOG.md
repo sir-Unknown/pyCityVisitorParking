@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 0.5.29
+
+- Breaking: the provider no longer exposes `resolved_login_params`. The resolved `permit_media_type_id` is cached internally and reused on reauthentication. The optional `permit_media_type_id` login key is unchanged.
+- Log reauthentication, 401/403 responses, the HTML 500 session-expiry signal and HTTP 429/502/503/504 at debug level instead of warning.
+- HTTP 429 raises `RateLimitError`, HTTP 502/503/504 raise `ServiceUnavailableError`, and HTTP 404 raises `NotFoundError`. Unsupported updates raise `ProviderError` with `error_code="not_supported"`.
+
 ## 0.5.28
 
 - Added the refactored `dvsportal_new` provider package with split session, profile,

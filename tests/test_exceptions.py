@@ -1,6 +1,9 @@
+import pytest
+
 from pycityvisitorparking.exceptions import (
     AuthError,
     ConfigError,
+    ErrorCode,
     NetworkError,
     NotFoundError,
     ProviderError,
@@ -17,7 +20,7 @@ def test_error_defaults() -> None:
     assert exc.error_type == "unknown"
     assert exc.error_code is None
     assert exc.detail == "base error"
-    assert exc.user_message is None
+    assert not hasattr(exc, "user_message")
 
 
 def test_error_detail_fallback() -> None:
@@ -27,26 +30,50 @@ def test_error_detail_fallback() -> None:
     assert exc.error_code == "provider_error"
 
 
-def test_error_overrides() -> None:
-    exc = NetworkError(
-        "network down",
-        error_code="network_timeout",
-        detail="timeout talking to provider",
-        user_message="Network issue. Please try again later.",
+def test_error_code_override() -> None:
+    exc = ProviderError(
+        "Favorite updates are not supported.",
+        error_code=ErrorCode.NOT_SUPPORTED,
+        detail="update_favorite",
     )
-    assert exc.error_type == "network"
-    assert exc.error_code == "network_timeout"
-    assert exc.detail == "timeout talking to provider"
-    assert exc.user_message == "Network issue. Please try again later."
+    assert exc.error_type == "provider"
+    assert exc.error_code == "not_supported"
+    assert exc.detail == "update_favorite"
 
 
-def test_error_types_have_codes() -> None:
-    assert AuthError("nope").error_code == "auth_error"
-    assert NetworkError("nope").error_code == "network_error"
-    assert ValidationError("nope").error_code == "validation_error"
-    assert ProviderError("nope").error_code == "provider_error"
-    assert RateLimitError("nope").error_code == "rate_limit"
-    assert ServiceUnavailableError("nope").error_code == "service_unavailable"
-    assert NotFoundError("nope").error_code == "not_found"
-    assert TimeoutError("nope").error_code == "timeout"
-    assert ConfigError("nope").error_code == "config_error"
+@pytest.mark.parametrize(
+    ("exc_type", "code"),
+    [
+        (AuthError, "auth_error"),
+        (NetworkError, "network_error"),
+        (ValidationError, "validation_error"),
+        (ProviderError, "provider_error"),
+        (RateLimitError, "rate_limit"),
+        (ServiceUnavailableError, "service_unavailable"),
+        (NotFoundError, "not_found"),
+        (TimeoutError, "timeout"),
+        (ConfigError, "config_error"),
+    ],
+)
+def test_error_types_have_stable_codes(
+    exc_type: type[PyCityVisitorParkingError], code: str
+) -> None:
+    error_code = exc_type("nope").error_code
+    assert error_code == code
+    assert isinstance(error_code, ErrorCode)
+
+
+def test_documented_error_codes_are_stable() -> None:
+    assert {code.value for code in ErrorCode} == {
+        "auth_error",
+        "network_error",
+        "timeout",
+        "validation_error",
+        "config_error",
+        "provider_error",
+        "rate_limit",
+        "service_unavailable",
+        "not_found",
+        "not_supported",
+        "provider_rejected",
+    }

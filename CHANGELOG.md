@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.5.30
+
+- DVS Portal: fix write requests (reservations, favorites) failing with HTTP 401 on portals that publish the XSRF token in the `__Host-Xsrf-DVSPortal` cookie and do not serve `app.env.js` (Rijswijk). The cookie value is now sent as `X-XSRF-TOKEN` by default ([#128](https://github.com/sir-Unknown/pyCityVisitorParking/issues/128)).
+
 ## 0.5.29
 
 - Breaking: remove the provider-specific `RESOLVED_LOCATION` and `RESOLVED_PERMIT_MEDIA_TYPE_ID` exports (and the `pycityvisitorparking.const` module) and `BaseProvider.resolved_login_params`. Provider-resolved login state stays internal and is reused on reauthentication; callers no longer persist or replay it. 2park's `login()` no longer accepts `location` ([#63](https://github.com/sir-Unknown/pyCityVisitorParking/issues/63), [#64](https://github.com/sir-Unknown/pyCityVisitorParking/issues/64)).

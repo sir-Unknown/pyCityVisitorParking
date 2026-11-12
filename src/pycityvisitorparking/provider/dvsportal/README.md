@@ -84,7 +84,8 @@ milliseconds and an explicit offset (for example,
 
 - The provider supports token-based auth and cookie/session-based auth.
 - When an auth token is present, the provider sends the `Authorization` header.
-- When an XSRF cookie is present, the provider also sends `X-XSRF-TOKEN`.
+- When an XSRF cookie is present, the provider also sends `X-XSRF-TOKEN`. The cookie name is
+  taken from `app.env.js` when available, otherwise `XSRF-TOKEN` or `__Host-Xsrf-DVSPortal`.
 - Mutating calls that do not include permit data trigger a fallback refresh via
   `POST /login/getbase`.
 

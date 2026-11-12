@@ -54,9 +54,18 @@ _FAVORITES_BY_CITY: dict[str, list[dict[str, str]]] = {
     ],
 }
 
-# Rotterdam demo zones: (zone id, paid until 01:00 on Friday and Saturday).
-# The first zone is the default zone.
-_ROTTERDAM_ZONES: tuple[tuple[str, bool], ...] = (("10", True), ("630", False), ("632", False))
+# Paid hours per weekday (Monday first) in Europe/Amsterdam; None means free all day.
+# An end at or before the start ends on the next day.
+type _WeekSchedule = tuple[tuple[time, time] | None, ...]
+
+_DAY = (time(9), time(23))
+# Rotterdam demo zones with deliberately different paid hours; the first one is the
+# default zone. Zone 10 mirrors the real zone 10 (Friday and Saturday until 01:00).
+_ROTTERDAM_ZONES: tuple[tuple[str, _WeekSchedule], ...] = (
+    ("10", (_DAY, _DAY, _DAY, _DAY, (time(9), time(1)), (time(9), time(1)), (time(12), time(23)))),
+    ("630", ((time(9), time(21)),) * 6 + ((time(13), time(18)),)),
+    ("632", ((time(8), time(18)),) * 5 + ((time(10), time(17)), None)),
+)
 
 _RESERVATIONS: list[dict[str, str]] = [
     {
@@ -174,26 +183,27 @@ class Provider(BaseProvider):
         if not self._is_rotterdam():
             return []
         return [
-            Zone(id=zone_id, name=zone_id, zone_validity=self._rotterdam_windows(late))
-            for zone_id, late in _ROTTERDAM_ZONES
+            Zone(id=zone_id, name=zone_id, zone_validity=self._rotterdam_windows(schedule))
+            for zone_id, schedule in _ROTTERDAM_ZONES
         ]
 
-    def _rotterdam_windows(self, late_weekend: bool) -> list[ZoneValidityBlock]:
+    def _rotterdam_windows(self, schedule: _WeekSchedule) -> list[ZoneValidityBlock]:
         """Return the upcoming paid windows of a Rotterdam demo zone for one week.
 
-        Mirrors the portal: 09:00-23:00, Sunday 12:00-23:00, and for late zones
-        Friday and Saturday until 01:00 the next day (Europe/Amsterdam).
+        ``schedule`` holds the paid hours per weekday (Monday first) in
+        Europe/Amsterdam; an end at or before the start ends on the next day.
         """
         now = self._now()
         today = now.astimezone(_LOCAL_TZ).date()
         windows: list[ZoneValidityBlock] = []
         for offset in range(8):
             day = today + timedelta(days=offset)
-            start = datetime.combine(day, time(12 if day.weekday() == 6 else 9), _LOCAL_TZ)
-            if late_weekend and day.weekday() in (4, 5):
-                end = datetime.combine(day + timedelta(days=1), time(1), _LOCAL_TZ)
-            else:
-                end = datetime.combine(day, time(23), _LOCAL_TZ)
+            hours = schedule[day.weekday()]
+            if hours is None:
+                continue
+            start = datetime.combine(day, hours[0], _LOCAL_TZ)
+            end_day = day + timedelta(days=1) if hours[1] <= hours[0] else day
+            end = datetime.combine(end_day, hours[1], _LOCAL_TZ)
             if end > now:
                 windows.append(
                     ZoneValidityBlock(

@@ -7,6 +7,7 @@ from datetime import UTC, datetime, timedelta
 import pytest
 
 from pycityvisitorparking.exceptions import ValidationError
+from pycityvisitorparking.models import Zone
 from pycityvisitorparking.provider.demo import Provider
 from pycityvisitorparking.provider.loader import ProviderManifest
 
@@ -34,15 +35,28 @@ def _provider(city: str) -> Provider:
 async def test_rotterdam_demo_zones_have_their_own_paid_hours() -> None:
     permit = await _provider("Rotterdam Demo").get_permit()
     assert [zone.id for zone in permit.zones] == ["10", "630", "632"]
-    zone_10, zone_630 = permit.zones[0], permit.zones[1]
-    # Friday: zone 10 is paid until 01:00 the next day, zone 630 until 23:00 (local).
-    assert (zone_10.zone_validity[0].start_time, zone_10.zone_validity[0].end_time) == (
-        "2026-11-13T08:00:00Z",
-        "2026-11-14T00:00:00Z",
-    )
-    assert zone_630.zone_validity[0].end_time == "2026-11-13T22:00:00Z"
-    # Sunday starts at 12:00 local.
-    assert zone_630.zone_validity[2].start_time == "2026-11-15T11:00:00Z"
+    zone_10, zone_630, zone_632 = permit.zones
+
+    def windows(zone: Zone, count: int) -> list[tuple[str, str]]:
+        return [(w.start_time, w.end_time) for w in zone.zone_validity[:count]]
+
+    # Friday to Sunday; local times are UTC+1. Zone 10 is paid until 01:00 on Friday
+    # and Saturday, 630 has shorter days, 632 is free on Sunday.
+    assert windows(zone_10, 3) == [
+        ("2026-11-13T08:00:00Z", "2026-11-14T00:00:00Z"),
+        ("2026-11-14T08:00:00Z", "2026-11-15T00:00:00Z"),
+        ("2026-11-15T11:00:00Z", "2026-11-15T22:00:00Z"),
+    ]
+    assert windows(zone_630, 3) == [
+        ("2026-11-13T08:00:00Z", "2026-11-13T20:00:00Z"),
+        ("2026-11-14T08:00:00Z", "2026-11-14T20:00:00Z"),
+        ("2026-11-15T12:00:00Z", "2026-11-15T17:00:00Z"),
+    ]
+    assert windows(zone_632, 3) == [
+        ("2026-11-13T07:00:00Z", "2026-11-13T17:00:00Z"),
+        ("2026-11-14T09:00:00Z", "2026-11-14T16:00:00Z"),
+        ("2026-11-16T07:00:00Z", "2026-11-16T17:00:00Z"),
+    ]
     assert permit.zone_validity == zone_10.zone_validity
 
 

@@ -112,6 +112,16 @@ Mapping table (based on `amsterdam.json` sample):
 - `favorite_vrn add` (`/api/v1/ssp/favorite_vrn/add`)
   - `favorite_vrn_id` -> `Favorite.id` (if returned by the API).
 
+## Errors
+
+- A rejected request that carries a provider message (HTTP 400) raises
+  `ProviderError` with `error_code=provider_rejected`.
+- Rejected credentials raise `AuthError`.
+- An unknown `machine_number`, or one outside the permit's zones, raises
+  `ValidationError`.
+- Reservation updates other than `end_time`, and favorite updates, raise
+  `ProviderError` with `error_code=not_supported`.
+
 ## Time handling
 
 Provider timestamps are converted to UTC and returned as ISO 8601 with `Z` and

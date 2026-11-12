@@ -7,7 +7,7 @@ from typing import Any
 
 import pytest
 
-from pycityvisitorparking.exceptions import AuthError, ProviderError, ValidationError
+from pycityvisitorparking.exceptions import AuthError, ErrorCode, ProviderError, ValidationError
 from pycityvisitorparking.provider.amsterdam.api import Provider
 from pycityvisitorparking.provider.loader import ProviderManifest
 
@@ -198,6 +198,7 @@ async def test_other_provider_error_for_machine_lookup_is_not_masked() -> None:
         await provider.login({"username": "u", "password": "p", "machine_number": "2222"})
 
     assert not isinstance(exc_info.value, ValidationError)
+    assert exc_info.value.error_code == ErrorCode.PROVIDER_REJECTED
 
 
 async def test_expired_token_reauthenticates_once_and_keeps_machine_override() -> None:
@@ -234,3 +235,12 @@ async def test_persistent_unauthorized_response_raises_auth_error() -> None:
         await provider.get_permit()
 
     assert len(session.calls_to("/login_check")) == 2
+
+
+async def test_unsupported_updates_carry_not_supported_code() -> None:
+    provider = _provider(_RoutedSession({}))
+
+    with pytest.raises(ProviderError) as exc_info:
+        await provider.update_favorite("1", name="x")
+
+    assert exc_info.value.error_code == ErrorCode.NOT_SUPPORTED

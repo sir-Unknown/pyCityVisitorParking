@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Add the generic reservation target concept for providers that need a user choice before a reservation can start ([#64](https://github.com/sir-Unknown/pyCityVisitorParking/issues/64)). New `ReservationTarget` model (`id`, `name`, `description`, `zone_validity`), `BaseProvider.list_reservation_targets()`, `start_reservation(..., reservation_target_id=None)`, `Reservation.reservation_target_id`, `ProviderInfo.reservation_target_selection` and the manifest capability `reservation_target_selection` (`list` or `free_input`). Providers without the capability reject any `reservation_target_id` with `ValidationError`; existing providers are otherwise unchanged.
+
 ## 0.5.31
 
 - DVS Portal: send `X-XSRF-TOKEN` when the portal issues its request-forgery cookie under a name that is neither configured nor declared in `app.env.js`. If no known name matches, any applicable cookie whose name contains `xsrf` is used.

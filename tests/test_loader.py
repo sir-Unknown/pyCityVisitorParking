@@ -2,6 +2,7 @@ import pytest
 
 import pycityvisitorparking.client as client_module
 from pycityvisitorparking.exceptions import ProviderError
+from pycityvisitorparking.provider import loader as loader_module
 
 
 @pytest.mark.asyncio
@@ -52,3 +53,32 @@ async def test_get_provider_uses_to_thread(monkeypatch: pytest.MonkeyPatch) -> N
 
     assert calls["count"] == 1
     assert provider.provider_id == "dvsportal"
+
+
+def _manifest_data(**capabilities: object) -> dict:
+    return {
+        "id": "dummy",
+        "name": "Dummy",
+        "capabilities": {
+            "favorite_update_fields": [],
+            "reservation_update_fields": [],
+            **capabilities,
+        },
+    }
+
+
+def test_reservation_target_selection_is_optional_and_restricted() -> None:
+    assert (
+        loader_module._build_manifest(_manifest_data(), "dummy").reservation_target_selection
+        is None
+    )
+    for value in ("list", "free_input"):
+        manifest = loader_module._build_manifest(
+            _manifest_data(reservation_target_selection=value), "dummy"
+        )
+        assert manifest.reservation_target_selection == value
+    for invalid in ("zones", "", True):
+        with pytest.raises(ProviderError, match="reservation_target_selection"):
+            loader_module._build_manifest(
+                _manifest_data(reservation_target_selection=invalid), "dummy"
+            )

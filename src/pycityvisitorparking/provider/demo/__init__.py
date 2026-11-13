@@ -160,7 +160,9 @@ class Provider(BaseProvider):
         start_time: datetime,
         end_time: datetime,
         name: str | None = None,
+        reservation_target_id: str | None = None,
     ) -> Reservation:
+        self._validate_reservation_target_id(reservation_target_id)
         start_time, end_time = self._validate_reservation_times(
             start_time, end_time, require_both=True
         )

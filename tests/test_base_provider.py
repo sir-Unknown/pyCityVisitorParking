@@ -130,12 +130,14 @@ def _manifest(
     *,
     favorite_update_fields: tuple[str, ...] = (),
     reservation_update_fields: tuple[str, ...] = (),
+    reservation_target_selection: str | None = None,
 ) -> ProviderManifest:
     return ProviderManifest(
         id="dummy",
         name="Dummy",
         favorite_update_fields=favorite_update_fields,
         reservation_update_fields=reservation_update_fields,
+        reservation_target_selection=reservation_target_selection,
     )
 
 
@@ -485,3 +487,35 @@ def test_validate_reservation_times_require_both() -> None:
     )
     assert start_norm == start
     assert end_norm == end
+
+
+def test_validate_reservation_target_id_follows_the_capability() -> None:
+    unsupported = _DummyProvider(_SequenceSession([]), _manifest(), base_url="https://e.com")
+    assert unsupported._validate_reservation_target_id(None) is None
+    with pytest.raises(ValidationError, match="not supported"):
+        unsupported._validate_reservation_target_id("target-1")
+    for selection in ("list", "free_input"):
+        supported = _DummyProvider(
+            _SequenceSession([]),
+            _manifest(reservation_target_selection=selection),
+            base_url="https://e.com",
+        )
+        assert supported._validate_reservation_target_id(" target-1 ") == "target-1"
+        assert supported._validate_reservation_target_id(None) is None
+        with pytest.raises(ValidationError):
+            supported._validate_reservation_target_id("  ")
+        with pytest.raises(ValidationError, match="string"):
+            supported._validate_reservation_target_id(42)  # type: ignore[arg-type]
+
+
+@pytest.mark.asyncio
+async def test_reservation_targets_default_to_none_and_show_in_info() -> None:
+    plain = _DummyProvider(_SequenceSession([]), _manifest(), base_url="https://e.com")
+    assert await plain.list_reservation_targets() == []
+    assert plain.info.reservation_target_selection is None
+    free = _DummyProvider(
+        _SequenceSession([]),
+        _manifest(reservation_target_selection="free_input"),
+        base_url="https://e.com",
+    )
+    assert free.info.reservation_target_selection == "free_input"

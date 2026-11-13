@@ -39,6 +39,11 @@
             "enum": ["TIMES", "MINUTE", "EURO"]
           },
           "uniqueItems": true
+        },
+        "reservation_target_selection": {
+          "type": "string",
+          "enum": ["list", "free_input"],
+          "description": "How start_reservation lets the caller choose a reservation target. \"list\": only ids from list_reservation_targets() are accepted. \"free_input\": the provider also accepts other ids it can resolve itself. When omitted, the provider has no target choice and rejects a reservation_target_id."
         }
       },
       "additionalProperties": false

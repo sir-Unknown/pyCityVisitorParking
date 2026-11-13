@@ -12,7 +12,14 @@ from importlib.metadata import PackageNotFoundError
 from importlib.resources.abc import Traversable
 
 from ..exceptions import ProviderError
-from ..models import BALANCE_UNIT_EURO, BALANCE_UNIT_MINUTE, BALANCE_UNIT_TIMES, ProviderInfo
+from ..models import (
+    BALANCE_UNIT_EURO,
+    BALANCE_UNIT_MINUTE,
+    BALANCE_UNIT_TIMES,
+    RESERVATION_TARGET_SELECTION_FREE_INPUT,
+    RESERVATION_TARGET_SELECTION_LIST,
+    ProviderInfo,
+)
 from .logger import get_provider_logger
 
 MANIFEST_FILENAME = "manifest.json"
@@ -21,6 +28,10 @@ _DEFAULT_CACHE_TTL_SECONDS = 300.0
 _FAVORITE_UPDATE_FIELDS = {"license_plate", "name"}
 _RESERVATION_UPDATE_FIELDS = {"start_time", "end_time", "name"}
 _BALANCE_UNITS = {BALANCE_UNIT_TIMES, BALANCE_UNIT_MINUTE, BALANCE_UNIT_EURO}
+_RESERVATION_TARGET_SELECTIONS = {
+    RESERVATION_TARGET_SELECTION_LIST,
+    RESERVATION_TARGET_SELECTION_FREE_INPUT,
+}
 _LOGGER = get_provider_logger(__name__)
 
 
@@ -31,6 +42,7 @@ class ProviderManifest:
     favorite_update_fields: tuple[str, ...]
     reservation_update_fields: tuple[str, ...]
     balance_units: tuple[str, ...] = ()
+    reservation_target_selection: str | None = None
 
 
 @dataclass(slots=True)
@@ -116,12 +128,21 @@ def _build_manifest(data: dict, folder_name: str) -> ProviderManifest:
         allowed=_BALANCE_UNITS,
         field_name="balance_units",
     )
+    reservation_target_selection = capabilities.get("reservation_target_selection")
+    if reservation_target_selection is not None and (
+        reservation_target_selection not in _RESERVATION_TARGET_SELECTIONS
+    ):
+        raise ProviderError(
+            "Provider manifest reservation_target_selection must be one of: "
+            f"{', '.join(sorted(_RESERVATION_TARGET_SELECTIONS))}."
+        )
     return ProviderManifest(
         id=provider_id,
         name=name,
         favorite_update_fields=favorite_update_fields,
         reservation_update_fields=reservation_update_fields,
         balance_units=balance_units,
+        reservation_target_selection=reservation_target_selection,
     )
 
 
@@ -203,6 +224,7 @@ def list_providers(
             favorite_update_fields=manifest.favorite_update_fields,
             reservation_update_fields=manifest.reservation_update_fields,
             balance_units=manifest.balance_units,
+            reservation_target_selection=manifest.reservation_target_selection,
         )
         for manifest in load_manifests(refresh=refresh, cache_ttl=cache_ttl)
     ]

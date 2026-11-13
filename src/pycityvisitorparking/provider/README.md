@@ -34,7 +34,7 @@ Each provider must include a `manifest.json` with:
 }
 ```
 
-Manifests are validated against:
+`balance_units` and `reservation_target_selection` are optional. Manifests are validated against:
 `src/pycityvisitorparking/provider/manifest.schema.json`.
 
 ## Provider class export
@@ -147,6 +147,29 @@ Set `capabilities.reservation_update_fields` in the manifest:
 When `reservation_update_fields` is empty, `update_reservation()` should raise
 `ProviderError` with `error_code=ErrorCode.NOT_SUPPORTED`.
 
+## Reservation targets
+
+Some providers need a user choice before `start_reservation()` can succeed, for
+example a zone or a parking machine. Never expose that choice as a provider-specific
+login key or `start_reservation()` argument. Model it as a reservation target:
+
+- Set `capabilities.reservation_target_selection` to `"list"` when only the targets
+  from `list_reservation_targets()` are valid, or to `"free_input"` when the provider
+  also accepts other ids it can resolve itself (for example a number read from a
+  machine). Omit it when there is nothing to choose.
+- Override `list_reservation_targets()`: default target first, `[]` when the active
+  permit has nothing to choose. Fill `ReservationTarget.zone_validity` when targets
+  have their own chargeable windows, and keep `Permit.zone_validity` equal to the
+  default target's windows.
+- Call `self._validate_reservation_target_id(reservation_target_id)` at the start of
+  `start_reservation()`, use the default target when it is `None`, and raise
+  `ValidationError` for an id the provider cannot resolve. Without the capability the
+  helper rejects every id.
+- Set `Reservation.reservation_target_id` to the target a reservation is booked for.
+  `update_reservation()` never changes the target.
+- Keep provider-native fields (`location`, `machine_id`, zone numbers) internal; the
+  target `id` is an opaque string.
+
 ## Public models only
 
 Map all provider responses to strict public dataclasses in
@@ -155,6 +178,7 @@ Map all provider responses to strict public dataclasses in
 - `ProviderInfo`
 - `Permit`
 - `ZoneValidityBlock`
+- `ReservationTarget`
 - `Reservation`
 - `Favorite`
 

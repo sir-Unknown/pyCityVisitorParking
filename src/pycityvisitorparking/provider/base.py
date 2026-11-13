@@ -23,7 +23,14 @@ from ..exceptions import (
     ValidationError,
 )
 from ..exceptions import TimeoutError as RequestTimeoutError
-from ..models import Favorite, Permit, ProviderInfo, Reservation, ZoneValidityBlock
+from ..models import (
+    Favorite,
+    Permit,
+    ProviderInfo,
+    Reservation,
+    ReservationTarget,
+    ZoneValidityBlock,
+)
 from ..util import (
     ensure_utc_timestamp,
     filter_chargeable_zone_validity,
@@ -201,11 +208,16 @@ class BaseProvider(ABC):
         return self._manifest.reservation_update_fields
 
     @property
+    def reservation_target_selection(self) -> str | None:
+        return self._manifest.reservation_target_selection
+
+    @property
     def info(self) -> ProviderInfo:
         return ProviderInfo(
             id=self._manifest.id,
             favorite_update_fields=self._manifest.favorite_update_fields,
             reservation_update_fields=self._manifest.reservation_update_fields,
+            reservation_target_selection=self._manifest.reservation_target_selection,
         )
 
     def _normalize_license_plate(self, plate: str) -> str:
@@ -300,6 +312,20 @@ class BaseProvider(ABC):
         if not text:
             raise ValidationError(f"{field} is required.")
         return text
+
+    def _validate_reservation_target_id(self, reservation_target_id: str | None) -> str | None:
+        """Return the normalized ``reservation_target_id`` of ``start_reservation``.
+
+        ``None`` means the default target. Providers without the
+        ``reservation_target_selection`` capability reject any id.
+        """
+        if reservation_target_id is None:
+            return None
+        if self.reservation_target_selection is None:
+            raise ValidationError("reservation_target_id is not supported by this provider.")
+        if not isinstance(reservation_target_id, str):
+            raise ValidationError("reservation_target_id must be a string.")
+        return self._require_id(reservation_target_id, "reservation_target_id")
 
     def _coerce_response_id(self, value: Any, field: str) -> str:
         if value is None:
@@ -526,8 +552,24 @@ class BaseProvider(ABC):
         start_time: datetime,
         end_time: datetime,
         name: str | None = None,
+        reservation_target_id: str | None = None,
     ) -> Reservation:
-        """Start a reservation for a license plate."""
+        """Start a reservation for a license plate.
+
+        ``reservation_target_id`` selects where the reservation is booked (see
+        ``list_reservation_targets``); ``None`` uses the default target. Providers validate
+        it with ``_validate_reservation_target_id`` before any request.
+        """
+
+    async def list_reservation_targets(self) -> list[ReservationTarget]:
+        """Return the targets a reservation can be started for, default target first.
+
+        An empty list means there is nothing to choose for the active permit, and
+        ``start_reservation`` rejects a ``reservation_target_id``. For providers with the
+        ``free_input`` capability a non-empty list only holds suggestions (such as the default
+        target); other ids the provider can resolve are accepted as well.
+        """
+        return []
 
     @abstractmethod
     async def update_reservation(

@@ -139,6 +139,7 @@ Current public models are:
 - `ProviderInfo`
 - `Permit`
 - `ZoneValidityBlock`
+- `ReservationTarget`
 - `Reservation`
 - `Favorite`
 
@@ -151,6 +152,7 @@ Current model expectations:
   - `favorite_update_fields`
   - `reservation_update_fields`
   - `balance_units`
+  - `reservation_target_selection`
 - `Permit` exposes:
   - `id`
   - `remaining_balance`
@@ -159,12 +161,18 @@ Current model expectations:
 - `ZoneValidityBlock` exposes:
   - `start_time`
   - `end_time`
+- `ReservationTarget` exposes:
+  - `id`
+  - `name`
+  - `description`
+  - `zone_validity`
 - `Reservation` exposes:
   - `id`
   - `name`
   - `license_plate`
   - `start_time`
   - `end_time`
+  - `reservation_target_id`
 - `Favorite` exposes:
   - `id`
   - `name`
@@ -312,6 +320,7 @@ Current manifest expectations include:
 - `capabilities.favorite_update_fields`
 - `capabilities.reservation_update_fields`
 - optional `capabilities.balance_units`
+- optional `capabilities.reservation_target_selection` (`list` or `free_input`)
 
 ### Rules
 

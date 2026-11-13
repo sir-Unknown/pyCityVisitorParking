@@ -33,3 +33,25 @@ def test_manifest_schema_rejects_legacy_capability_flags() -> None:
     }
     with pytest.raises(jsonschema.ValidationError):
         jsonschema.validate(instance=legacy, schema=schema)
+
+
+@pytest.mark.parametrize(
+    ("value", "valid"), [("list", True), ("free_input", True), ("zones", False)]
+)
+def test_manifest_schema_restricts_reservation_target_selection(value: str, valid: bool) -> None:
+    root = resources.files("pycityvisitorparking.provider")
+    schema = json.loads((root / "manifest.schema.json").read_text(encoding="utf-8"))
+    manifest = {
+        "id": "targets",
+        "name": "Targets",
+        "capabilities": {
+            "favorite_update_fields": [],
+            "reservation_update_fields": [],
+            "reservation_target_selection": value,
+        },
+    }
+    if valid:
+        jsonschema.validate(instance=manifest, schema=schema)
+    else:
+        with pytest.raises(jsonschema.ValidationError):
+            jsonschema.validate(instance=manifest, schema=schema)

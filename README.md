@@ -130,15 +130,17 @@ Public data models:
 - `ProviderInfo`
 - `Permit`
 - `ZoneValidityBlock`
+- `ReservationTarget`
 - `Reservation`
 - `Favorite`
 
 Model highlights:
 
-- `ProviderInfo` includes `id`, `favorite_update_fields`, `reservation_update_fields`, and `balance_units`
+- `ProviderInfo` includes `id`, `favorite_update_fields`, `reservation_update_fields`, `balance_units`, and `reservation_target_selection`
 - `Permit` includes `id`, `remaining_balance`, `balance_unit`, and `zone_validity`
 - `ZoneValidityBlock` contains UTC ISO 8601 `start_time` and `end_time`
-- `Reservation` includes `id`, `name`, `license_plate`, `start_time`, and `end_time`
+- `ReservationTarget` includes an opaque `id`, a display `name`, an optional `description`, and its own `zone_validity`
+- `Reservation` includes `id`, `name`, `license_plate`, `start_time`, `end_time`, and `reservation_target_id` (`None` when the provider has no targets)
 - `Favorite` includes `id`, `name`, and `license_plate`
 
 ### Standardized behavior
@@ -153,6 +155,26 @@ Model highlights:
 `login()` takes `username` and `password`, plus the optional keys documented in the provider README (for example a `permit_id` to select a permit).
 
 Anything a provider resolves during login (product, location, permit media type, session tokens) stays internal to the provider. It is not part of the public contract and callers do not need to persist or replay it: reauthentication after an expired session reuses that state automatically.
+
+### Reservation targets
+
+Some providers need a choice before a reservation can start, for example a zone or a
+parking machine. `ProviderInfo.reservation_target_selection` says how:
+
+- `None`: there is nothing to choose; `start_reservation()` rejects a
+  `reservation_target_id` with `ValidationError`.
+- `"list"`: pick one of the targets from `await provider.list_reservation_targets()`.
+- `"free_input"`: the list holds suggestions such as the default target, and the
+  provider also accepts other ids it can resolve itself, such as a number the user
+  reads from a machine. An unknown id raises `ValidationError`.
+
+`list_reservation_targets()` returns the default target first and an empty list when the
+active permit has nothing to choose. Pass the chosen id as
+`start_reservation(..., reservation_target_id=...)`; `None` uses the default target.
+`Permit.zone_validity` holds the windows of the default target, and
+`ReservationTarget.zone_validity` those of each listed target. The booked target is
+returned as `Reservation.reservation_target_id`; updating a reservation never changes it.
+Target ids are opaque strings; provider-native values stay inside the provider.
 
 ---
 

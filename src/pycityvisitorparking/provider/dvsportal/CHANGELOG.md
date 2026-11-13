@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Send `X-XSRF-TOKEN` when the portal issues its request-forgery cookie under a name that `app.env.js` does not declare: if no configured or discovered name matches, any applicable cookie whose name contains `xsrf` is used.
+
 ## 0.5.30
 
 - Fixed write requests failing with HTTP 401 on portals that publish the XSRF token in the `__Host-Xsrf-DVSPortal` cookie and do not serve `app.env.js` (seen on Rijswijk). The provider now sends that cookie's value as `X-XSRF-TOKEN` by default.

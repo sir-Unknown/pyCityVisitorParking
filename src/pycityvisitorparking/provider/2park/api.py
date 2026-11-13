@@ -14,7 +14,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 import aiohttp
 
 from ...exceptions import AuthError, ErrorCode, ProviderError, ValidationError
-from ...models import Favorite, Permit, Reservation
+from ...models import Favorite, Permit, Reservation, ReservationTarget
 from ...util import format_utc_timestamp, parse_timestamp
 from ..base import BaseProvider, raise_for_failed_status
 from ..loader import ProviderManifest
@@ -301,8 +301,13 @@ class Provider(BaseProvider):
         self._plogger.operation_completed("list_favorites", count=len(favorites))
         return favorites
 
-    async def fetch_all(self) -> tuple[Permit, list[Reservation], list[Favorite]]:
-        """Return permit, reservations, and favorites with two parallel provider fetches."""
+    async def fetch_all(
+        self,
+    ) -> tuple[Permit, list[Reservation], list[Favorite], list[ReservationTarget]]:
+        """Return permit, reservations, and favorites with two parallel provider fetches.
+
+        The provider has no reservation targets, so that list is empty.
+        """
         self._plogger.operation_started("fetch_all")
         await self._ensure_authenticated()
         # Reauth around the pair, not per request: two parallel logins after a
@@ -321,7 +326,7 @@ class Provider(BaseProvider):
             reservations=len(reservations),
             favorites=len(favorites),
         )
-        return permit, reservations, favorites
+        return permit, reservations, favorites, []
 
     async def _fetch_balance_and_details(self) -> tuple[Any, Any]:
         form = {"product_id": self._product_id or "", "locale": LOCALE}

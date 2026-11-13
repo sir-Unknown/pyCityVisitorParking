@@ -17,7 +17,13 @@ from pycityvisitorparking.exceptions import (
     TimeoutError,
     ValidationError,
 )
-from pycityvisitorparking.models import Favorite, Permit, Reservation, ZoneValidityBlock
+from pycityvisitorparking.models import (
+    Favorite,
+    Permit,
+    Reservation,
+    ReservationTarget,
+    ZoneValidityBlock,
+)
 from pycityvisitorparking.provider.base import BaseProvider
 from pycityvisitorparking.provider.loader import ProviderManifest
 
@@ -468,12 +474,28 @@ async def test_request_text_success() -> None:
 
 
 @pytest.mark.asyncio
-async def test_fetch_all_default_returns_permit_reservations_favorites() -> None:
+async def test_fetch_all_default_returns_permit_reservations_favorites_targets() -> None:
     provider = _DummyProvider(_SequenceSession([]), _manifest(), base_url="https://example.com")
-    permit, reservations, favorites = await provider.fetch_all()
+    permit, reservations, favorites, targets = await provider.fetch_all()
     assert permit.id == "permit"
     assert reservations == []
     assert favorites == []
+    assert targets == []
+
+
+@pytest.mark.asyncio
+async def test_fetch_all_default_includes_the_providers_reservation_targets() -> None:
+    class _TargetProvider(_DummyProvider):
+        async def list_reservation_targets(self) -> list[ReservationTarget]:
+            return [ReservationTarget(id="t1", name="Target 1")]
+
+    provider = _TargetProvider(
+        _SequenceSession([]),
+        _manifest(reservation_target_selection="list"),
+        base_url="https://example.com",
+    )
+    *_, targets = await provider.fetch_all()
+    assert targets == [ReservationTarget(id="t1", name="Target 1")]
 
 
 def test_validate_reservation_times_require_both() -> None:

@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Breaking: `BaseProvider.fetch_all()` now returns `(permit, reservations, favorites, targets)`; `targets` is the result of `list_reservation_targets()` (empty for providers without targets). Rotterdam fetches the zones once for both the permit windows and the targets instead of twice per refresh. Unpack four values instead of three.
 - Add the Rotterdam provider (Mendix based visitor parking portal), with per-reservation zone selection through the generic reservation target contract. The provider is untested with a real permit; see its README.
 
 - Add the generic reservation target concept for providers that need a user choice before a reservation can start ([#64](https://github.com/sir-Unknown/pyCityVisitorParking/issues/64)). New `ReservationTarget` model (`id`, `name`, `description`, `zone_validity`), `BaseProvider.list_reservation_targets()`, `start_reservation(..., reservation_target_id=None)`, `Reservation.reservation_target_id`, `ProviderInfo.reservation_target_selection` and the manifest capability `reservation_target_selection` (`list` or `free_input`). Providers without the capability reject any `reservation_target_id` with `ValidationError`; existing providers are otherwise unchanged.

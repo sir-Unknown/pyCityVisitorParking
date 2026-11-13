@@ -177,6 +177,7 @@ active permit has nothing to choose. Pass the chosen id as
 `Permit.zone_validity` holds the windows of the default target, and
 `ReservationTarget.zone_validity` those of each listed target. The booked target is
 returned as `Reservation.reservation_target_id`; updating a reservation never changes it.
+`fetch_all()` returns `(permit, reservations, favorites, targets)`, so a refresh gets the targets without a second round of requests.
 Target ids are opaque strings; provider-native values stay inside the provider.
 
 ---

@@ -633,7 +633,7 @@ async def test_fetch_all_session_timeout_reauths_once_and_retries() -> None:
             _FakeResponse(json_data=_PRODUCT_DETAILS_WITH_MEMBERS),
         ]
     )
-    permit, reservations, favorites = await provider.fetch_all()
+    permit, reservations, favorites, _targets = await provider.fetch_all()
     assert session.calls == 7
     auth_calls = [r for r in session.requests if r["url"].endswith("/check_credentials.json")]
     assert len(auth_calls) == 2  # initial login + one reauth
@@ -712,7 +712,7 @@ async def test_concurrent_requests_share_one_reauth() -> None:
     session.expired = True
 
     # Three reads on the expired session at once: fetch_all (two requests) and get_permit.
-    (permit_all, _reservations, _favorites), permit = await asyncio.gather(
+    (permit_all, _reservations, _favorites, _targets), permit = await asyncio.gather(
         provider.fetch_all(), provider.get_permit()
     )
 
@@ -762,7 +762,7 @@ async def test_fetch_all_uses_two_parallel_requests() -> None:
             _FakeResponse(json_data=_PRODUCT_DETAILS_WITH_MEMBERS),
         ]
     )
-    permit, reservations, _favorites = await provider.fetch_all()
+    permit, reservations, _favorites, _targets = await provider.fetch_all()
     # Two HTTP requests: BALANCE_ENDPOINT + PRODUCT_DETAILS_ENDPOINT
     assert session.calls == 4  # 2 login + 2 fetch_all
     assert permit.remaining_balance == 120
@@ -779,7 +779,7 @@ async def test_fetch_all_empty_details() -> None:
             _FakeResponse(json_data=_PRODUCT_DETAILS_EMPTY),
         ]
     )
-    permit, reservations, favorites = await provider.fetch_all()
+    permit, reservations, favorites, _targets = await provider.fetch_all()
     assert permit.balance_unit == "MINUTE"
     assert reservations == []
     assert favorites == []

@@ -1251,7 +1251,7 @@ async def test_fetch_all_uses_single_request(
 
         monkeypatch.setattr(provider, "_fetch_base", _fake_fetch_base)
 
-        permit, reservations, favorites = await provider.fetch_all()
+        permit, reservations, favorites, targets = await provider.fetch_all()
 
     assert fetch_base_calls["count"] == 1
     assert permit.id == "CARD-1"
@@ -1260,3 +1260,4 @@ async def test_fetch_all_uses_single_request(
     assert reservations[0].id == "123"
     assert len(favorites) == 1
     assert favorites[0].id == "XY99ZZ"
+    assert targets == []

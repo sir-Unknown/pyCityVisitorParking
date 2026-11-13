@@ -414,11 +414,21 @@ async def test_fetch_all_selects_the_permit_once() -> None:
     portal = _permit_portal()
     portal.xpath_results.append(("Parkeren.Kenteken", [_plate("p1", "AB12CD", "Car")]))
     provider = await _logged_in(portal)
-    permit, reservations, favorites = await provider.fetch_all()
+    permit, reservations, favorites, targets = await provider.fetch_all()
     assert permit.id == "auth-100"
     assert reservations == []
     assert [item.id for item in favorites] == ["p1"]
+    assert [target.id for target in targets] == ["Zone A"]
     assert sum("Parkeren.Machtiging" in x for x in portal.xpaths) == 1
+
+
+@pytest.mark.asyncio
+async def test_fetch_all_fetches_the_zones_once_for_the_permit_and_the_targets() -> None:
+    portal = _permit_portal()
+    provider = await _logged_in(portal)
+    await provider.fetch_all()
+    assert sum("Masterdata.Parkeertijd_Zone" in x for x in portal.xpaths) == 1
+    assert sum("Masterdata.ZoneVergunningRelatie" in x for x in portal.xpaths) == 1
 
 
 # --- reservations -------------------------------------------------------------------

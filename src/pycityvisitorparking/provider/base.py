@@ -515,19 +515,23 @@ class BaseProvider(ABC):
             return ""
         return f"/{normalized}"
 
-    async def fetch_all(self) -> tuple[Permit, list[Reservation], list[Favorite]]:
-        """Return permit, reservations, and favorites in a single batch.
+    async def fetch_all(
+        self,
+    ) -> tuple[Permit, list[Reservation], list[Favorite], list[ReservationTarget]]:
+        """Return permit, reservations, favorites, and reservation targets in one batch.
 
-        Providers that serve all three from a single HTTP response should override
-        this method for efficiency. The default implementation calls the three
-        individual methods concurrently.
+        The targets are those of ``list_reservation_targets``. Providers that serve
+        these from a single HTTP response, or that would otherwise fetch the same data
+        twice, should override this method for efficiency. The default implementation
+        calls the four individual methods concurrently.
         """
-        permit, reservations, favorites = await asyncio.gather(
+        permit, reservations, favorites, targets = await asyncio.gather(
             self.get_permit(),
             self.list_reservations(),
             self.list_favorites(),
+            self.list_reservation_targets(),
         )
-        return permit, reservations, favorites
+        return permit, reservations, favorites, targets
 
     @abstractmethod
     async def login(

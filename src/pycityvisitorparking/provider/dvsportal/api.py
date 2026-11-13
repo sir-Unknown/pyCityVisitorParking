@@ -12,7 +12,7 @@ from typing import Any
 import aiohttp
 
 from ...exceptions import AuthError, ErrorCode, ProviderError, ValidationError
-from ...models import Favorite, Permit, Reservation
+from ...models import Favorite, Permit, Reservation, ReservationTarget
 from ...util import parse_timestamp
 from ..base import BaseProvider, _HttpSession
 from ..loader import ProviderManifest
@@ -353,8 +353,13 @@ class Provider(BaseProvider):
             self._plogger.operation_completed("list_favorites", count=len(favorites))
             return favorites
 
-    async def fetch_all(self) -> tuple[Permit, list[Reservation], list[Favorite]]:
-        """Return permit, reservations, and favorites with a single provider fetch."""
+    async def fetch_all(
+        self,
+    ) -> tuple[Permit, list[Reservation], list[Favorite], list[ReservationTarget]]:
+        """Return permit, reservations, and favorites with a single provider fetch.
+
+        The provider has no reservation targets, so that list is empty.
+        """
         async with self._operation_guard():
             self._plogger.operation_started("fetch_all")
             permit_raw = await self._fetch_base(operation="fetch_all")
@@ -366,7 +371,7 @@ class Provider(BaseProvider):
                 reservations=len(reservations),
                 favorites=len(favorites),
             )
-            return permit, reservations, favorites
+            return permit, reservations, favorites, []
 
     async def add_favorite(self, license_plate: str, name: str | None = None) -> Favorite:
         """Add a favorite."""

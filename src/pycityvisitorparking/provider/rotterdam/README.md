@@ -164,7 +164,7 @@ marked place, the tests named here, and this section together, and add a line to
   (reported on a real account), so the zone is chosen per reservation as a generic reservation target.
 - **Where**: `Provider._permit_zones` (ordering and uniqueness),
   `Provider._zone_id`, `Provider._zone_name`, `Provider._targets`, and
-  `Provider._build_permit` in `api.py`.
+  `Provider._permit_and_targets` in `api.py`.
 - **Tests**: `test_start_reservation_without_target_id_uses_first_zone_by_name`,
   `test_start_reservation_books_in_the_requested_target`,
   `test_start_reservation_rejects_a_target_outside_the_permit_before_saving`,

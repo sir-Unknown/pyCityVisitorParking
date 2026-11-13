@@ -331,7 +331,7 @@ class Provider(BaseProvider):
         """Return the active permit for the account."""
         self._plogger.operation_started("get_permit")
         authorization = await self._select_authorization()
-        permit = await self._build_permit(authorization)
+        permit, _targets = await self._permit_and_targets(authorization)
         self._plogger.operation_completed("get_permit")
         return permit
 
@@ -344,16 +344,21 @@ class Provider(BaseProvider):
         self._plogger.operation_completed("list_reservation_targets")
         return targets
 
-    async def fetch_all(self) -> tuple[Permit, list[Reservation], list[Favorite]]:
-        """Return permit, reservations, and favorites with a single permit selection."""
+    async def fetch_all(
+        self,
+    ) -> tuple[Permit, list[Reservation], list[Favorite], list[ReservationTarget]]:
+        """Return permit, reservations, favorites, and targets with one permit selection.
+
+        The zones are fetched once and serve both ``Permit.zone_validity`` and the targets.
+        """
         authorization = await self._select_authorization()
         permit_guid = self._permit_guid(authorization)
-        permit, reservations, favorites = await asyncio.gather(
-            self._build_permit(authorization),
+        (permit, targets), reservations, favorites = await asyncio.gather(
+            self._permit_and_targets(authorization),
             self._reservations_for(permit_guid),
             self.list_favorites(),
         )
-        return permit, reservations, favorites
+        return permit, reservations, favorites, targets
 
     async def _load_authorizations(self) -> list[MendixObject]:
         """Return the account's usable permit authorizations in a stable order."""
@@ -384,14 +389,17 @@ class Provider(BaseProvider):
     def _authorization_id(self, authorization: MendixObject) -> str:
         return self._coerce_response_id(authorization.text("_Id"), "permit id")
 
-    async def _build_permit(self, authorization: MendixObject) -> Permit:
+    async def _permit_and_targets(
+        self, authorization: MendixObject
+    ) -> tuple[Permit, list[ReservationTarget]]:
+        """Return the permit and its targets; the zones are fetched only once."""
         permit_guid = self._permit_guid(authorization)
         balance, zone_objects = await asyncio.gather(
             self._remaining_balance(authorization, permit_guid),
             self._permit_zones(permit_guid),
         )
         targets = await self._targets(zone_objects)
-        return Permit(
+        permit = Permit(
             id=self._authorization_id(authorization),
             remaining_balance=balance,
             # DESIGN DECISION D1 (see README "Design decisions"): the permit-level windows
@@ -399,6 +407,7 @@ class Provider(BaseProvider):
             zone_validity=targets[0].zone_validity if targets else [],
             balance_unit=BALANCE_UNIT_MINUTE,
         )
+        return permit, targets
 
     async def _remaining_balance(self, authorization: MendixObject, permit_guid: str) -> float:
         """Return the remaining balance in minutes."""

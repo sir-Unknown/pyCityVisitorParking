@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.5.31
+
+- DVS Portal: send `X-XSRF-TOKEN` when the portal issues its request-forgery cookie under a name that is neither configured nor declared in `app.env.js`. If no known name matches, any applicable cookie whose name contains `xsrf` is used.
+
 ## 0.5.30
 
 - DVS Portal: fix write requests (reservations, favorites) failing with HTTP 401 on portals that publish the XSRF token in the `__Host-Xsrf-DVSPortal` cookie and do not serve `app.env.js` (Rijswijk). The cookie value is now sent as `X-XSRF-TOKEN` by default ([#128](https://github.com/sir-Unknown/pyCityVisitorParking/issues/128)).

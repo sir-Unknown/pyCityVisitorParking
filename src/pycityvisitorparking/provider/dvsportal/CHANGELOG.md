@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.5.31
+
 - Send `X-XSRF-TOKEN` when the portal issues its request-forgery cookie under a name that `app.env.js` does not declare: if no configured or discovered name matches, any applicable cookie whose name contains `xsrf` is used.
 
 ## 0.5.30

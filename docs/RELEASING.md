@@ -20,7 +20,7 @@
 - Update provider `README.md` and provider `CHANGELOG.md` for provider changes:
   - auth flow changes
   - endpoint changes
-  - mapping changes (UTC conversion, `zone_validity` filtering)
+  - mapping changes (UTC conversion, `paid_hours` filtering)
   - limitations or known issues
 
 ✅ **Validate the release locally with the current toolchain**

@@ -372,7 +372,7 @@ async def test_get_permit_converts_balance_units_to_minutes_and_sorts_windows() 
     assert permit.remaining_balance == 60.0  # 6 units of 10 minutes
     assert permit.balance_unit == "MINUTE"
     # Duplicate windows collapse and the result is chronological, in UTC with a Z suffix.
-    assert [(b.start_time, b.end_time) for b in permit.zone_validity] == [
+    assert [(b.start_time, b.end_time) for b in permit.paid_hours] == [
         ("2026-03-15T09:20:45Z", "2026-03-15T11:20:45Z"),
         ("2026-03-15T12:20:45Z", "2026-03-15T20:20:45Z"),
     ]
@@ -629,14 +629,14 @@ async def test_list_reservation_targets_lists_each_zone_with_its_own_merged_wind
         ("Zone A", "Zone A", None),
     ]
     windows = {
-        target.id: [(b.start_time, b.end_time) for b in target.zone_validity] for target in targets
+        target.id: [(b.start_time, b.end_time) for b in target.paid_hours] for target in targets
     }
     assert windows == {
         "Zone 10": [(_utc(hours[8]), _utc(hours[24]))],
         "Zone A": [(_utc(hours[8]), _utc(hours[22])), (_utc(hours[30]), _utc(hours[31]))],
     }
     # The permit-level windows are those of the default target.
-    assert (await provider.get_permit()).zone_validity == targets[0].zone_validity
+    assert (await provider.get_permit()).paid_hours == targets[0].paid_hours
 
 
 @pytest.mark.asyncio

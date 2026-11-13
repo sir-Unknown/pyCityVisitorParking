@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -167,10 +168,33 @@ def test_normalize_permit_media_type_id_rejects_invalid() -> None:
         provider._normalize_permit_media_type_id(" ")
 
 
-def test_map_zone_validity_rejects_invalid_type() -> None:
+def test_map_paid_hours_rejects_invalid_type() -> None:
     provider = _provider()
     with pytest.raises(ProviderError):
-        provider._map_zone_validity("invalid")  # type: ignore[arg-type]
+        provider._map_paid_hours("invalid")  # type: ignore[arg-type]
+
+
+def test_map_paid_hours_logs_only_when_fallback_zone_is_used(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    provider = _provider()
+    zone = {"start_time": "2024-01-02T09:00:00+01:00", "end_time": "2024-01-02T18:00:00+01:00"}
+    entry = {"is_free": False, **zone}
+
+    with caplog.at_level(logging.DEBUG, logger="pycityvisitorparking.provider"):
+        provider._map_paid_hours([entry], fallback_zone=zone)
+        assert "fallback zone" not in caplog.text
+        blocks = provider._map_paid_hours(None, fallback_zone=zone)
+        assert [(b.start_time, b.end_time) for b in blocks] == [
+            ("2024-01-02T08:00:00Z", "2024-01-02T17:00:00Z")
+        ]
+    records = [r for r in caplog.records if "fallback zone" in r.getMessage()]
+    assert len(records) == 1
+    message = records[0].getMessage()
+    assert "raw_type=NoneType" in message
+    assert "raw_count=0" in message
+    assert "2024-01-02T08:00:00Z" in message
+    assert "2024-01-02T17:00:00Z" in message
 
 
 @pytest.mark.asyncio
@@ -297,7 +321,7 @@ async def test_get_permit_requests_account_endpoint() -> None:
 
     assert permit.id == "9"
     assert permit.remaining_balance == 42
-    assert permit.zone_validity[0].start_time == "2024-01-02T08:00:00Z"
+    assert permit.paid_hours[0].start_time == "2024-01-02T08:00:00Z"
     assert session.calls[0]["url"].endswith("/api/account/0")
 
 

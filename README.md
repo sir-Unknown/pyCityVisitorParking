@@ -132,7 +132,7 @@ Public data models:
 
 - `ProviderInfo`
 - `Permit`
-- `ZoneValidityBlock`
+- `PaidHoursBlock`
 - `ReservationTarget`
 - `Reservation`
 - `Favorite`
@@ -140,9 +140,9 @@ Public data models:
 Model highlights:
 
 - `ProviderInfo` includes `id`, `favorite_update_fields`, `reservation_update_fields`, `balance_units`, and `reservation_target_selection`
-- `Permit` includes `id`, `remaining_balance`, `balance_unit`, and `zone_validity`
-- `ZoneValidityBlock` contains UTC ISO 8601 `start_time` and `end_time`
-- `ReservationTarget` includes an opaque `id`, a display `name`, an optional `description`, and its own `zone_validity`
+- `Permit` includes `id`, `remaining_balance`, `balance_unit`, and `paid_hours`
+- `PaidHoursBlock` contains UTC ISO 8601 `start_time` and `end_time`
+- `ReservationTarget` includes an opaque `id`, a display `name`, an optional `description`, and its own `paid_hours`
 - `Reservation` includes `id`, `name`, `license_plate`, `start_time`, `end_time`, and `reservation_target_id` (`None` when the provider has no targets)
 - `Favorite` includes `id`, `name`, and `license_plate`
 
@@ -174,8 +174,8 @@ parking machine. `ProviderInfo.reservation_target_selection` says how:
 `list_reservation_targets()` returns the default target first and an empty list when the
 active permit has nothing to choose. Pass the chosen id as
 `start_reservation(..., reservation_target_id=...)`; `None` uses the default target.
-`Permit.zone_validity` holds the windows of the default target, and
-`ReservationTarget.zone_validity` those of each listed target. The booked target is
+`Permit.paid_hours` holds the windows of the default target, and
+`ReservationTarget.paid_hours` those of each listed target. The booked target is
 returned as `Reservation.reservation_target_id`; updating a reservation never changes it.
 `fetch_all()` returns `(permit, reservations, favorites, targets)`, so a refresh gets the targets without a second round of requests.
 Target ids are opaque strings; provider-native values stay inside the provider.

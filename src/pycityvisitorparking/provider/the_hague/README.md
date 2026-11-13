@@ -53,9 +53,10 @@ Recommended endpoints:
 
 - `Permit.id` uses `Account.id`.
 - `Permit.remaining_balance` uses `Account.debit_minutes`.
-- `Permit.zone_validity` is empty because the public API does not expose
-  chargeable windows. When `zone_validity` is missing, the provider reads
-  `zone.start_time`/`zone.end_time` as the chargeable window if available.
+- `Permit.paid_hours` is empty because the public API does not expose
+  paid hours. When the account has no `zone_validity` list, the provider reads
+  `zone.start_time`/`zone.end_time` as the paid hours if available and logs one
+  debug line with the raw type/count and the fallback timestamps.
 - If an undocumented `zone_validity` list is present, entries with `is_free`
   set to `true` are filtered out.
 - Reservations map directly to `Reservation` fields.

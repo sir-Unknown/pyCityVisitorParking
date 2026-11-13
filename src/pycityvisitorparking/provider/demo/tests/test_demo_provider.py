@@ -39,7 +39,7 @@ async def test_rotterdam_demo_targets_have_their_own_paid_hours() -> None:
     zone_10, zone_630, zone_632 = targets
 
     def windows(target: ReservationTarget, count: int) -> list[tuple[str, str]]:
-        return [(w.start_time, w.end_time) for w in target.zone_validity[:count]]
+        return [(w.start_time, w.end_time) for w in target.paid_hours[:count]]
 
     # Friday to Sunday; local times are UTC+1. Zone 10 is paid until 01:00 on Friday
     # and Saturday, 630 has shorter days, 632 is free on Sunday.
@@ -58,7 +58,7 @@ async def test_rotterdam_demo_targets_have_their_own_paid_hours() -> None:
         ("2026-11-14T09:00:00Z", "2026-11-14T16:00:00Z"),
         ("2026-11-16T07:00:00Z", "2026-11-16T17:00:00Z"),
     ]
-    assert (await provider.get_permit()).zone_validity == zone_10.zone_validity
+    assert (await provider.get_permit()).paid_hours == zone_10.paid_hours
 
 
 @pytest.mark.asyncio

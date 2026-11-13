@@ -476,7 +476,7 @@ class Provider(BaseProvider):
         balance_unit = _parse_balance_currency(balance)
         permit_id = self._coerce_id(self._product_id) or "permit"
         return Permit(
-            id=permit_id, remaining_balance=amount, zone_validity=[], balance_unit=balance_unit
+            id=permit_id, remaining_balance=amount, paid_hours=[], balance_unit=balance_unit
         )
 
     def _map_reservation_list(self, details: Any) -> list[Reservation]:

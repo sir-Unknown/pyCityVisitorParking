@@ -23,7 +23,7 @@ rules in `../AGENTS.md` and the repository `AGENTS.md` still apply.
 - Values embedded in XPath literals must be object ids from the portal
   (`xpath_guid`) or caller ids checked by `xpath_opaque_id`. Never interpolate
   other caller input.
-- The permit, zone validity, and successful reservation paths were built without
+- The permit, paid hours, and successful reservation paths were built without
   an account that holds a permit. When one becomes available, verify them live
   and update the README "Verification status" section.
 - Test with the scripted fake portal in `tests/`; never call the live portal

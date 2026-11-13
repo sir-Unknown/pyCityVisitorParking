@@ -138,7 +138,7 @@ Current public models are:
 
 - `ProviderInfo`
 - `Permit`
-- `ZoneValidityBlock`
+- `PaidHoursBlock`
 - `ReservationTarget`
 - `Reservation`
 - `Favorite`
@@ -156,16 +156,16 @@ Current model expectations:
 - `Permit` exposes:
   - `id`
   - `remaining_balance`
-  - `zone_validity`
+  - `paid_hours`
   - `balance_unit`
-- `ZoneValidityBlock` exposes:
+- `PaidHoursBlock` exposes:
   - `start_time`
   - `end_time`
 - `ReservationTarget` exposes:
   - `id`
   - `name`
   - `description`
-  - `zone_validity`
+  - `paid_hours`
 - `Reservation` exposes:
   - `id`
   - `name`
@@ -206,7 +206,7 @@ Providers must follow the current base contract and shared helpers for:
 - reservation time validation
 - UTC normalization
 - license plate normalization
-- chargeable `zone_validity` filtering
+- `paid_hours` filtering
 - normalized exceptions
 - structured logging
 
@@ -220,9 +220,9 @@ Provider implementations should reuse base helpers instead of duplicating valida
 - Keep them timezone-aware and normalized.
 - Do not expose raw provider-local timestamps in the public API.
 
-### Zone validity
+### Paid hours
 
-- Public `zone_validity` must contain chargeable windows only.
+- Public `paid_hours` must contain paid hours only.
 - Free windows must be filtered out before public exposure.
 - Invalid or ambiguous provider time data must raise normalized library errors rather than leaking raw parsing failures.
 

@@ -19,10 +19,10 @@ from pycityvisitorparking.exceptions import (
 )
 from pycityvisitorparking.models import (
     Favorite,
+    PaidHoursBlock,
     Permit,
     Reservation,
     ReservationTarget,
-    ZoneValidityBlock,
 )
 from pycityvisitorparking.provider.base import BaseProvider
 from pycityvisitorparking.provider.loader import ProviderManifest
@@ -83,7 +83,7 @@ class _DummyProvider(BaseProvider):
         return None
 
     async def get_permit(self) -> Permit:
-        return Permit(id="permit", remaining_balance=1, zone_validity=[])
+        return Permit(id="permit", remaining_balance=1, paid_hours=[])
 
     async def list_reservations(self) -> list[Reservation]:
         return []
@@ -184,13 +184,22 @@ def test_merge_credentials() -> None:
         provider._merge_credentials({"user": 1})  # type: ignore[arg-type]
 
 
-def test_filter_chargeable_zone_validity_invalid() -> None:
+def test_request_context_name_property() -> None:
+    provider = _DummyProvider(_SequenceSession([]), _manifest(), base_url="https://example.com")
+    assert provider.request_context_name is None
+    provider.set_request_context("  Den Haag ")
+    assert provider.request_context_name == "Den Haag"
+    provider.set_request_context(None)
+    assert provider.request_context_name is None
+
+
+def test_filter_paid_hours_invalid() -> None:
     provider = _DummyProvider(_SequenceSession([]), _manifest(), base_url="https://example.com")
     blocks = [
-        (ZoneValidityBlock("invalid", "2024-01-01T12:00:00Z"), True),
+        (PaidHoursBlock("invalid", "2024-01-01T12:00:00Z"), True),
     ]
     with pytest.raises(ProviderError):
-        provider._filter_chargeable_zone_validity(blocks)
+        provider._filter_paid_hours(blocks)
 
 
 def test_mask_payload_redacts_login_and_license_plate_data() -> None:

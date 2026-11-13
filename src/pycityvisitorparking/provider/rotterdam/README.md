@@ -70,9 +70,9 @@ A session with a dummy cookie jar cannot sign in.
   as `0`.
 - `list_reservation_targets` lists the permit's zones as reservation targets,
   default zone first (see D1), each with the upcoming parking-time windows
-  stored for that zone. `Permit.zone_validity` equals the windows of the
+  stored for that zone. `Permit.paid_hours` equals the windows of the
   default target. Every stored
-  window is a chargeable window, so no free windows exist to filter out.
+  window is a paid-hours window, so no free windows exist to filter out.
   Overlapping and touching windows are merged; the portal splits a window that
   crosses midnight into two rows.
 - Reservations map to the permit's parking actions that are not cancelled and
@@ -152,7 +152,7 @@ marked place, the tests named here, and this section together, and add a line to
     and `ReservationTarget.name` are both the zone name. Zones with the same
     name raise `ProviderError`.
   - The first zone is the default: `start_reservation` without
-    `reservation_target_id` books in it, and `Permit.zone_validity` holds its
+    `reservation_target_id` books in it, and `Permit.paid_hours` holds its
     windows.
   - `start_reservation` with a `reservation_target_id` that is not one of the
     listed zones raises `ValidationError` before anything is sent. A permit
@@ -242,7 +242,7 @@ marked place, the tests named here, and this section together, and add a line to
 
 - Only one permit is used when an account has several.
 - The target of a reservation cannot be changed after it was started.
-- A target's `zone_validity` stays empty when the portal has not stored parking
+- A target's `paid_hours` stays empty when the portal has not stored parking
   times for it.
 - Reservation updates cannot change the license plate or name.
 - The portal can change its page definitions or data model at any time. A

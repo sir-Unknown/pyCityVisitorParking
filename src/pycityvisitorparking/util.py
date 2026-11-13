@@ -8,7 +8,7 @@ from datetime import UTC, datetime
 from typing import Literal, overload
 
 from .exceptions import ValidationError
-from .models import ZoneValidityBlock
+from .models import PaidHoursBlock
 
 _LICENSE_PLATE_RE = re.compile(r"[^A-Z0-9]")
 
@@ -92,7 +92,7 @@ def validate_reservation_times(
     return start_dt, end_dt
 
 
-def filter_chargeable_zone_validity(
-    zone_validity_pairs: Iterable[tuple[ZoneValidityBlock, bool]],
-) -> list[ZoneValidityBlock]:
-    return [block for block, is_chargeable in zone_validity_pairs if is_chargeable]
+def filter_paid_hours(
+    paid_hours_pairs: Iterable[tuple[PaidHoursBlock, bool]],
+) -> list[PaidHoursBlock]:
+    return [block for block, is_paid in paid_hours_pairs if is_paid]

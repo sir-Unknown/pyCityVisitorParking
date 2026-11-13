@@ -25,7 +25,7 @@ class ProviderInfo:
 
 
 @dataclass(frozen=True, slots=True)
-class ZoneValidityBlock:
+class PaidHoursBlock:
     start_time: str
     end_time: str
 
@@ -35,15 +35,15 @@ class ReservationTarget:
     id: str
     name: str
     description: str | None = None
-    # Chargeable windows of this target; empty when the provider reports none per target.
-    zone_validity: list[ZoneValidityBlock] = field(default_factory=list)
+    # Paid hours of this target; empty when the provider reports none per target.
+    paid_hours: list[PaidHoursBlock] = field(default_factory=list)
 
 
 @dataclass(frozen=True, slots=True)
 class Permit:
     id: str
     remaining_balance: float
-    zone_validity: list[ZoneValidityBlock]
+    paid_hours: list[PaidHoursBlock]
     balance_unit: str | None = None
 
 

@@ -25,7 +25,7 @@
   - provider description and official service name
   - required login keys and example credential shapes
   - supported operations and known limitations
-  - mapping notes for `zone_validity` and time handling
+  - mapping notes for `paid_hours` and time handling
   - links to official provider documentation where available
 - Write `CHANGELOG.md` inside the provider folder.
 - Keep an “Unreleased” section in the provider changelog.
@@ -64,7 +64,7 @@
 - Map provider responses only into strict public dataclasses:
   - `ProviderInfo`
   - `Permit`
-  - `ZoneValidityBlock`
+  - `PaidHoursBlock`
   - `ReservationTarget`
   - `Reservation`
   - `Favorite`
@@ -82,10 +82,10 @@
 - Accept only timezone-aware `datetime` values in public reservation methods.
 - Normalize to UTC `datetime` internally and serialize only at API/model boundaries.
 
-✅ **Filter zone_validity to chargeable windows**
-- Build `Permit.zone_validity` using only chargeable windows.
+✅ **Filter paid_hours to paid hours only**
+- Build `Permit.paid_hours` using only paid hours.
 - Filter out free windows.
-- Include windows only when reservation is required/chargeable.
+- Include windows only when reservation is required (paid).
 
 ✅ **Implement login and auth safely**
 - Accept credentials via `Mapping[str, str]` or `**kwargs`.
@@ -118,7 +118,7 @@
   - UTC conversion from an offset timestamp
   - naive `datetime` inputs raise `ValidationError`
   - serialization uses `Z` with second precision
-  - `zone_validity` filtering to chargeable windows
+  - `paid_hours` filtering to paid hours only
   - mapping into strict public dataclasses
   - request/response flows with mocked aiohttp responses
   - HTTP/auth/error mapping for non-2xx and invalid JSON responses
@@ -136,7 +136,7 @@
 - Confirm UTC ISO 8601 `Z` timestamps in all public outputs.
 - Confirm reservation methods accept only timezone-aware `datetime` values.
 - Confirm license plate normalization and validation.
-- Confirm chargeable-only `zone_validity`.
+- Confirm `paid_hours` holds paid hours only.
 - Confirm `end_time` required and `end_time > start_time`.
 - Confirm provider `README.md` and `CHANGELOG.md` exist and are updated.
 - Confirm `pytest` passes.

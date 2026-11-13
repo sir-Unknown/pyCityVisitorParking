@@ -111,11 +111,11 @@ Raise `ValidationError` for invalid or empty plates after normalization.
 
 Use `normalize_license_plate()` from `pycityvisitorparking.util`.
 
-## Zone validity filtering
+## Paid hours filtering
 
-`Permit.zone_validity` must include only chargeable windows.
-Filter out free or non-chargeable windows. Use
-`filter_chargeable_zone_validity()` from `pycityvisitorparking.util`.
+`Permit.paid_hours` must include only paid hours.
+Filter out free windows. Use
+`filter_paid_hours()` from `pycityvisitorparking.util`.
 
 ## Reservation validation
 
@@ -158,8 +158,8 @@ login key or `start_reservation()` argument. Model it as a reservation target:
   also accepts other ids it can resolve itself (for example a number read from a
   machine). Omit it when there is nothing to choose.
 - Override `list_reservation_targets()`: default target first, `[]` when the active
-  permit has nothing to choose. Fill `ReservationTarget.zone_validity` when targets
-  have their own chargeable windows, and keep `Permit.zone_validity` equal to the
+  permit has nothing to choose. Fill `ReservationTarget.paid_hours` when targets
+  have their own paid hours, and keep `Permit.paid_hours` equal to the
   default target's windows.
 - Call `self._validate_reservation_target_id(reservation_target_id)` at the start of
   `start_reservation()`, use the default target when it is `None`, and raise
@@ -177,7 +177,7 @@ Map all provider responses to strict public dataclasses in
 
 - `ProviderInfo`
 - `Permit`
-- `ZoneValidityBlock`
+- `PaidHoursBlock`
 - `ReservationTarget`
 - `Reservation`
 - `Favorite`
@@ -199,6 +199,9 @@ or disabled.
 Do not log credentials, tokens, or full license plates. If logging is necessary,
 mask plates when logging (avoid full values in logs).
 
+`BaseProvider.request_context_name` returns the municipality/context label set via
+`set_request_context()` (`None` when unset).
+
 ## Documentation and changelog
 
 Each provider must include:
@@ -215,7 +218,7 @@ Add coverage for:
 
 - license plate normalization
 - UTC conversion from provider timestamps
-- zone validity filtering
+- paid hours filtering
 - mapping into public models
 - request/response flows for provider methods with mocked aiohttp responses
 - HTTP/auth/error mapping for non-2xx and invalid JSON responses

@@ -7,7 +7,7 @@ import pytest
 from yarl import URL
 
 from pycityvisitorparking.exceptions import AuthError, ProviderError, ServiceUnavailableError
-from pycityvisitorparking.models import Reservation, ZoneValidityBlock
+from pycityvisitorparking.models import PaidHoursBlock, Reservation
 from pycityvisitorparking.provider.dvsportal.api import Provider
 from pycityvisitorparking.provider.dvsportal.const import (
     DEFAULT_API_URI,
@@ -163,13 +163,13 @@ async def test_map_permit_filters_free_blocks_and_converts_utc() -> None:
 
     assert permit.id == "CARD-1"
     assert permit.remaining_balance == 120
-    assert permit.zone_validity == [
-        ZoneValidityBlock(
+    assert permit.paid_hours == [
+        PaidHoursBlock(
             start_time="2024-01-02T08:00:00Z",
             end_time="2024-01-02T17:00:00Z",
         )
     ]
-    for block in permit.zone_validity:
+    for block in permit.paid_hours:
         assert_utc_timestamp(block.start_time)
         assert_utc_timestamp(block.end_time)
 

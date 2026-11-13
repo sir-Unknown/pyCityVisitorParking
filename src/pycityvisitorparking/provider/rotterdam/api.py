@@ -17,10 +17,10 @@ from ...exceptions import AuthError, ErrorCode, NotFoundError, ProviderError, Va
 from ...models import (
     BALANCE_UNIT_MINUTE,
     Favorite,
+    PaidHoursBlock,
     Permit,
     Reservation,
     ReservationTarget,
-    ZoneValidityBlock,
 )
 from ..base import BaseProvider
 from ..loader import ProviderManifest
@@ -349,7 +349,7 @@ class Provider(BaseProvider):
     ) -> tuple[Permit, list[Reservation], list[Favorite], list[ReservationTarget]]:
         """Return permit, reservations, favorites, and targets with one permit selection.
 
-        The zones are fetched once and serve both ``Permit.zone_validity`` and the targets.
+        The zones are fetched once and serve both ``Permit.paid_hours`` and the targets.
         """
         authorization = await self._select_authorization()
         permit_guid = self._permit_guid(authorization)
@@ -404,7 +404,7 @@ class Provider(BaseProvider):
             remaining_balance=balance,
             # DESIGN DECISION D1 (see README "Design decisions"): the permit-level windows
             # are those of the default target, the first of ``list_reservation_targets``.
-            zone_validity=targets[0].zone_validity if targets else [],
+            paid_hours=targets[0].paid_hours if targets else [],
             balance_unit=BALANCE_UNIT_MINUTE,
         )
         return permit, targets
@@ -467,21 +467,19 @@ class Provider(BaseProvider):
         return name
 
     async def _targets(self, zones: list[MendixObject]) -> list[ReservationTarget]:
-        """Map the permit's zones to targets, each with its upcoming chargeable windows."""
+        """Map the permit's zones to targets, each with its upcoming paid hours."""
         windows = await asyncio.gather(
-            *(self._zone_validity(xpath_guid(zone.guid, "zone id")) for zone in zones)
+            *(self._zone_paid_hours(xpath_guid(zone.guid, "zone id")) for zone in zones)
         )
         return [
-            ReservationTarget(
-                id=self._zone_id(zone), name=self._zone_id(zone), zone_validity=validity
-            )
+            ReservationTarget(id=self._zone_id(zone), name=self._zone_id(zone), paid_hours=validity)
             for zone, validity in zip(zones, windows, strict=True)
         ]
 
-    async def _zone_validity(self, zone_guid: str) -> list[ZoneValidityBlock]:
+    async def _zone_paid_hours(self, zone_guid: str) -> list[PaidHoursBlock]:
         """Return the upcoming parking-time windows of one zone.
 
-        Every stored parking-time window is a chargeable window, so no free windows exist
+        Every stored parking-time window is a paid-hours window, so no free windows exist
         to filter out. Overlapping and touching windows are merged; the portal splits a
         window that crosses midnight into two rows.
         """
@@ -495,7 +493,7 @@ class Provider(BaseProvider):
             start = datetime_from_milliseconds(row.value("VanafTijd"))
             end = datetime_from_milliseconds(row.value("TotTijd"))
             if start is None or end is None or end <= start:
-                raise ProviderError("Provider returned invalid zone validity data.")
+                raise ProviderError("Provider returned invalid paid hours data.")
             windows.append((start, end))
         merged: list[tuple[datetime, datetime]] = []
         for start, end in sorted(windows):
@@ -505,7 +503,7 @@ class Provider(BaseProvider):
                 merged.append((start, end))
         entries = [
             (
-                ZoneValidityBlock(
+                PaidHoursBlock(
                     start_time=self._format_utc_timestamp(start),
                     end_time=self._format_utc_timestamp(end),
                 ),
@@ -513,7 +511,7 @@ class Provider(BaseProvider):
             )
             for start, end in merged
         ]
-        return self._filter_chargeable_zone_validity(entries)
+        return self._filter_paid_hours(entries)
 
     # ------------------------------------------------------------------
     # Reservations

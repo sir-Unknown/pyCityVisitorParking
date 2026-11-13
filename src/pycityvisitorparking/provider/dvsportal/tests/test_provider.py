@@ -278,6 +278,27 @@ async def test_request_json_auth_uses_host_prefixed_xsrf_cookie(
     assert captured["request_kwargs"]["headers"][XSRF_HEADER] == "host-xsrf"
 
 
+@pytest.mark.parametrize(
+    ("cookies", "expected"),
+    [
+        ({"__Host-Xsrf-Whatever": "tok"}, "tok"),
+        ({"xsrf_custom": "tok"}, "tok"),
+        ({".AspNetCore.Antiforgery.abc": "server-side"}, None),
+        ({"XSRF-TOKEN": "known", "Xsrf-Other": "other"}, "known"),
+    ],
+)
+async def test_xsrf_headers_fall_back_to_cookie_name_scan(
+    cookies: dict[str, str], expected: str | None
+) -> None:
+    async with aiohttp.ClientSession() as session:
+        session.cookie_jar.update_cookies(cookies, response_url=URL("https://example/"))
+        provider = Provider(session, _manifest(), base_url="https://example")
+        jar: Any = session.cookie_jar
+        headers = provider._profile.xsrf_headers(jar, url="https://example/x")
+
+    assert headers.get(XSRF_HEADER) == expected
+
+
 @pytest.mark.asyncio
 async def test_request_json_auth_omits_xsrf_header_without_cookie(
     monkeypatch: pytest.MonkeyPatch,

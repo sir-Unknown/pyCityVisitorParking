@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import re
 from collections.abc import Iterable
 from http.cookies import Morsel
 from typing import Any, Protocol
@@ -15,6 +16,10 @@ from .const import (
     LOGIN_METHOD_PAS,
     XSRF_HEADER,
 )
+
+# Matches token-style cookie names such as "XSRF-TOKEN", "Xsrf-Portal" or
+# "__Host-Xsrf-Portal"; server-side antiforgery cookies do not contain "xsrf".
+_XSRF_COOKIE_NAME_PATTERN = re.compile(r"xsrf", re.IGNORECASE)
 
 
 class _CookieJarLike(Protocol):
@@ -87,13 +92,22 @@ class PortalProfile:
         *,
         url: str,
     ) -> dict[str, str]:
-        """Return XSRF headers for a request when a matching cookie exists."""
+        """Return XSRF headers for a request when a matching cookie exists.
+
+        Configured and discovered names win. When none match, fall back to any
+        applicable cookie that looks like a request-forgery token, so portals that do
+        not declare their cookie name up front still work.
+        """
         if cookie_jar is None:
             return {}
         cookies = cookie_jar.filter_cookies(URL(url))
         for cookie_name in self._xsrf_cookie_names:
             cookie = cookies.get(cookie_name)
             if cookie is not None and cookie.value:
+                return {XSRF_HEADER: cookie.value}
+        for cookie_name in sorted(cookies):
+            cookie = cookies[cookie_name]
+            if cookie.value and _XSRF_COOKIE_NAME_PATTERN.search(cookie_name):
                 return {XSRF_HEADER: cookie.value}
         return {}
 

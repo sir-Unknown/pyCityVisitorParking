@@ -49,6 +49,7 @@ Currently bundled providers:
 - DVS Portal
 - The Hague
 - 2park
+- Rotterdam
 
 Provider manifests are discovered from `src/pycityvisitorparking/provider/` without importing all providers up front.
 
@@ -57,6 +58,7 @@ Provider-specific documentation:
 - [DVS Portal](https://github.com/sir-Unknown/pyCityVisitorParking/blob/main/src/pycityvisitorparking/provider/dvsportal/README.md)
 - [The Hague](https://github.com/sir-Unknown/pyCityVisitorParking/blob/main/src/pycityvisitorparking/provider/the_hague/README.md)
 - [2park](https://github.com/sir-Unknown/pyCityVisitorParking/blob/main/src/pycityvisitorparking/provider/2park/README.md)
+- [Rotterdam](https://github.com/sir-Unknown/pyCityVisitorParking/blob/main/src/pycityvisitorparking/provider/rotterdam/README.md)
 
 ---
 
@@ -67,6 +69,7 @@ For the exact `base_url`, `api_uri`, and provider-specific notes, see the provid
 - **DVS Portal**: Apeldoorn, Bloemendaal, Delft, Den Bosch, Doetinchem (via Buha), Groningen, Haarlem, Harlingen, Heemstede, Heerenveen, Heerlen, Hengelo, Katwijk, Leiden, Leidschendam-Voorburg, Middelburg, Nissewaard, Oldenzaal, Rijswijk, Roermond, Schouwen-Duiveland, Sittard-Geleen, Smallingerland, Sudwest-Fryslan, Veere, Venlo, Vlissingen, Waadhoeke, Waalwijk, Weert, Zaanstad, Zevenaar, Zutphen, Zwolle
 - **The Hague**: The Hague
 - **2park**: Amstelveen, Assen, Bergen op Zoom, Breda, Deventer, Dordrecht, Eindhoven, Emmen, Etten-Leur, Gorinchem, Hardenberg, Harderwijk, Maastricht, Oosterhout, Oss, Roosendaal, Sluis, Terneuzen, Tiel, Veenendaal, Vlaardingen
+- **Rotterdam**: Rotterdam
 
 ---
 
@@ -295,6 +298,8 @@ Supported error codes:
 | `provider_rejected`   | `ProviderError`           | The provider refused the action (for example insufficient balance)       |
 
 `TimeoutError` is a subclass of `NetworkError`; `RateLimitError`, `ServiceUnavailableError` and `NotFoundError` are subclasses of `ProviderError`; `ConfigError` is a subclass of `ValidationError`.
+
+`ProviderError` with `error_code="provider_rejected"` means the provider processed the request and refused it, for example because the balance is used up or the time is outside the planning horizon. The session works, so a re-login does not help; `detail` carries the provider's reason when it gives one (without license plates).
 
 Example:
 

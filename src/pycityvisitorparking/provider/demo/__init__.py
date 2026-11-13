@@ -4,12 +4,15 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Mapping
-from datetime import datetime
+from datetime import UTC, datetime, time, timedelta
+from zoneinfo import ZoneInfo
 
-from ...exceptions import ProviderError
-from ...models import Favorite, Permit, Reservation, ZoneValidityBlock
+from ...exceptions import ProviderError, ValidationError
+from ...models import Favorite, Permit, Reservation, ReservationTarget, ZoneValidityBlock
 from ...util import parse_timestamp
 from ..base import BaseProvider
+
+_LOCAL_TZ = ZoneInfo("Europe/Amsterdam")
 
 _FAVORITES_BY_CITY: dict[str, list[dict[str, str]]] = {
     "groningen": [
@@ -40,10 +43,29 @@ _FAVORITES_BY_CITY: dict[str, list[dict[str, str]]] = {
         {"id": "e6", "name": "Robin Claes", "license_plate": "PF-812-S"},
         {"id": "e7", "name": "Fleur Verstegen", "license_plate": "TX-37-HN"},
     ],
+    "rotterdam": [
+        {"id": "r1", "name": "Sanne Bosman", "license_plate": "RT-502-K"},
+        {"id": "r2", "name": "Youssef Amrani", "license_plate": "MZ-118-D"},
+        {"id": "r3", "name": "Bram Koster", "license_plate": "KX-73-PL"},
+        {"id": "r4", "name": "Ilse Verbeek", "license_plate": "HB-904-S"},
+    ],
     "default": [
         {"id": "d1", "name": "Demo Gebruiker", "license_plate": "XX-000-X"},
     ],
 }
+
+# Paid hours per weekday (Monday first) in Europe/Amsterdam; None means free all day.
+# An end at or before the start ends on the next day.
+type _WeekSchedule = tuple[tuple[time, time] | None, ...]
+
+_DAY = (time(9), time(23))
+# Rotterdam demo zones with deliberately different paid hours; the first one is the
+# default zone. Zone 10 mirrors the real zone 10 (Friday and Saturday until 01:00).
+_ROTTERDAM_ZONES: tuple[tuple[str, _WeekSchedule], ...] = (
+    ("10", (_DAY, _DAY, _DAY, _DAY, (time(9), time(1)), (time(9), time(1)), (time(12), time(23)))),
+    ("630", ((time(9), time(21)),) * 6 + ((time(13), time(18)),)),
+    ("632", ((time(8), time(18)),) * 5 + ((time(10), time(17)), None)),
+)
 
 _RESERVATIONS: list[dict[str, str]] = [
     {
@@ -76,7 +98,7 @@ class Provider(BaseProvider):
     def __init__(self, *args, **kwargs) -> None:  # type: ignore[no-untyped-def]
         super().__init__(*args, **kwargs)
         self._favorites: list[dict[str, str]] | None = None
-        self._reservations: list[dict[str, str]] = [dict(r) for r in _RESERVATIONS]
+        self._reservations: list[dict[str, str | None]] | None = None
 
     def _get_favorites(self) -> list[dict[str, str]]:
         """Lazy-initialize favorites so the city context is available."""
@@ -120,6 +142,14 @@ class Provider(BaseProvider):
                 "zone_start": "2026-04-15T07:30:00Z",
                 "zone_end": "2026-04-15T18:30:00Z",
             }
+        if self._is_rotterdam():
+            # Windows come from the zones (see ``_zones``).
+            return {
+                "remaining_balance": 10450,
+                "balance_unit": "MINUTE",
+                "zone_start": "",
+                "zone_end": "",
+            }
         # fallback
         return {
             "remaining_balance": 100.0,
@@ -130,29 +160,91 @@ class Provider(BaseProvider):
 
     async def get_permit(self) -> Permit:
         cfg = self._demo_permit_config()
+        targets = await self.list_reservation_targets()
         return Permit(
             id="demo-permit",
             remaining_balance=cfg["remaining_balance"],
             balance_unit=cfg["balance_unit"],
-            zone_validity=[
-                ZoneValidityBlock(
-                    start_time=cfg["zone_start"],
-                    end_time=cfg["zone_end"],
-                )
-            ],
+            # With targets, the permit-level windows are those of the default target.
+            zone_validity=targets[0].zone_validity
+            if targets
+            else [ZoneValidityBlock(start_time=cfg["zone_start"], end_time=cfg["zone_end"])],
         )
 
-    async def list_reservations(self) -> list[Reservation]:
+    def _is_rotterdam(self) -> bool:
+        return "rotterdam" in (self._request_context_name or "").lower()
+
+    def _now(self) -> datetime:
+        return datetime.now(UTC)
+
+    async def list_reservation_targets(self) -> list[ReservationTarget]:
+        """Return the demo targets; only the Rotterdam demo permit has any."""
+        if not self._is_rotterdam():
+            return []
         return [
-            Reservation(
-                id=r["id"],
-                name=r["name"],
-                license_plate=self._normalize_license_plate(r["license_plate"]),
-                start_time=r["start_time"],
-                end_time=r["end_time"],
+            ReservationTarget(
+                id=zone_id,
+                name=zone_id,
+                zone_validity=self._rotterdam_windows(schedule),
             )
-            for r in self._reservations
+            for zone_id, schedule in _ROTTERDAM_ZONES
         ]
+
+    def _rotterdam_windows(self, schedule: _WeekSchedule) -> list[ZoneValidityBlock]:
+        """Return the upcoming paid windows of a Rotterdam demo zone for one week.
+
+        ``schedule`` holds the paid hours per weekday (Monday first) in
+        Europe/Amsterdam; an end at or before the start ends on the next day.
+        """
+        now = self._now()
+        today = now.astimezone(_LOCAL_TZ).date()
+        windows: list[ZoneValidityBlock] = []
+        for offset in range(8):
+            day = today + timedelta(days=offset)
+            hours = schedule[day.weekday()]
+            if hours is None:
+                continue
+            start = datetime.combine(day, hours[0], _LOCAL_TZ)
+            end_day = day + timedelta(days=1) if hours[1] <= hours[0] else day
+            end = datetime.combine(end_day, hours[1], _LOCAL_TZ)
+            if end > now:
+                windows.append(
+                    ZoneValidityBlock(
+                        start_time=self._format_utc_timestamp(start),
+                        end_time=self._format_utc_timestamp(end),
+                    )
+                )
+        return windows
+
+    def _get_reservations(self) -> list[dict[str, str | None]]:
+        """Lazy-initialize reservations so the city context is available."""
+        if self._reservations is None:
+            if self._is_rotterdam():
+                now = self._now().replace(second=0, microsecond=0)
+                self._reservations = [
+                    {
+                        "id": "rot-1",
+                        "name": "Sanne Bosman",
+                        "license_plate": "RT502K",
+                        "start_time": self._format_utc_timestamp(now - timedelta(minutes=30)),
+                        "end_time": self._format_utc_timestamp(now + timedelta(hours=2)),
+                        "reservation_target_id": "630",
+                    },
+                    {
+                        "id": "rot-2",
+                        "name": "Youssef Amrani",
+                        "license_plate": "MZ118D",
+                        "start_time": self._format_utc_timestamp(now + timedelta(days=1)),
+                        "end_time": self._format_utc_timestamp(now + timedelta(days=1, hours=3)),
+                        "reservation_target_id": "10",
+                    },
+                ]
+            else:
+                self._reservations = [{**r, "reservation_target_id": None} for r in _RESERVATIONS]
+        return self._reservations
+
+    async def list_reservations(self) -> list[Reservation]:
+        return [self._map_reservation(r) for r in self._get_reservations()]
 
     async def start_reservation(
         self,
@@ -162,27 +254,24 @@ class Provider(BaseProvider):
         name: str | None = None,
         reservation_target_id: str | None = None,
     ) -> Reservation:
-        self._validate_reservation_target_id(reservation_target_id)
+        requested_target = self._validate_reservation_target_id(reservation_target_id)
+        target_ids = [target.id for target in await self.list_reservation_targets()]
+        if requested_target is not None and requested_target not in target_ids:
+            raise ValidationError("reservation_target_id is not a target of the permit.")
         start_time, end_time = self._validate_reservation_times(
             start_time, end_time, require_both=True
         )
-        reservation = Reservation(
-            id=str(uuid.uuid4()),
-            name=name or "",
-            license_plate=self._normalize_license_plate(license_plate),
-            start_time=self._format_utc_timestamp(self._normalize_datetime(start_time)),
-            end_time=self._format_utc_timestamp(self._normalize_datetime(end_time)),
-        )
-        self._reservations.append(
-            {
-                "id": reservation.id,
-                "name": reservation.name,
-                "license_plate": reservation.license_plate,
-                "start_time": reservation.start_time,
-                "end_time": reservation.end_time,
-            }
-        )
-        return reservation
+        record: dict[str, str | None] = {
+            "id": str(uuid.uuid4()),
+            "name": name or "",
+            "license_plate": self._normalize_license_plate(license_plate),
+            "start_time": self._format_utc_timestamp(self._normalize_datetime(start_time)),
+            "end_time": self._format_utc_timestamp(self._normalize_datetime(end_time)),
+            # Without a requested target the default (first) target is used.
+            "reservation_target_id": requested_target or (target_ids[0] if target_ids else None),
+        }
+        self._get_reservations().append(record)
+        return self._map_reservation(record)
 
     async def update_reservation(
         self,
@@ -191,30 +280,24 @@ class Provider(BaseProvider):
         end_time: datetime | None = None,
         name: str | None = None,
     ) -> Reservation:
-        for r in self._reservations:
+        for r in self._get_reservations():
             if r["id"] == reservation_id:
                 effective_start = (
                     self._normalize_datetime(start_time)
                     if start_time is not None
-                    else parse_timestamp(r["start_time"])
+                    else parse_timestamp(str(r["start_time"]))
                 )
                 effective_end = (
                     self._normalize_datetime(end_time)
                     if end_time is not None
-                    else parse_timestamp(r["end_time"])
+                    else parse_timestamp(str(r["end_time"]))
                 )
                 self._validate_reservation_times(effective_start, effective_end, require_both=True)
                 r["start_time"] = self._format_utc_timestamp(effective_start)
                 r["end_time"] = self._format_utc_timestamp(effective_end)
                 if name is not None:
                     r["name"] = name
-                return Reservation(
-                    id=r["id"],
-                    name=r["name"],
-                    license_plate=r["license_plate"],
-                    start_time=r["start_time"],
-                    end_time=r["end_time"],
-                )
+                return self._map_reservation(r)
         raise ProviderError(f"Reservation {reservation_id!r} not found.")
 
     async def end_reservation(
@@ -222,18 +305,23 @@ class Provider(BaseProvider):
         reservation_id: str,
         end_time: datetime,
     ) -> Reservation:
-        for i, r in enumerate(self._reservations):
+        reservations = self._get_reservations()
+        for i, r in enumerate(reservations):
             if r["id"] == reservation_id:
-                ended = Reservation(
-                    id=r["id"],
-                    name=r["name"],
-                    license_plate=r["license_plate"],
-                    start_time=r["start_time"],
-                    end_time=self._format_utc_timestamp(self._normalize_datetime(end_time)),
-                )
-                self._reservations.pop(i)
-                return ended
+                r["end_time"] = self._format_utc_timestamp(self._normalize_datetime(end_time))
+                reservations.pop(i)
+                return self._map_reservation(r)
         raise ProviderError(f"Reservation {reservation_id!r} not found.")
+
+    def _map_reservation(self, r: dict[str, str | None]) -> Reservation:
+        return Reservation(
+            id=str(r["id"]),
+            name=str(r["name"]),
+            license_plate=self._normalize_license_plate(str(r["license_plate"])),
+            start_time=str(r["start_time"]),
+            end_time=str(r["end_time"]),
+            reservation_target_id=r["reservation_target_id"],
+        )
 
     async def list_favorites(self) -> list[Favorite]:
         return [

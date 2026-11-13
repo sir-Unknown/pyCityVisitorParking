@@ -16,7 +16,7 @@ async def test_providers_without_the_capability_reject_a_reservation_target_id()
     async with aiohttp.ClientSession() as session:
         client = Client(session=session, base_url="https://example.invalid")
         provider_infos = await client.list_providers()
-        checked = 0
+        checked: set[str] = set()
         for info in provider_infos:
             if info.reservation_target_selection is not None:
                 continue
@@ -26,5 +26,5 @@ async def test_providers_without_the_capability_reject_a_reservation_target_id()
                     "AB12CD", start, start + timedelta(hours=1), reservation_target_id="target"
                 )
             assert await provider.list_reservation_targets() == []
-            checked += 1
-    assert checked >= 4
+            checked.add(info.id)
+    assert {"2park", "dvsportal", "the_hague"} <= checked

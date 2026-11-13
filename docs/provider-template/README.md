@@ -30,7 +30,7 @@ runtime package and is ignored by discovery.
   inputs and reject naive timestamps.
 - Require `start_time` and `end_time` for `start_reservation` and enforce
   `end_time > start_time`.
-- Filter `zone_validity` to chargeable windows only.
+- Filter `paid_hours` to paid hours only.
 - Raise library exceptions (`AuthError`, `NetworkError`, `ValidationError`, `ProviderError`).
   Use `raise_for_failed_status()` from `provider/base.py` for HTTP status mapping and
   set a specific `ErrorCode` where one applies (`not_supported`, `provider_rejected`).

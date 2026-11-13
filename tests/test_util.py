@@ -3,10 +3,10 @@ from datetime import UTC, datetime, timedelta, timezone
 import pytest
 
 from pycityvisitorparking.exceptions import ValidationError
-from pycityvisitorparking.models import ZoneValidityBlock
+from pycityvisitorparking.models import PaidHoursBlock
 from pycityvisitorparking.util import (
     ensure_utc_timestamp,
-    filter_chargeable_zone_validity,
+    filter_paid_hours,
     format_utc_timestamp,
     normalize_datetime,
     normalize_license_plate,
@@ -85,10 +85,10 @@ def test_normalize_datetime_rejects_naive() -> None:
         normalize_datetime(datetime(2024, 1, 1, 12, 0))
 
 
-def test_filter_chargeable_zone_validity() -> None:
+def test_filter_paid_hours() -> None:
     blocks = [
-        (ZoneValidityBlock("2024-01-01T08:00:00Z", "2024-01-01T10:00:00Z"), True),
-        (ZoneValidityBlock("2024-01-01T10:00:00Z", "2024-01-01T12:00:00Z"), False),
+        (PaidHoursBlock("2024-01-01T08:00:00Z", "2024-01-01T10:00:00Z"), True),
+        (PaidHoursBlock("2024-01-01T10:00:00Z", "2024-01-01T12:00:00Z"), False),
     ]
-    filtered = filter_chargeable_zone_validity(blocks)
+    filtered = filter_paid_hours(blocks)
     assert filtered == [blocks[0][0]]

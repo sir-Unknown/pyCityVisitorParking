@@ -48,7 +48,7 @@ A rejected action (status other than `OK`) raises `ProviderError` with
 | `update_favorite`      | No        |
 | `remove_favorite`      | Yes       |
 
-`zone_validity` is not provided by this API and is always an empty list.
+`paid_hours` is not provided by this API and is always an empty list.
 
 `remaining_balance` reflects the raw AMOUNT value from the balance response
 (typically in minutes for visitor parking products).

@@ -63,7 +63,7 @@ implementation into smaller modules:
   permit media entries are present.
 - `Permit.id` uses the selected permit media `Code` and falls back to `ZoneCode`.
 - `Permit.remaining_balance` uses the selected permit media `Balance`.
-- `Permit.zone_validity` includes only chargeable `BlockTimes` where `IsFree`
+- `Permit.paid_hours` includes only paid `BlockTimes` where `IsFree`
   is not `true`.
 - Reservations come from `PermitMedias[*].ActiveReservations`.
 - Favorites come from `PermitMedias[*].LicensePlates`.

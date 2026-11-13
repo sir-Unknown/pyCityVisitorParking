@@ -8,7 +8,7 @@ from datetime import UTC, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
 from ...exceptions import ProviderError, ValidationError
-from ...models import Favorite, Permit, Reservation, ReservationTarget, ZoneValidityBlock
+from ...models import Favorite, PaidHoursBlock, Permit, Reservation, ReservationTarget
 from ...util import parse_timestamp
 from ..base import BaseProvider
 
@@ -166,9 +166,9 @@ class Provider(BaseProvider):
             remaining_balance=cfg["remaining_balance"],
             balance_unit=cfg["balance_unit"],
             # With targets, the permit-level windows are those of the default target.
-            zone_validity=targets[0].zone_validity
+            paid_hours=targets[0].paid_hours
             if targets
-            else [ZoneValidityBlock(start_time=cfg["zone_start"], end_time=cfg["zone_end"])],
+            else [PaidHoursBlock(start_time=cfg["zone_start"], end_time=cfg["zone_end"])],
         )
 
     def _is_rotterdam(self) -> bool:
@@ -185,12 +185,12 @@ class Provider(BaseProvider):
             ReservationTarget(
                 id=zone_id,
                 name=zone_id,
-                zone_validity=self._rotterdam_windows(schedule),
+                paid_hours=self._rotterdam_windows(schedule),
             )
             for zone_id, schedule in _ROTTERDAM_ZONES
         ]
 
-    def _rotterdam_windows(self, schedule: _WeekSchedule) -> list[ZoneValidityBlock]:
+    def _rotterdam_windows(self, schedule: _WeekSchedule) -> list[PaidHoursBlock]:
         """Return the upcoming paid windows of a Rotterdam demo zone for one week.
 
         ``schedule`` holds the paid hours per weekday (Monday first) in
@@ -198,7 +198,7 @@ class Provider(BaseProvider):
         """
         now = self._now()
         today = now.astimezone(_LOCAL_TZ).date()
-        windows: list[ZoneValidityBlock] = []
+        windows: list[PaidHoursBlock] = []
         for offset in range(8):
             day = today + timedelta(days=offset)
             hours = schedule[day.weekday()]
@@ -209,7 +209,7 @@ class Provider(BaseProvider):
             end = datetime.combine(end_day, hours[1], _LOCAL_TZ)
             if end > now:
                 windows.append(
-                    ZoneValidityBlock(
+                    PaidHoursBlock(
                         start_time=self._format_utc_timestamp(start),
                         end_time=self._format_utc_timestamp(end),
                     )

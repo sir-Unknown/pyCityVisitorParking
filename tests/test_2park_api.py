@@ -253,7 +253,7 @@ async def test_get_permit_returns_balance() -> None:
     permit = await provider.get_permit()
     assert permit.id == "BDABZRG_1317$abc"
     assert permit.remaining_balance == 120
-    assert permit.zone_validity == []
+    assert permit.paid_hours == []
     assert permit.balance_unit == "MINUTE"
 
 
@@ -857,7 +857,7 @@ def test_map_permit_extracts_amount() -> None:
     permit = p._map_permit(data)
     assert permit.id == "BDABZRG_1317$abc"
     assert permit.remaining_balance == 240
-    assert permit.zone_validity == []
+    assert permit.paid_hours == []
     assert permit.balance_unit is None
 
 

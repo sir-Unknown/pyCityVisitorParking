@@ -4,7 +4,7 @@ import aiohttp
 import pytest
 
 from pycityvisitorparking.exceptions import ValidationError
-from pycityvisitorparking.models import Favorite, Permit, Reservation, ZoneValidityBlock
+from pycityvisitorparking.models import Favorite, PaidHoursBlock, Permit, Reservation
 from pycityvisitorparking.provider.loader import ProviderManifest
 from pycityvisitorparking.provider.the_hague.api import Provider
 from pycityvisitorparking.provider.the_hague.const import (
@@ -83,19 +83,19 @@ async def test_map_permit_filters_free_blocks_and_converts_utc():
     assert isinstance(permit, Permit)
     assert permit.id == "42"
     assert permit.remaining_balance == 90
-    assert permit.zone_validity == [
-        ZoneValidityBlock(
+    assert permit.paid_hours == [
+        PaidHoursBlock(
             start_time="2024-01-02T08:00:00Z",
             end_time="2024-01-02T17:00:00Z",
         )
     ]
-    for block in permit.zone_validity:
+    for block in permit.paid_hours:
         assert_utc_timestamp(block.start_time)
         assert_utc_timestamp(block.end_time)
 
 
 @pytest.mark.asyncio
-async def test_map_permit_uses_zone_when_zone_validity_missing():
+async def test_map_permit_uses_zone_when_paid_hours_missing():
     async with aiohttp.ClientSession() as session:
         provider = Provider(
             session,
@@ -110,13 +110,13 @@ async def test_map_permit_uses_zone_when_zone_validity_missing():
         permit = provider._map_permit(ZONE_FALLBACK_SAMPLE)
 
     assert isinstance(permit, Permit)
-    assert permit.zone_validity == [
-        ZoneValidityBlock(
+    assert permit.paid_hours == [
+        PaidHoursBlock(
             start_time="2025-12-19T08:00:00Z",
             end_time="2025-12-19T23:00:00Z",
         )
     ]
-    for block in permit.zone_validity:
+    for block in permit.paid_hours:
         assert_utc_timestamp(block.start_time)
         assert_utc_timestamp(block.end_time)
 

@@ -24,11 +24,11 @@ from .models import (
     RESERVATION_TARGET_SELECTION_FREE_INPUT,
     RESERVATION_TARGET_SELECTION_LIST,
     Favorite,
+    PaidHoursBlock,
     Permit,
     ProviderInfo,
     Reservation,
     ReservationTarget,
-    ZoneValidityBlock,
 )
 
 try:
@@ -49,6 +49,7 @@ __all__ = [
     "Favorite",
     "NetworkError",
     "NotFoundError",
+    "PaidHoursBlock",
     "Permit",
     "ProviderError",
     "ProviderInfo",
@@ -58,6 +59,5 @@ __all__ = [
     "ServiceUnavailableError",
     "TimeoutError",
     "ValidationError",
-    "ZoneValidityBlock",
     "__version__",
 ]

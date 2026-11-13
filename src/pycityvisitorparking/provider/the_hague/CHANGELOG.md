@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Log one debug line (raw type/count, fallback start and end) when the paid hours come from the `zone` fallback.
+
 ## 0.5.29
 
 - Breaking: the provider no longer exposes `resolved_login_params`. A `permit_media_type_id` passed to `login()` is cached internally and reused on reauthentication.

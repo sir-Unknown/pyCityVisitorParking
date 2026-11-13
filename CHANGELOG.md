@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Breaking: rename the chargeable windows of a permit to paid hours: `Permit.zone_validity` -> `Permit.paid_hours`, `ReservationTarget.zone_validity` -> `ReservationTarget.paid_hours`, and `ZoneValidityBlock` -> `PaidHoursBlock` (same `start_time`/`end_time` fields). The helpers follow (`util.filter_chargeable_zone_validity` -> `filter_paid_hours`, `BaseProvider._filter_chargeable_zone_validity` -> `_filter_paid_hours`). Provider payload keys such as The Hague's `zone_validity` are unchanged. There is no alias for the old names.
+- Add the read-only `BaseProvider.request_context_name` property, returning the context name set via `set_request_context()` (`None` when unset), so integrations no longer read the private attribute.
+- The Hague: when the paid hours come from the `zone` fallback (no `zone_validity` entries), emit one debug log line with the raw type/count and the fallback start and end timestamps. The integration no longer needs to wrap `_map_zone_validity` to log this.
 - Breaking: `BaseProvider.fetch_all()` now returns `(permit, reservations, favorites, targets)`; `targets` is the result of `list_reservation_targets()` (empty for providers without targets). Rotterdam fetches the zones once for both the permit windows and the targets instead of twice per refresh. Unpack four values instead of three.
 - Add the Rotterdam provider (Mendix based visitor parking portal), with per-reservation zone selection through the generic reservation target contract. The provider is untested with a real permit; see its README.
 

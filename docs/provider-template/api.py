@@ -6,7 +6,7 @@ from collections.abc import Mapping
 from datetime import datetime
 
 from pycityvisitorparking.exceptions import ProviderError, ValidationError
-from pycityvisitorparking.models import Favorite, Permit, Reservation, ZoneValidityBlock
+from pycityvisitorparking.models import Favorite, PaidHoursBlock, Permit, Reservation
 from pycityvisitorparking.provider.base import BaseProvider
 
 
@@ -70,7 +70,7 @@ class Provider(BaseProvider):
     async def remove_favorite(self, favorite_id: str) -> None:
         raise ProviderError("Template provider does not implement remove_favorite.")
 
-    def _build_zone_validity(self) -> list[ZoneValidityBlock]:
-        """Example helper for zone validity filtering."""
-        entries: list[tuple[ZoneValidityBlock, bool]] = []
-        return self._filter_chargeable_zone_validity(entries)
+    def _build_paid_hours(self) -> list[PaidHoursBlock]:
+        """Example helper for paid hours filtering."""
+        entries: list[tuple[PaidHoursBlock, bool]] = []
+        return self._filter_paid_hours(entries)

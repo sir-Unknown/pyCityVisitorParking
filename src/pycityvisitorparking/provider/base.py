@@ -25,15 +25,15 @@ from ..exceptions import (
 from ..exceptions import TimeoutError as RequestTimeoutError
 from ..models import (
     Favorite,
+    PaidHoursBlock,
     Permit,
     ProviderInfo,
     Reservation,
     ReservationTarget,
-    ZoneValidityBlock,
 )
 from ..util import (
     ensure_utc_timestamp,
-    filter_chargeable_zone_validity,
+    filter_paid_hours,
     format_utc_timestamp,
     normalize_datetime,
     normalize_license_plate,
@@ -110,6 +110,11 @@ class BaseProvider(ABC):
             self._base_url,
             self._api_uri or "(none)",
         )
+
+    @property
+    def request_context_name(self) -> str | None:
+        """Return the context label set via ``set_request_context`` (``None`` when unset)."""
+        return self._request_context_name
 
     def set_request_context(self, context_name: str | None) -> None:
         """Set a human-readable context label for request diagnostics."""
@@ -275,19 +280,19 @@ class BaseProvider(ABC):
             return validate_reservation_times(start_time, end_time, require_both=True)
         return validate_reservation_times(start_time, end_time, require_both=False)
 
-    def _filter_chargeable_zone_validity(
+    def _filter_paid_hours(
         self,
-        entries: list[tuple[ZoneValidityBlock, bool]],
-    ) -> list[ZoneValidityBlock]:
-        filtered = filter_chargeable_zone_validity(entries)
-        normalized: list[ZoneValidityBlock] = []
+        entries: list[tuple[PaidHoursBlock, bool]],
+    ) -> list[PaidHoursBlock]:
+        filtered = filter_paid_hours(entries)
+        normalized: list[PaidHoursBlock] = []
         for block in filtered:
             try:
                 start = self._ensure_utc_timestamp(block.start_time)
                 end = self._ensure_utc_timestamp(block.end_time)
             except ValidationError as exc:
-                raise ProviderError("Provider returned invalid zone validity data.") from exc
-            normalized.append(ZoneValidityBlock(start_time=start, end_time=end))
+                raise ProviderError("Provider returned invalid paid hours data.") from exc
+            normalized.append(PaidHoursBlock(start_time=start, end_time=end))
         return normalized
 
     def _parse_int(self, value: Any) -> int:

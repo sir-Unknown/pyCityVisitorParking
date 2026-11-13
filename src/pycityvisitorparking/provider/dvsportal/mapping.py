@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Any, TypeGuard
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from ...exceptions import ProviderError, ValidationError
-from ...models import BALANCE_UNIT_MINUTE, Favorite, Permit, Reservation, ZoneValidityBlock
+from ...models import BALANCE_UNIT_MINUTE, Favorite, PaidHoursBlock, Permit, Reservation
 from ...util import format_utc_timestamp
 from .const import API_TIMEZONE
 
@@ -82,21 +82,21 @@ class PortalMapper:
             or "permit"
         )
         remaining_balance = self._provider._parse_int(media.get("Balance"))
-        zone_validity = self.map_zone_validity(permit.get("BlockTimes"))
+        paid_hours = self.map_paid_hours(permit.get("BlockTimes"))
         return Permit(
             id=permit_id,
             remaining_balance=remaining_balance,
-            zone_validity=zone_validity,
+            paid_hours=paid_hours,
             balance_unit=BALANCE_UNIT_MINUTE,
         )
 
-    def map_zone_validity(self, block_times: Any) -> list[ZoneValidityBlock]:
-        """Map provider block times into chargeable zone validity windows."""
+    def map_paid_hours(self, block_times: Any) -> list[PaidHoursBlock]:
+        """Map provider block times into paid hours."""
         if block_times is None:
             return []
         if not isinstance(block_times, list):
             raise ProviderError("Provider response included invalid block times.")
-        entries: list[tuple[ZoneValidityBlock, bool]] = []
+        entries: list[tuple[PaidHoursBlock, bool]] = []
         for block in block_times:
             if not isinstance(block, dict):
                 continue
@@ -110,8 +110,8 @@ class PortalMapper:
                 end = self.parse_provider_timestamp(end_raw)
             except ValidationError as exc:
                 raise ProviderError("Provider returned invalid block time data.") from exc
-            entries.append((ZoneValidityBlock(start_time=start, end_time=end), not is_free))
-        return self._provider._filter_chargeable_zone_validity(entries)
+            entries.append((PaidHoursBlock(start_time=start, end_time=end), not is_free))
+        return self._provider._filter_paid_hours(entries)
 
     def reservations_from_permit(self, permit: dict[str, Any]) -> list[Reservation]:
         """Cache defaults and return mapped active reservations."""

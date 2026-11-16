@@ -24,7 +24,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      issues: write
+      issues: write # Required to create, update, and delete repository labels.
 
     steps:
       - name: Check out code from GitHub

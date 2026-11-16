@@ -16,7 +16,6 @@ on:
 
 permissions:
   contents: read
-  pull-requests: write
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
@@ -26,6 +25,9 @@ jobs:
   label:
     name: Assign category label
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write # Required to add and remove category labels on the pull request.
     steps:
       - name: Assign label from conventional commit prefix
         env:

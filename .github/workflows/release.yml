@@ -39,7 +39,7 @@ jobs:
     name: Check CI status
     runs-on: ubuntu-latest
     permissions:
-      actions: read
+      actions: read # Required to query the CI run status for the release commit.
       contents: read
     outputs:
       release_sha: ${{ steps.resolve_tag.outputs.sha }}

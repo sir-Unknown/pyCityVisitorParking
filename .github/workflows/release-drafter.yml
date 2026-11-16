@@ -46,8 +46,8 @@ jobs:
     name: Draft release
     runs-on: ubuntu-latest
     permissions:
-      contents: write
-      pull-requests: read
+      contents: write # Required to create and update the draft release.
+      pull-requests: read # Required to read merged pull requests for the release notes.
 
     steps:
       - name: Checkout

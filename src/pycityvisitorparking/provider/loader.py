@@ -129,8 +129,9 @@ def _build_manifest(data: dict, folder_name: str) -> ProviderManifest:
         field_name="balance_units",
     )
     reservation_target_selection = capabilities.get("reservation_target_selection")
-    if reservation_target_selection is not None and (
-        reservation_target_selection not in _RESERVATION_TARGET_SELECTIONS
+    if "reservation_target_selection" in capabilities and (
+        not isinstance(reservation_target_selection, str)
+        or reservation_target_selection not in _RESERVATION_TARGET_SELECTIONS
     ):
         raise ProviderError(
             "Provider manifest reservation_target_selection must be one of: "

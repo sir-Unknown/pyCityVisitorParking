@@ -199,7 +199,8 @@ class Provider(BaseProvider):
         now = self._now()
         today = now.astimezone(_LOCAL_TZ).date()
         windows: list[PaidHoursBlock] = []
-        for offset in range(8):
+        # Start one day back: an overnight window of yesterday can still be running.
+        for offset in range(-1, 8):
             day = today + timedelta(days=offset)
             hours = schedule[day.weekday()]
             if hours is None:

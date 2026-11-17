@@ -77,7 +77,7 @@ def test_reservation_target_selection_is_optional_and_restricted() -> None:
             _manifest_data(reservation_target_selection=value), "dummy"
         )
         assert manifest.reservation_target_selection == value
-    for invalid in ("zones", "", True):
+    for invalid in ("zones", "", True, None, [], ["list"], {"list": 1}):
         with pytest.raises(ProviderError, match="reservation_target_selection"):
             loader_module._build_manifest(
                 _manifest_data(reservation_target_selection=invalid), "dummy"

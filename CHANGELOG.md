@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Fix: a manifest `reservation_target_selection` that is not a string (list, object, or explicit `null`) now raises `ProviderError` instead of a raw `TypeError` or being accepted.
+- Rotterdam: the lookup of a created reservation that the portal did not echo no longer interpolates the license plate into the XPath; the plate is matched locally.
+- Demo: the Rotterdam demo zones keep the still-running overnight paid window of the previous day (for example Saturday 00:30).
+- Document the `fetch_all()` four-value return and the HTML-response handling in the 2park, DVS Portal, The Hague and Rotterdam provider changelogs.
 - Breaking: rename the chargeable windows of a permit to paid hours: `Permit.zone_validity` -> `Permit.paid_hours`, `ReservationTarget.zone_validity` -> `ReservationTarget.paid_hours`, and `ZoneValidityBlock` -> `PaidHoursBlock` (same `start_time`/`end_time` fields). The helpers follow (`util.filter_chargeable_zone_validity` -> `filter_paid_hours`, `BaseProvider._filter_chargeable_zone_validity` -> `_filter_paid_hours`). Provider payload keys such as The Hague's `zone_validity` are unchanged. There is no alias for the old names.
 - Add the read-only `BaseProvider.request_context_name` property, returning the context name set via `set_request_context()` (`None` when unset), so integrations no longer read the private attribute.
 - The Hague: when the paid hours come from the `zone` fallback (no `zone_validity` entries), emit one debug log line with the raw type/count and the fallback start and end timestamps. The integration no longer needs to wrap `_map_zone_validity` to log this.

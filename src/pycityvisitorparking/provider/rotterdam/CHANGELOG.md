@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Breaking: `fetch_all()` now returns `(permit, reservations, favorites, targets)`; the zones are fetched once for both the permit windows and the targets. Unpack four values instead of three.
+- When a created reservation is not echoed by the portal, look it up by permit and match the license plate locally instead of putting the plate in the XPath.
 - Add the Rotterdam provider for the Mendix based visitor parking portal at
   `bezoek.rotterdam.nl`: `login`, `get_permit`, `list_reservations`,
   `start_reservation`, `update_reservation` (`start_time` of a planned

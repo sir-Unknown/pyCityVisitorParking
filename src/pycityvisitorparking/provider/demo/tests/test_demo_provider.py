@@ -62,6 +62,19 @@ async def test_rotterdam_demo_targets_have_their_own_paid_hours() -> None:
 
 
 @pytest.mark.asyncio
+async def test_rotterdam_demo_keeps_the_running_overnight_window() -> None:
+    provider = _provider("Rotterdam Demo")
+    # Saturday 14 November 00:30 in Amsterdam: Friday's window (until 01:00) still runs.
+    provider._now = lambda: datetime(2026, 11, 13, 23, 30, tzinfo=UTC)  # type: ignore[method-assign]
+    zone_10 = (await provider.list_reservation_targets())[0]
+    first = zone_10.paid_hours[0]
+    assert (first.start_time, first.end_time) == (
+        "2026-11-13T08:00:00Z",
+        "2026-11-14T00:00:00Z",
+    )
+
+
+@pytest.mark.asyncio
 async def test_rotterdam_demo_books_in_the_requested_or_default_target() -> None:
     provider = _provider("Rotterdam Demo")
     start, end = NOW + timedelta(hours=1), NOW + timedelta(hours=2)

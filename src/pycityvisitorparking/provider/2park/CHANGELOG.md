@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Breaking: `fetch_all()` now returns `(permit, reservations, favorites, targets)`; `targets` is always empty because 2park has no reservation targets. Unpack four values instead of three.
 ## 0.5.29
 
 - Breaking: `login()` no longer accepts a `location` key and the provider no longer exposes `resolved_login_params`. The location is resolved from the selected product and cached internally for reauthentication. `permit_id` (alias `product_id`) remains the way to select a product.

@@ -66,17 +66,24 @@ Do not push release tags before the local checks and artifact validation pass.
 - Number betas sequentially (`b1`, `b2`, ...). Fix problems with a new beta; never reuse or move a published beta tag.
 - Keep the changelog entries under `Unreleased` for betas. Move them into the versioned section only for the stable release.
 - Tag the head of the feature branch's pull request; there is no long-lived beta branch. The tag may be created on the commit of an open pull request, as long as `CI` passed for that exact commit. Tag pushes also run `CI`.
-- Create the tag the same way as a stable tag, then publish a GitHub release marked as **pre-release** (`gh release create vX.Y.ZbN --verify-tag --prerelease`). `Release Drafter` only drafts stable releases.
+- Create the tag the same way as a stable tag, then create the GitHub release as a draft pre-release (`gh release create vX.Y.ZbN --verify-tag --prerelease --draft`). Publish it only when the maintainer asks for it. `Release Drafter` only drafts stable releases.
+- The top of the release notes states what the beta is for (for example "test the Rotterdam provider"), which pull request it is built from, and what is known to be untested.
 - The `Release` workflow publishes betas through the same `pypi` environment, which requires manual approval.
 - Pip and uv do not install betas by default. Test with `pip install --pre pycityvisitorparking==X.Y.ZbN`.
 - The package-change check compares against the previous published stable release, never a pre-release.
 - Merge the pull request only after the beta has been verified, then release the stable version from `main`.
+- Two features that must be tested together go on a temporary branch from `main` that merges both; tag the beta there and delete the branch after testing.
 
 ✅ **Coordinate betas with the Home Assistant integration**
 - `ha_City-Visitor-Parking` uses the same model: a pre-release is a tag on the head of one feature branch, and that pull request merges only after the pre-release was approved.
 - When an integration feature needs a library change: publish a library beta from the library pull request, then pin `pycityvisitorparking==X.Y.ZbN` on the integration feature branch and tag an integration pre-release from it.
 - Fix problems with a new library `bN` and a new integration pre-release that pins it.
 - After approval, merge the library pull request and publish the stable release first. The integration pull request can merge only once it pins that stable release.
+
+✅ **Release a patch while `main` holds unreleased work**
+- Normally `main` only holds approved work, so a patch is released from `main`.
+- If `main` already holds changes that must not ship yet, branch from the last stable tag (for example `git switch -c fix/dvs-xsrf v0.5.30`), cherry-pick the fix, and tag the patch version (`v0.5.31`) on that branch. `CI` runs on the tag; create the release by hand from it.
+- Add the same changelog entry on `main` under the released version so both histories agree.
 
 ✅ **Understand what GitHub Actions does**
 - `CI` runs on pull requests, pushes to `main`, manual dispatch, and tags matching `v*`.

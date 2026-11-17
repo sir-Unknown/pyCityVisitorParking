@@ -825,8 +825,9 @@ class Provider(BaseProvider):
             if item.entity == ENTITY_PARKING_ACTION:
                 return self._map_reservation(item)
         # The response did not echo the new action: find the closest match instead.
+        # The plate is compared locally; caller input stays out of the XPath.
         rows = await self._retrieve(
-            f"//{ENTITY_PARKING_ACTION}[Kenteken = '{plate}' and IsGeannuleerd = false()"
+            f"//{ENTITY_PARKING_ACTION}[IsGeannuleerd = false()"
             f" and Eindtijd > '[%CurrentDateTime%]' and {ASSOC_ACTION_PERMIT} = '{permit_guid}']",
             operation="retrieve_reservation",
         )
@@ -835,6 +836,12 @@ class Provider(BaseProvider):
         best: MendixObject | None = None
         best_distance: int | None = None
         for row in rows:
+            try:
+                row_plate = self._normalize_license_plate(row.text("Kenteken") or "")
+            except ValidationError:
+                continue
+            if row_plate != plate:
+                continue
             distance = abs(parse_integer(row.value("Starttijd")) - target_start) + abs(
                 parse_integer(row.value("Eindtijd")) - target_end
             )

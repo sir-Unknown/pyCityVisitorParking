@@ -88,6 +88,24 @@ async def test_rotterdam_demo_books_in_the_requested_or_default_target() -> None
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("start", "booked_start"),
+    [
+        (NOW - timedelta(minutes=5), "2026-11-13T09:00:00Z"),
+        (NOW, "2026-11-13T09:00:00Z"),
+        (NOW + timedelta(minutes=10), "2026-11-13T09:10:00Z"),
+    ],
+    ids=["past", "now", "later"],
+)
+async def test_start_reservation_start_now_starts_at_the_current_time(
+    start: datetime, booked_start: str
+) -> None:
+    provider = _provider("Den Haag Demo")
+    reservation = await provider.start_reservation("AB12CD", start, NOW + timedelta(hours=1))
+    assert reservation.start_time == booked_start
+
+
+@pytest.mark.asyncio
 async def test_other_demo_permits_have_no_targets() -> None:
     provider = _provider("Den Haag Demo")
     assert await provider.list_reservation_targets() == []

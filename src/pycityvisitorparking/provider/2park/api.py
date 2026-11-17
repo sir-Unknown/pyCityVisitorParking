@@ -6,7 +6,7 @@ import asyncio
 import json as _json
 import re
 from collections.abc import Mapping
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -45,6 +45,7 @@ from .const import (
 )
 
 _LOCATION_RE = re.compile(r"^([A-Z]{3})\w+_(\d+)\$")
+_START_LEAD = timedelta(minutes=1)
 
 
 class Provider(BaseProvider):
@@ -169,6 +170,11 @@ class Provider(BaseProvider):
         self._validate_reservation_target_id(reservation_target_id)
         await self._ensure_authenticated()
         start_dt, end_dt = self._validate_reservation_times(start_time, end_time, require_both=True)
+        # DESIGN DECISION D1 (see README "Design decisions"): a start before now + 1 minute
+        # ("start now") is moved to now + 1 minute.
+        start_dt, end_dt = self._validate_reservation_times(
+            self._start_not_before(start_dt, lead=_START_LEAD), end_dt, require_both=True
+        )
         normalized_plate = self._normalize_license_plate(license_plate)
         location = self._product_location
         if not location:

@@ -83,6 +83,10 @@ def _provider() -> Provider:
     )
 
 
+# Before the reservation times used in these tests.
+NOW = datetime(2024, 1, 1, 9, 0, tzinfo=UTC)
+
+
 def _provider_with_session(session: object) -> Provider:
     provider = Provider(
         session,  # type: ignore[arg-type]
@@ -95,6 +99,7 @@ def _provider_with_session(session: object) -> Provider:
         base_url="https://example",
     )
     provider._logged_in = True
+    provider._now = lambda: NOW
     return provider
 
 
@@ -351,6 +356,40 @@ async def test_start_reservation_posts_normalized_payload() -> None:
     assert payload["license_plate"] == "AB12CD"
     assert payload["name"] == "AB12CD"
     assert reservation.license_plate == "AB12CD"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("start", "sent_start"),
+    [
+        (NOW - timedelta(minutes=5), "2024-01-01T09:01:00Z"),
+        (NOW + timedelta(seconds=30), "2024-01-01T09:01:00Z"),
+        (NOW + timedelta(minutes=10), "2024-01-01T09:10:00Z"),
+    ],
+    ids=["past", "inside_lead", "later"],
+)
+async def test_start_reservation_start_now_uses_one_minute_lead(
+    start: datetime, sent_start: str
+) -> None:
+    """D1: a start before now + 1 minute is sent as now + 1 minute; a later one unchanged."""
+    session = _SequenceSession(
+        [
+            _FakeResponse(
+                {
+                    "id": "abc",
+                    "name": "AB12CD",
+                    "license_plate": "AB12CD",
+                    "start_time": sent_start,
+                    "end_time": "2024-01-01T11:00:00Z",
+                }
+            )
+        ]
+    )
+    provider = _provider_with_session(session)
+    await provider.start_reservation(
+        "AB12CD", start_time=start, end_time=datetime(2024, 1, 1, 11, 0, tzinfo=UTC)
+    )
+    assert session.calls[0]["kwargs"]["json"]["start_time"] == sent_start
 
 
 @pytest.mark.asyncio

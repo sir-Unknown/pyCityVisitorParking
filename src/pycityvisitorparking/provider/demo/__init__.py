@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Mapping
-from datetime import UTC, datetime, time, timedelta
+from datetime import datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
 from ...exceptions import ProviderError, ValidationError
@@ -174,9 +174,6 @@ class Provider(BaseProvider):
     def _is_rotterdam(self) -> bool:
         return "rotterdam" in (self._request_context_name or "").lower()
 
-    def _now(self) -> datetime:
-        return datetime.now(UTC)
-
     async def list_reservation_targets(self) -> list[ReservationTarget]:
         """Return the demo targets; only the Rotterdam demo permit has any."""
         if not self._is_rotterdam():
@@ -261,6 +258,10 @@ class Provider(BaseProvider):
             raise ValidationError("reservation_target_id is not a target of the permit.")
         start_time, end_time = self._validate_reservation_times(
             start_time, end_time, require_both=True
+        )
+        # A start at or before now means "start now"; the demo accepts the current time.
+        start_time, end_time = self._validate_reservation_times(
+            self._start_not_before(start_time, lead=timedelta(0)), end_time, require_both=True
         )
         record: dict[str, str | None] = {
             "id": str(uuid.uuid4()),

@@ -6,7 +6,7 @@ import asyncio
 import logging
 from collections.abc import AsyncIterator, Mapping
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 
 import aiohttp
@@ -30,6 +30,8 @@ from .mapping import PortalMapper
 from .profile import DvsPortalProfile, PortalProfile
 from .session import PortalSessionState
 from .transport import PortalTransport
+
+_START_LEAD = timedelta(minutes=1)
 
 
 class Provider(BaseProvider):
@@ -185,6 +187,13 @@ class Provider(BaseProvider):
             start_time_utc, end_time_utc = self._validate_reservation_times(
                 start_time,
                 end_time,
+                require_both=True,
+            )
+            # DESIGN DECISION D1 (see README "Design decisions"): a start before now + 1 minute
+            # ("start now") is moved to now + 1 minute.
+            start_time_utc, end_time_utc = self._validate_reservation_times(
+                self._start_not_before(start_time_utc, lead=_START_LEAD),
+                end_time_utc,
                 require_both=True,
             )
             start_time_utc_value = self._format_utc_timestamp(start_time_utc)

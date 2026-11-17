@@ -1,5 +1,5 @@
 import logging
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import aiohttp
@@ -96,6 +96,10 @@ CREDENTIALS_SAMPLE = {
     "password": "secret",
     "permit_media_type_id": "1",
 }
+
+
+# Before the reservation times used in these tests.
+NOW = datetime(2026, 1, 2, 21, 0, tzinfo=UTC)
 
 
 def _manifest() -> ProviderManifest:
@@ -673,6 +677,7 @@ async def test_start_reservation_payload_uses_local_offset_with_milliseconds(
             return None
 
         monkeypatch.setattr(provider, "_ensure_defaults", _noop_defaults)
+        monkeypatch.setattr(provider, "_now", lambda: NOW)
         captured: dict[str, Any] = {}
 
         async def _fake_request_json_auth(
@@ -726,6 +731,67 @@ async def test_start_reservation_payload_uses_local_offset_with_milliseconds(
     assert payload["LicensePlate"]["Value"] == "AB12CD"
     assert payload["LicensePlate"]["Name"] == "Visitor"
     assert reservation.id == "123"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("start", "sent_start"),
+    [
+        (NOW - timedelta(minutes=5), "2026-01-02T22:01:00.000+01:00"),
+        (NOW + timedelta(seconds=30), "2026-01-02T22:01:00.000+01:00"),
+        (NOW + timedelta(minutes=10), "2026-01-02T22:10:00.000+01:00"),
+    ],
+    ids=["past", "inside_lead", "later"],
+)
+async def test_start_reservation_start_now_uses_one_minute_lead(
+    monkeypatch: pytest.MonkeyPatch, start: datetime, sent_start: str
+) -> None:
+    """D1: a start before now + 1 minute is sent as now + 1 minute; a later one unchanged."""
+    async with aiohttp.ClientSession() as session:
+        provider = Provider(session, _manifest(), base_url="https://example")
+        provider._permit_media_type_id = 1
+        provider._permit_media_code = "CARD-1"
+
+        async def _noop_defaults(*, operation: str = "ensure_defaults") -> None:
+            return None
+
+        monkeypatch.setattr(provider, "_ensure_defaults", _noop_defaults)
+        monkeypatch.setattr(provider, "_now", lambda: NOW)
+        captured: dict[str, Any] = {}
+
+        async def _fake_request_json_auth(
+            method: str,
+            path: str,
+            *,
+            json: Any,
+            operation: str | None = None,
+        ) -> Any:
+            captured["json"] = json
+            return {
+                "Permit": {
+                    "PermitMedias": [
+                        {
+                            "TypeID": 1,
+                            "Code": "CARD-1",
+                            "ActiveReservations": [
+                                {
+                                    "ReservationID": "123",
+                                    "ValidFrom": json["DateFrom"],
+                                    "ValidUntil": json["DateUntil"],
+                                    "LicensePlate": {"Value": "AB12CD"},
+                                }
+                            ],
+                            "LicensePlates": [],
+                        }
+                    ],
+                    "BlockTimes": [],
+                }
+            }
+
+        monkeypatch.setattr(provider, "_request_json_auth", _fake_request_json_auth)
+        await provider.start_reservation("AB12CD", start, NOW + timedelta(hours=2))
+
+    assert captured["json"]["DateFrom"] == sent_start
 
 
 @pytest.mark.asyncio
@@ -921,6 +987,7 @@ async def test_start_reservation_failure_logs_operation_context_and_masked_paylo
         return None
 
     monkeypatch.setattr(provider, "_ensure_defaults", _noop_defaults)
+    monkeypatch.setattr(provider, "_now", lambda: NOW)
     caplog.set_level(logging.WARNING, logger="pycityvisitorparking.provider")
 
     with pytest.raises(ProviderError, match="status 500"):
@@ -975,6 +1042,7 @@ async def test_start_reservation_failure_logs_compact_html_summary(
         return None
 
     monkeypatch.setattr(provider, "_ensure_defaults", _noop_defaults)
+    monkeypatch.setattr(provider, "_now", lambda: NOW)
     caplog.set_level(logging.WARNING, logger="pycityvisitorparking.provider")
 
     with pytest.raises(ProviderError, match="status 500"):

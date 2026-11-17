@@ -6,7 +6,7 @@ import asyncio
 import json
 import re
 from collections.abc import Mapping
-from datetime import UTC, datetime
+from datetime import datetime, timedelta
 from typing import Any
 from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo
@@ -313,9 +313,6 @@ class Provider(BaseProvider):
             },
             operation=key,
         )
-
-    def _now(self) -> datetime:
-        return datetime.now(UTC)
 
     def _minutes_per_unit(self) -> int:
         minutes = parse_integer(self._constants.get(CONSTANT_MINUTES_PER_UNIT))
@@ -679,7 +676,7 @@ class Provider(BaseProvider):
         start_minute = self._minute(start)
         end_minute = self._minute(end)
         if clamp_start:
-            start_minute = max(start_minute, self._minute(self._now()))
+            start_minute = self._minute(self._start_not_before(start, lead=timedelta(0)))
         if end_minute <= start_minute:
             raise ValidationError("end_time must be after start_time.")
         return start_minute, end_minute

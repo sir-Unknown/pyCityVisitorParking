@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- "Start now" is a provider-owned rule: a `start_reservation` `start_time` at or before the current time means "start now", and each provider maps it to the earliest start its backend accepts through the shared `BaseProvider._start_not_before(start, *, lead)` helper (clock in the overridable `BaseProvider._now()`). DVS Portal, The Hague and 2park move a start before now + 1 minute to now + 1 minute (the lead the Home Assistant integration applied so far), Rotterdam keeps starting in the current minute, and the demo provider starts at the current time. Integrations pass the requested start unchanged ([ha_City-Visitor-Parking#195](https://github.com/sir-Unknown/ha_City-Visitor-Parking/issues/195)).
 - Fix: a manifest `reservation_target_selection` that is not a string (list, object, or explicit `null`) now raises `ProviderError` instead of a raw `TypeError` or being accepted.
 - Rotterdam: the lookup of a created reservation that the portal did not echo no longer interpolates the license plate into the XPath; the plate is matched locally.
 - Demo: the Rotterdam demo zones keep the still-running overnight paid window of the previous day (for example Saturday 00:30).

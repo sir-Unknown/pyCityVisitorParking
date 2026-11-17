@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 from abc import ABC, abstractmethod
 from collections.abc import Awaitable, Callable, Iterable, Mapping
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 from importlib.metadata import PackageNotFoundError, version
 from typing import Any, Literal, Protocol, TypeVar, overload
 from urllib.parse import urlparse
@@ -246,6 +246,19 @@ class BaseProvider(ABC):
             raise ValidationError("base_url is required to build provider requests.")
         normalized_path = path if path.startswith("/") else f"/{path}"
         return f"{self._base_url}{self._api_uri}{normalized_path}"
+
+    def _now(self) -> datetime:
+        """Return the current time in UTC; tests override this to freeze the clock."""
+        return datetime.now(UTC)
+
+    def _start_not_before(self, start: datetime, *, lead: timedelta) -> datetime:
+        """Return ``start``, moved to ``now + lead`` when it is earlier.
+
+        ``lead`` is the provider's distance between now and the earliest start its
+        backend accepts; a start at or before now means "start now" (see
+        ``start_reservation``).
+        """
+        return max(start, self._now() + lead)
 
     @overload
     def _validate_reservation_times(
@@ -568,6 +581,11 @@ class BaseProvider(ABC):
         ``reservation_target_id`` selects where the reservation is booked (see
         ``list_reservation_targets``); ``None`` uses the default target. Providers validate
         it with ``_validate_reservation_target_id`` before any request.
+
+        A ``start_time`` at or before the current time means "start now": each provider
+        maps it to the earliest start its backend accepts (``_start_not_before`` with the
+        provider's lead). A start in the future is sent unchanged, apart from the rounding
+        the provider already applies. Callers pass the requested start as is.
         """
 
     async def list_reservation_targets(self) -> list[ReservationTarget]:

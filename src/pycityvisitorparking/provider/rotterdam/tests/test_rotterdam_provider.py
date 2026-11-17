@@ -525,6 +525,30 @@ async def test_start_reservation_echoed_object_is_used_without_extra_lookup() ->
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("start", "sent_start"),
+    [
+        (NOW - timedelta(minutes=5), NOW.replace(second=0)),
+        (NOW + timedelta(seconds=10), NOW.replace(second=0)),
+        (NOW + timedelta(minutes=10), (NOW + timedelta(minutes=10)).replace(second=0)),
+    ],
+    ids=["past", "current_minute", "later"],
+)
+async def test_start_reservation_start_now_uses_the_current_minute(
+    start: datetime, sent_start: datetime
+) -> None:
+    """D4: a start in the past means the current minute; a later start keeps its minute."""
+    portal = _permit_portal()
+    echoed = _action("echo", "AB12CD", sent_start, NOW + timedelta(hours=1))
+    portal.operations = {"OP_COST": _cost, "OP_SAVE": _accepted({"objects": [echoed]})}
+    provider = await _logged_in(portal)
+    await provider.start_reservation("AB12CD", start, NOW + timedelta(hours=1))
+    (save_call,) = portal.operation_calls("OP_SAVE")
+    changes = save_call["changes"][save_call["params"]["ParkeeractieHelper"]["guid"]]
+    assert changes["Starttijd"] == {"value": _ms(sent_start)}
+
+
+@pytest.mark.asyncio
 async def test_start_reservation_rejection_raises_without_leaking_the_plate() -> None:
     portal = _permit_portal()
 

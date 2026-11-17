@@ -71,6 +71,29 @@ async def main() -> None:
 asyncio.run(main())
 ```
 
+## Design decisions
+
+These are deliberate choices, marked in the code with `DESIGN DECISION Dn`. If
+one must change, change the code at the marked place, the tests named here, and
+this section together, and add a line to `CHANGELOG.md`.
+
+### D1: "Start now" starts one minute from now
+
+- **Behavior**: a `start_reservation` start before the current time plus one
+  minute (including a start in the past, which means "start now") is sent as the
+  current time plus one minute. A later start is sent unchanged.
+- **Why**: this is exactly what the Home Assistant integration did for every
+  provider since its 1.0.0 release, before the library owned the rule. Whether
+  2park accepts a start at the current time is unverified (see Limitations).
+- **Where**: `Provider.start_reservation` in `api.py` (`_start_not_before` with
+  `_START_LEAD`).
+- **Tests**: `tests/test_2park_api.py::test_start_reservation_start_now_uses_one_minute_lead`.
+
+## Limitations
+
+- A "start now" reservation begins one minute after the request (D1); whether the
+  backend accepts a start at the current time is unverified.
+
 ## Reference
 
 API behaviour was derived from [hrietman/2park](https://github.com/hrietman/2park),

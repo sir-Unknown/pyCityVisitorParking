@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Breaking: `fetch_all()` now returns `(permit, reservations, favorites, targets)`; `targets` is always empty because The Hague has no reservation targets. Unpack four values instead of three.
 - Log one debug line (raw type/count, fallback start and end) when the paid hours come from the `zone` fallback.
 
 ## 0.5.29

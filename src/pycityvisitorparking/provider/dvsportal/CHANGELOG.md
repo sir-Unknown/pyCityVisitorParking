@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Breaking: `fetch_all()` now returns `(permit, reservations, favorites, targets)`; `targets` is always empty because DVS Portal has no reservation targets. Unpack four values instead of three.
+- A 2xx HTML response (maintenance or WAF page) instead of JSON raises `ServiceUnavailableError` and is logged at debug level.
 ## 0.5.31
 
 - Send `X-XSRF-TOKEN` when the portal issues its request-forgery cookie under a name that `app.env.js` does not declare: if no configured or discovered name matches, any applicable cookie whose name contains `xsrf` is used.

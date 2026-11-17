@@ -473,6 +473,8 @@ async def test_start_reservation_prices_then_saves_like_the_web_client() -> None
     assert reservation.id == "new"
     assert reservation.license_plate == "AB12CD"
     assert reservation.reservation_target_id == "Zone A"
+    # The fallback lookup filters the plate locally; it never enters the XPath.
+    assert all("AB12CD" not in xpath for xpath in portal.xpaths)
     (cost_call,) = portal.operation_calls("OP_COST")
     (save_call,) = portal.operation_calls("OP_SAVE")
     assert cost_call["params"]["MachtigingId"] == {"value": "auth-100"}
@@ -488,6 +490,25 @@ async def test_start_reservation_prices_then_saves_like_the_web_client() -> None
     assert changes["Eindtijd"] == {"value": _ms((NOW + timedelta(hours=1)).replace(second=0))}
     # Cost fields from the pricing call are carried into the save call.
     assert changes["Kosten"] == {"value": "1"}
+
+
+@pytest.mark.asyncio
+async def test_start_reservation_fallback_lookup_ignores_other_plates() -> None:
+    portal = _permit_portal()
+    portal.operations = {"OP_COST": _cost, "OP_SAVE": _accepted({"objects": []})}
+    start = NOW.replace(second=0)
+    portal.xpath_results.append(
+        (
+            "Parkeren.Parkeeractie",
+            [
+                _action("other", "ZZ99ZZ", start, start + timedelta(hours=1)),
+                _action("mine", "AB12CD", start, start + timedelta(hours=2)),
+            ],
+        )
+    )
+    provider = await _logged_in(portal)
+    reservation = await provider.start_reservation("ab-12-cd", NOW, NOW + timedelta(hours=1))
+    assert reservation.id == "mine"
 
 
 @pytest.mark.asyncio

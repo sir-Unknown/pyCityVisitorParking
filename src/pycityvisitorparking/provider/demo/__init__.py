@@ -261,7 +261,7 @@ class Provider(BaseProvider):
         )
         # A start at or before now means "start now"; the demo accepts the current time.
         start_time, end_time = self._validate_reservation_times(
-            self._start_not_before(start_time, lead=timedelta(0)), end_time, require_both=True
+            self._start_not_before_now(start_time, whole_minute=False), end_time, require_both=True
         )
         record: dict[str, str | None] = {
             "id": str(uuid.uuid4()),

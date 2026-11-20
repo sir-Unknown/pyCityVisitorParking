@@ -6,7 +6,7 @@ import asyncio
 import json
 import re
 from collections.abc import Mapping
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Any
 from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo
@@ -676,7 +676,7 @@ class Provider(BaseProvider):
         start_minute = self._minute(start)
         end_minute = self._minute(end)
         if clamp_start:
-            start_minute = self._minute(self._start_not_before(start, lead=timedelta(0)))
+            start_minute = self._minute(self._start_not_before_now(start, whole_minute=True))
         if end_minute <= start_minute:
             raise ValidationError("end_time must be after start_time.")
         return start_minute, end_minute

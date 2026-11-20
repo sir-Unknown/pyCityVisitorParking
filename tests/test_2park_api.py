@@ -76,7 +76,7 @@ def _manifest() -> ProviderManifest:
 
 
 # Before the reservation times used in these tests.
-NOW = datetime(2026, 3, 25, 8, 0, tzinfo=UTC)
+NOW = datetime(2026, 3, 25, 8, 0, 30, tzinfo=UTC)
 
 
 def _provider(session: object) -> Provider:
@@ -327,16 +327,15 @@ async def test_start_reservation_returns_action() -> None:
 @pytest.mark.parametrize(
     ("start", "sent_start"),
     [
-        (NOW - timedelta(minutes=5), "25-03-2026 09:01:00"),
-        (NOW + timedelta(seconds=30), "25-03-2026 09:01:00"),
-        (NOW + timedelta(minutes=10), "25-03-2026 09:10:00"),
+        (NOW - timedelta(minutes=5), "25-03-2026 09:00:00"),
+        (NOW + timedelta(minutes=10), "25-03-2026 09:10:30"),
     ],
-    ids=["past", "inside_lead", "later"],
+    ids=["past", "later"],
 )
-async def test_start_reservation_start_now_uses_one_minute_lead(
+async def test_start_reservation_start_now_uses_the_current_minute(
     start: datetime, sent_start: str
 ) -> None:
-    """D1: a start before now + 1 minute is sent as now + 1 minute; a later one unchanged."""
+    """D1: a start in the past is sent as the current minute; a later one unchanged."""
     provider, session = await _logged_in_provider(
         [
             _FakeResponse(json_data=_AUTH_OK),

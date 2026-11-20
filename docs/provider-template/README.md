@@ -30,9 +30,11 @@ runtime package and is ignored by discovery.
   inputs and reject naive timestamps.
 - Require `start_time` and `end_time` for `start_reservation` and enforce
   `end_time > start_time`.
-- Treat a `start_reservation` `start_time` at or before now as "start now": map it
-  to the earliest start the backend accepts with
-  `self._start_not_before(start, lead=...)` and send a later start unchanged.
+- Treat a `start_reservation` `start_time` at or before now as "start now": start
+  now, without a lead, with `self._start_not_before_now(start, whole_minute=...)`
+  (`True` when the backend works with whole minutes) and send a later start
+  unchanged. A backend rejection must raise `ProviderError` with
+  `error_code=ErrorCode.PROVIDER_REJECTED`, never fail silently.
 - Filter `paid_hours` to paid hours only.
 - Raise library exceptions (`AuthError`, `NetworkError`, `ValidationError`, `ProviderError`).
   Use `raise_for_failed_status()` from `provider/base.py` for HTTP status mapping and

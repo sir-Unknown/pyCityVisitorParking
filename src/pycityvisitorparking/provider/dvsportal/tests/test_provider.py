@@ -6,7 +6,12 @@ import aiohttp
 import pytest
 from yarl import URL
 
-from pycityvisitorparking.exceptions import AuthError, ProviderError, ServiceUnavailableError
+from pycityvisitorparking.exceptions import (
+    AuthError,
+    ErrorCode,
+    ProviderError,
+    ServiceUnavailableError,
+)
 from pycityvisitorparking.models import PaidHoursBlock, Reservation
 from pycityvisitorparking.provider.dvsportal.api import Provider
 from pycityvisitorparking.provider.dvsportal.const import (
@@ -99,7 +104,7 @@ CREDENTIALS_SAMPLE = {
 
 
 # Before the reservation times used in these tests.
-NOW = datetime(2026, 1, 2, 21, 0, tzinfo=UTC)
+NOW = datetime(2026, 1, 2, 21, 0, 30, tzinfo=UTC)
 
 
 def _manifest() -> ProviderManifest:
@@ -737,16 +742,15 @@ async def test_start_reservation_payload_uses_local_offset_with_milliseconds(
 @pytest.mark.parametrize(
     ("start", "sent_start"),
     [
-        (NOW - timedelta(minutes=5), "2026-01-02T22:01:00.000+01:00"),
-        (NOW + timedelta(seconds=30), "2026-01-02T22:01:00.000+01:00"),
-        (NOW + timedelta(minutes=10), "2026-01-02T22:10:00.000+01:00"),
+        (NOW - timedelta(minutes=5), "2026-01-02T22:00:00.000+01:00"),
+        (NOW + timedelta(minutes=10), "2026-01-02T22:10:30.000+01:00"),
     ],
-    ids=["past", "inside_lead", "later"],
+    ids=["past", "later"],
 )
-async def test_start_reservation_start_now_uses_one_minute_lead(
+async def test_start_reservation_start_now_uses_the_current_minute(
     monkeypatch: pytest.MonkeyPatch, start: datetime, sent_start: str
 ) -> None:
-    """D1: a start before now + 1 minute is sent as now + 1 minute; a later one unchanged."""
+    """D1: a start in the past is sent as the current minute; a later one unchanged."""
     async with aiohttp.ClientSession() as session:
         provider = Provider(session, _manifest(), base_url="https://example")
         provider._permit_media_type_id = 1
@@ -792,6 +796,42 @@ async def test_start_reservation_start_now_uses_one_minute_lead(
         await provider.start_reservation("AB12CD", start, NOW + timedelta(hours=2))
 
     assert captured["json"]["DateFrom"] == sent_start
+
+
+@pytest.mark.asyncio
+async def test_start_reservation_error_message_raises_provider_rejected(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """D1: a rejection raises at once, without the plate and without a base refetch."""
+    async with aiohttp.ClientSession() as session:
+        provider = Provider(session, _manifest(), base_url="https://example")
+        provider._permit_media_type_id = 1
+        provider._permit_media_code = "CARD-1"
+
+        async def _noop_defaults(*, operation: str = "ensure_defaults") -> None:
+            return None
+
+        async def _rejecting_request_json_auth(*args: Any, **kwargs: Any) -> Any:
+            return {"ErrorMessage": "Kenteken AB12CD heeft al een reservering", "Result": 3}
+
+        fetch_base_calls: list[str] = []
+
+        async def _fetch_base(*, operation: str = "fetch_base", **kwargs: Any) -> Any:
+            fetch_base_calls.append(operation)
+            return {}
+
+        monkeypatch.setattr(provider, "_ensure_defaults", _noop_defaults)
+        monkeypatch.setattr(provider, "_now", lambda: NOW)
+        monkeypatch.setattr(provider, "_request_json_auth", _rejecting_request_json_auth)
+        monkeypatch.setattr(provider, "_fetch_base", _fetch_base)
+
+        with pytest.raises(ProviderError) as excinfo:
+            await provider.start_reservation("AB12CD", NOW, NOW + timedelta(hours=1))
+
+    assert excinfo.value.error_code == ErrorCode.PROVIDER_REJECTED
+    assert excinfo.value.detail == "Result 3"
+    assert "AB12CD" not in str(excinfo.value)
+    assert fetch_base_calls == []
 
 
 @pytest.mark.asyncio

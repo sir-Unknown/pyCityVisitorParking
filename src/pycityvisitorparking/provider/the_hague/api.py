@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Mapping
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Any
 
 import aiohttp
@@ -23,7 +23,6 @@ from .const import (
     SESSION_ENDPOINT,
 )
 
-_START_LEAD = timedelta(minutes=1)
 _ERROR_CODE_RE = re.compile(r"^[a-z0-9_]+$")
 _ERROR_MESSAGES = {
     "pv19": "License plate not found",
@@ -143,10 +142,10 @@ class Provider(BaseProvider):
             end_time,
             require_both=True,
         )
-        # DESIGN DECISION D1 (see README "Design decisions"): a start before now + 1 minute
-        # ("start now") is moved to now + 1 minute.
+        # DESIGN DECISION D1 (see README "Design decisions"): a start in the past ("start
+        # now") is sent as the current time; the API rejects a start it refuses (pv74).
         start_dt, end_dt = self._validate_reservation_times(
-            self._start_not_before(start_dt, lead=_START_LEAD), end_dt, require_both=True
+            self._start_not_before_now(start_dt, whole_minute=False), end_dt, require_both=True
         )
         start_time_value = self._format_utc_timestamp(start_dt)
         end_time_value = self._format_utc_timestamp(end_dt)

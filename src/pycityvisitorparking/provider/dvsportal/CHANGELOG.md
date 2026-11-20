@@ -2,7 +2,8 @@
 
 ## Unreleased
 
-- A `start_reservation` start before now + 1 minute ("start now") is sent as now + 1 minute; a later start is sent unchanged. This is the lead the Home Assistant integration applied so far; see README design decision D1.
+- A `start_reservation` start in the past ("start now") is sent as the current minute, like the official web app; a later start is sent unchanged. See README design decision D1.
+- `start_reservation` raises `ProviderError` with `error_code="provider_rejected"` as soon as the create response carries `ErrorMessage`, without the base refetch that ended in "Reservation was not returned by the provider.". The message text stays out of the exception; `detail` holds only the `Result` code.
 - Breaking: `fetch_all()` now returns `(permit, reservations, favorites, targets)`; `targets` is always empty because DVS Portal has no reservation targets. Unpack four values instead of three.
 - A 2xx HTML response (maintenance or WAF page) instead of JSON raises `ServiceUnavailableError` and is logged at debug level.
 ## 0.5.31

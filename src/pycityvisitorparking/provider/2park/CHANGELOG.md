@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- A `start_reservation` start before now + 1 minute ("start now") is sent as now + 1 minute; a later start is sent unchanged. This is the lead the Home Assistant integration applied so far; see README design decision D1.
+- A `start_reservation` start in the past ("start now") is sent as the current minute, like the official web app; a later start is sent unchanged. See README design decision D1.
 - Breaking: `fetch_all()` now returns `(permit, reservations, favorites, targets)`; `targets` is always empty because 2park has no reservation targets. Unpack four values instead of three.
 ## 0.5.29
 

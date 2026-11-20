@@ -228,8 +228,8 @@ marked place, the tests named here, and this section together, and add a line to
   past, and for a parking action that is already running it only offers
   changing the end (whether the server would reject a new start was not tried).
 - **Where**: `Provider._reservation_window` (through the shared
-  `BaseProvider._start_not_before` with no lead), `Provider.update_reservation`,
-  and `Provider.end_reservation` in `api.py`.
+  `BaseProvider._start_not_before_now` with `whole_minute=True`),
+  `Provider.update_reservation`, and `Provider.end_reservation` in `api.py`.
 - **Tests**: `test_start_reservation_prices_then_saves_like_the_web_client`,
   `test_start_reservation_start_now_uses_the_current_minute`,
   `test_update_reservation_cannot_move_the_start_of_a_running_reservation`,

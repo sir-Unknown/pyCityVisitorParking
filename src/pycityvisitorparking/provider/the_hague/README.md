@@ -82,8 +82,8 @@ characters.
   `end_time` in the response model.
 - 400 responses with PV error codes are mapped to readable `ProviderError`
   messages.
-- A "start now" reservation begins one minute after the request (D1); whether the
-  backend accepts a start at the current time is unverified.
+- A "start now" reservation is sent with the current time (D1); this is not
+  verified against the live backend.
 
 ## Design decisions
 
@@ -91,17 +91,19 @@ These are deliberate choices, marked in the code with `DESIGN DECISION Dn`. If
 one must change, change the code at the marked place, the tests named here, and
 this section together, and add a line to `CHANGELOG.md`.
 
-### D1: "Start now" starts one minute from now
+### D1: "Start now" starts at the current time
 
-- **Behavior**: a `start_reservation` start before the current time plus one
-  minute (including a start in the past, which means "start now") is sent as the
-  current time plus one minute. A later start is sent unchanged.
-- **Why**: this is exactly what the Home Assistant integration did for every
-  provider since its 1.0.0 release, before the library owned the rule. Whether
-  The Hague's API accepts a start at the current time is unverified (see Limitations).
-- **Where**: `Provider.start_reservation` in `api.py` (`_start_not_before` with
-  `_START_LEAD`).
-- **Tests**: `tests/test_the_hague_api.py::test_start_reservation_start_now_uses_one_minute_lead`.
+- **Behavior**: a `start_reservation` start in the past ("start now") is sent as
+  the current time; a later start is sent unchanged.
+- **Why**: the reservation should start when the user asks for it, without a
+  lead. The official web app's start flow was not captured, so this is not
+  verified against the live backend. If the API refuses the start it answers
+  with `PV00074` (`pv74`, "Invalid start time"), which raises `ProviderError`
+  with `error_code="provider_rejected"`: a rejection surfaces as a provider
+  error, never silently.
+- **Where**: `Provider.start_reservation` in `api.py`
+  (`_start_not_before_now(..., whole_minute=False)`).
+- **Tests**: `tests/test_the_hague_api.py::test_start_reservation_start_now_uses_the_current_time`.
 
 ## Links
 

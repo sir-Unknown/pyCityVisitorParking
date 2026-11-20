@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 from abc import ABC, abstractmethod
 from collections.abc import Awaitable, Callable, Iterable, Mapping
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from importlib.metadata import PackageNotFoundError, version
 from typing import Any, Literal, Protocol, TypeVar, overload
 from urllib.parse import urlparse
@@ -251,14 +251,16 @@ class BaseProvider(ABC):
         """Return the current time in UTC; tests override this to freeze the clock."""
         return datetime.now(UTC)
 
-    def _start_not_before(self, start: datetime, *, lead: timedelta) -> datetime:
-        """Return ``start``, moved to ``now + lead`` when it is earlier.
+    def _start_not_before_now(self, start: datetime, *, whole_minute: bool) -> datetime:
+        """Return ``start``, moved to now when it is earlier ("start now").
 
-        ``lead`` is the provider's distance between now and the earliest start its
-        backend accepts; a start at or before now means "start now" (see
-        ``start_reservation``).
+        With ``whole_minute`` now is floored to the minute, for backends that work
+        with whole minutes; see ``start_reservation``.
         """
-        return max(start, self._now() + lead)
+        now = self._now()
+        if whole_minute:
+            now = now.replace(second=0, microsecond=0)
+        return max(start, now)
 
     @overload
     def _validate_reservation_times(
@@ -582,10 +584,12 @@ class BaseProvider(ABC):
         ``list_reservation_targets``); ``None`` uses the default target. Providers validate
         it with ``_validate_reservation_target_id`` before any request.
 
-        A ``start_time`` at or before the current time means "start now": each provider
-        maps it to the earliest start its backend accepts (``_start_not_before`` with the
-        provider's lead). A start in the future is sent unchanged, apart from the rounding
-        the provider already applies. Callers pass the requested start as is.
+        A ``start_time`` at or before the current time means "start now": the reservation
+        starts now, without a lead (``_start_not_before_now``; providers whose backend works
+        with whole minutes start at the current minute). A start in the future is sent
+        unchanged, apart from the rounding the provider already applies. A backend that
+        rejects the start raises ``ProviderError``; it never fails silently. Callers pass
+        the requested start as is.
         """
 
     async def list_reservation_targets(self) -> list[ReservationTarget]:

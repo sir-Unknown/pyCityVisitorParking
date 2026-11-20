@@ -6,7 +6,7 @@ import asyncio
 import logging
 from collections.abc import AsyncIterator, Mapping
 from contextlib import asynccontextmanager
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Any
 
 import aiohttp
@@ -30,8 +30,6 @@ from .mapping import PortalMapper
 from .profile import DvsPortalProfile, PortalProfile
 from .session import PortalSessionState
 from .transport import PortalTransport
-
-_START_LEAD = timedelta(minutes=1)
 
 
 class Provider(BaseProvider):
@@ -189,10 +187,10 @@ class Provider(BaseProvider):
                 end_time,
                 require_both=True,
             )
-            # DESIGN DECISION D1 (see README "Design decisions"): a start before now + 1 minute
-            # ("start now") is moved to now + 1 minute.
+            # DESIGN DECISION D1 (see README "Design decisions"): a start in the past
+            # ("start now") is sent as the current minute, like the official web app.
             start_time_utc, end_time_utc = self._validate_reservation_times(
-                self._start_not_before(start_time_utc, lead=_START_LEAD),
+                self._start_not_before_now(start_time_utc, whole_minute=True),
                 end_time_utc,
                 require_both=True,
             )
@@ -217,6 +215,20 @@ class Provider(BaseProvider):
                 json=payload,
                 operation="start_reservation",
             )
+            if data.get("ErrorMessage"):
+                # DESIGN DECISION D1: the portal rejects with ``ErrorMessage``/``Result``
+                # (like the official app); fail loudly instead of falling back to
+                # ``_fetch_base``. The message text can contain the plate, so only the
+                # ``Result`` code goes into the exception.
+                self._plogger.provider_error_response(data, operation="reservation create")
+                result = data.get("Result")
+                raise ProviderError(
+                    "Provider rejected the reservation.",
+                    error_code=ErrorCode.PROVIDER_REJECTED,
+                    detail=f"Result {result}"
+                    if isinstance(result, int | str) and not isinstance(result, bool)
+                    else None,
+                )
             permit = await self._permit_from_response(
                 data,
                 "reservation create",

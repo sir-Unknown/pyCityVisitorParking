@@ -84,7 +84,7 @@ def _provider() -> Provider:
 
 
 # Before the reservation times used in these tests.
-NOW = datetime(2024, 1, 1, 9, 0, tzinfo=UTC)
+NOW = datetime(2024, 1, 1, 9, 0, 30, tzinfo=UTC)
 
 
 def _provider_with_session(session: object) -> Provider:
@@ -362,16 +362,15 @@ async def test_start_reservation_posts_normalized_payload() -> None:
 @pytest.mark.parametrize(
     ("start", "sent_start"),
     [
-        (NOW - timedelta(minutes=5), "2024-01-01T09:01:00Z"),
-        (NOW + timedelta(seconds=30), "2024-01-01T09:01:00Z"),
-        (NOW + timedelta(minutes=10), "2024-01-01T09:10:00Z"),
+        (NOW - timedelta(minutes=5), "2024-01-01T09:00:30Z"),
+        (NOW + timedelta(minutes=10), "2024-01-01T09:10:30Z"),
     ],
-    ids=["past", "inside_lead", "later"],
+    ids=["past", "later"],
 )
-async def test_start_reservation_start_now_uses_one_minute_lead(
+async def test_start_reservation_start_now_uses_the_current_time(
     start: datetime, sent_start: str
 ) -> None:
-    """D1: a start before now + 1 minute is sent as now + 1 minute; a later one unchanged."""
+    """D1: a start in the past is sent as the current time; a later one unchanged."""
     session = _SequenceSession(
         [
             _FakeResponse(

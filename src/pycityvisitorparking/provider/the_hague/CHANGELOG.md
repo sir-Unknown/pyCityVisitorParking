@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.6.0
+
 - A `start_reservation` start in the past ("start now") is sent as the current time; a later start is sent unchanged. A refused start (`pv74`) raises `ProviderError` with `error_code="provider_rejected"`. See README design decision D1.
 - Breaking: `fetch_all()` now returns `(permit, reservations, favorites, targets)`; `targets` is always empty because The Hague has no reservation targets. Unpack four values instead of three.
 - Log one debug line (raw type/count, fallback start and end) when the paid hours come from the `zone` fallback.

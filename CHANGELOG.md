@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.6.0
+
 - "Start now" is a provider-owned rule: a `start_reservation` `start_time` at or before the current time means "start now", and the reservation starts now, without a lead, through the shared `BaseProvider._start_not_before_now(start, *, whole_minute)` helper (clock in the overridable `BaseProvider._now()`). DVS Portal, 2park and Rotterdam send the current minute (the official DVS and 2park web apps do the same), The Hague and the demo provider send the current time. A later start is sent unchanged. A backend that rejects the start raises `ProviderError` with `error_code="provider_rejected"`; DVS Portal now does so as soon as the create response carries `ErrorMessage`, instead of ending with "Reservation was not returned by the provider.", and keeps the message text (which can contain the license plate) out of the exception. Integrations pass the requested start unchanged ([ha_City-Visitor-Parking#195](https://github.com/sir-Unknown/ha_City-Visitor-Parking/issues/195)).
 - Fix: a manifest `reservation_target_selection` that is not a string (list, object, or explicit `null`) now raises `ProviderError` instead of a raw `TypeError` or being accepted.
 - Rotterdam: the lookup of a created reservation that the portal did not echo no longer interpolates the license plate into the XPath; the plate is matched locally.
@@ -12,12 +14,8 @@
 - The Hague: when the paid hours come from the `zone` fallback (no `zone_validity` entries), emit one debug log line with the raw type/count and the fallback start and end timestamps. The integration no longer needs to wrap `_map_zone_validity` to log this.
 - Breaking: `BaseProvider.fetch_all()` now returns `(permit, reservations, favorites, targets)`; `targets` is the result of `list_reservation_targets()` (empty for providers without targets). Rotterdam fetches the zones once for both the permit windows and the targets instead of twice per refresh. Unpack four values instead of three.
 - Add the Rotterdam provider (Mendix based visitor parking portal), with per-reservation zone selection through the generic reservation target contract. The provider is untested with a real permit; see its README.
-
-- Add the generic reservation target concept for providers that need a user choice before a reservation can start ([#64](https://github.com/sir-Unknown/pyCityVisitorParking/issues/64)). New `ReservationTarget` model (`id`, `name`, `description`, `zone_validity`), `BaseProvider.list_reservation_targets()`, `start_reservation(..., reservation_target_id=None)`, `Reservation.reservation_target_id`, `ProviderInfo.reservation_target_selection` and the manifest capability `reservation_target_selection` (`list` or `free_input`). Providers without the capability reject any `reservation_target_id` with `ValidationError`; existing providers are otherwise unchanged.
-
-## 0.5.31
-
-- DVS Portal: send `X-XSRF-TOKEN` when the portal issues its request-forgery cookie under a name that is neither configured nor declared in `app.env.js`. If no known name matches, any applicable cookie whose name contains `xsrf` is used.
+- Add the generic reservation target concept for providers that need a user choice before a reservation can start ([#64](https://github.com/sir-Unknown/pyCityVisitorParking/issues/64)). New `ReservationTarget` model (`id`, `name`, `description`, `paid_hours`), `BaseProvider.list_reservation_targets()`, `start_reservation(..., reservation_target_id=None)`, `Reservation.reservation_target_id`, `ProviderInfo.reservation_target_selection` and the manifest capability `reservation_target_selection` (`list` or `free_input`). Providers without the capability reject any `reservation_target_id` with `ValidationError`; existing providers are otherwise unchanged.
+- DVS Portal: send `X-XSRF-TOKEN` when the portal issues its request-forgery cookie under a name that is neither configured nor declared in `app.env.js`. If no known name matches, any applicable cookie whose name contains `xsrf` is used. This fix was prepared as 0.5.31, which was never published.
 
 ## 0.5.30
 

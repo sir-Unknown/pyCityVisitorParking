@@ -41,9 +41,13 @@ Recommended endpoints:
 
 ## Parking machine
 
-A session is always started for a parking machine number, which determines the
-zone, tariff and paid parking hours. By default the provider uses the permit's
-default machine (`ssp.favorite_machine_number`).
+Permits whose configuration has `config.can_select_zone` set start a session
+for a parking machine number, which determines the zone, tariff and paid
+parking hours. By default the provider uses the permit's default machine
+(`ssp.favorite_machine_number`). Like the portal, the provider sends no machine
+for permits without `can_select_zone`. If a permit has `can_select_zone` but no
+default machine, starting a session raises `ProviderError` until
+`machine_number` is supplied.
 
 Pass `machine_number` at login to use another machine instead, for example
 `--extra machine_number=1234` with the live check script. The provider resolves
@@ -51,12 +55,10 @@ its zone through `paid_parking_zone/get_by_machine_number` and sends both
 `machine_number` and `zone_id` when starting a session; it never marks the
 machine as the new default. Paid parking windows reported in `paid_hours`
 use the selected machine as well. The override is kept across automatic
-re-authentication.
+re-authentication and is sent even when the permit lacks `can_select_zone`.
 
 A machine that does not exist or lies outside the permit's allowed zones raises
-`ValidationError` at login. Whether the portal accepts a machine number for every
-permit type is unverified: the portal itself only offers the field when the
-permit configuration has `can_select_zone` set.
+`ValidationError` at login.
 
 ## Supported operations
 
@@ -74,16 +76,17 @@ permit configuration has `can_select_zone` set.
 
 - `Permit.id` uses the login `username` to keep Home Assistant entity identity stable
   across permit renewals; falls back to `client_product_id` when unavailable.
-- `Permit.remaining_balance` uses `ssp.main_account.time_balance` when present
-  (seconds), falling back to `money_balance` or `balance`.
-- `Permit.paid_hours` uses the permit `validity.started_at`/`validity.ended_at`
-  window when available. The API does not expose explicit paid/free windows, so
-  the provider treats the validity window as chargeable.
-- If a `zone_validity` list is present, entries with `is_free` set to `true`
-  are filtered out.
-- `start_reservation` requires `machine_number` or `zone_id`. The provider
-  caches `ssp.favorite_machine_number` (or `permit.zone_id` when present) and
-  raises a provider error if neither is available.
+- `Permit.remaining_balance` uses `ssp.main_account.time_balance` (seconds,
+  reported in whole minutes with `balance_unit=MINUTE`) when present, otherwise
+  `money_balance` (cents, reported in euros with `balance_unit=EURO`). A
+  balance of `0` counts as present, as in the portal.
+- `Permit.paid_hours` comes from the `time_frame_data` of one
+  `parking_session/cost_calculator` call for today. `time_frame_data` is a
+  weekly schedule (index 0 is Monday, an empty day is free) and is repeated
+  over today and the next 14 days. Whether public holidays deviate from this
+  schedule is unknown. If the calculation fails, `paid_hours` is empty.
+- `start_reservation` sends the parking machine fields described in
+  [Parking machine](#parking-machine).
 - Reservations map from `parking_session_id`, `vrn`, `started_at`, and `ended_at`.
 - Favorites map from `favorite_vrn_id`, `vrn`, and `description`.
 
@@ -96,10 +99,12 @@ Mapping table (based on `amsterdam.json` sample):
 - `client_product` (`/api/v1/client_product/{client_product_id}`)
   - `username` (login credential) -> `Permit.id` for stable entity identity.
   - `client_product_id` -> fallback for `Permit.id` when `username` is unavailable.
-  - `ssp.main_account.time_balance`/`money_balance` -> `Permit.remaining_balance`.
-  - `validity.started_at`/`validity.ended_at` -> `Permit.paid_hours` fallback.
+  - `ssp.main_account.time_balance`/`money_balance` -> `Permit.remaining_balance` and `Permit.balance_unit`.
+  - `config.can_select_zone` -> whether a parking machine is sent.
   - `ssp.favorite_machine_number` -> cached `machine_number` for `start_reservation`.
   - `permit.zone_id` (if present) -> cached `zone_id` for `start_reservation`.
+- `parking_session cost_calculator` (`/api/v1/ssp/parking_session/cost_calculator`)
+  - `time_frame_data[weekday][].startTime`/`endTime` (`HHmm`, Europe/Amsterdam) -> `Permit.paid_hours`.
 - `parking_session list` (`/api/v1/ssp/parking_session/list`)
   - `parking_session_id` -> `Reservation.id`.
   - `vrn` -> `Reservation.license_plate`.
@@ -115,7 +120,12 @@ Mapping table (based on `amsterdam.json` sample):
 ## Errors
 
 - A rejected request that carries a provider message (HTTP 400) raises
-  `ProviderError` with `error_code=provider_rejected`.
+  `ProviderError` with `error_code=provider_rejected`; `detail` contains the
+  upstream message. Known messages when starting a session are
+  `Client time balance is insufficient.`, `Client money balance is
+  insufficient.` and `Time slot is overbooked.`.
+- `NPR is unavailable.` (the national parking register is down) raises
+  `ServiceUnavailableError`.
 - Rejected credentials raise `AuthError`.
 - An unknown `machine_number`, or one outside the permit's zones, raises
   `ValidationError`.

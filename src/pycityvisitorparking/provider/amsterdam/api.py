@@ -12,8 +12,21 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import aiohttp
 
-from ...exceptions import AuthError, ErrorCode, ProviderError, ValidationError
-from ...models import Favorite, PaidHoursBlock, Permit, Reservation
+from ...exceptions import (
+    AuthError,
+    ErrorCode,
+    ProviderError,
+    ServiceUnavailableError,
+    ValidationError,
+)
+from ...models import (
+    BALANCE_UNIT_EURO,
+    BALANCE_UNIT_MINUTE,
+    Favorite,
+    PaidHoursBlock,
+    Permit,
+    Reservation,
+)
 from ..base import BaseProvider
 from ..loader import ProviderManifest
 from .const import (
@@ -40,12 +53,15 @@ except ZoneInfoNotFoundError:
     _LOCAL_TZ = UTC
 
 
+# Upstream rejection messages, compared lowercased.
 _INVALID_MACHINE_MESSAGES = frozenset(
     {
         "this parking machine does not exist.",
         "the chosen parking machine is not within the allowed zones.",
     }
 )
+# NPR (the national parking register) being down is a temporary outage, not a rejection.
+_SERVICE_UNAVAILABLE_MESSAGES = frozenset({"npr is unavailable."})
 
 
 class Provider(BaseProvider):
@@ -81,6 +97,9 @@ class Provider(BaseProvider):
         self._machine_number: int | str | None = None
         self._zone_id: int | str | None = None
         self._machine_override: int | None = None
+        # Whether the permit lets the user pick a parking machine (client_product.config).
+        self._can_select_zone = False
+        self._parking_context_loaded = False
 
     async def login(self, credentials: Mapping[str, str] | None = None, **kwargs: str) -> None:
         """Authenticate against the provider."""
@@ -125,6 +144,8 @@ class Provider(BaseProvider):
         self._machine_number = None
         self._zone_id = None
         self._machine_override = None
+        self._can_select_zone = False
+        self._parking_context_loaded = False
         self._logged_in = True
         if client_product_id is None:
             client_product_id = await self._fetch_client_product_id()
@@ -144,11 +165,11 @@ class Provider(BaseProvider):
             auth_required=True,
         )
         self._cache_parking_context(data)
-        paid_hours = None
+        paid_hours: list[PaidHoursBlock] = []
         try:
             paid_hours = await self._build_paid_zone_validity(days=14)
         except ProviderError:
-            self._plogger.debug("could not fetch paid hours; falling back to permit validity")
+            self._plogger.debug("could not fetch paid hours")
         permit = self._map_permit(
             data,
             client_product_id=client_product_id,
@@ -205,14 +226,8 @@ class Provider(BaseProvider):
             "started_at": self._format_rfc1123(start_dt),
             "ended_at": self._format_rfc1123(end_dt),
         }
-        # The API requires a machine_number or zone_id; cache from permit details when available.
         await self._ensure_parking_context()
-        if self._machine_number is not None:
-            payload["machine_number"] = self._machine_number
-        if self._zone_id is not None:
-            payload["zone_id"] = self._zone_id
-        if "machine_number" not in payload and "zone_id" not in payload:
-            raise ProviderError("Provider did not return machine_number or zone_id.")
+        payload.update(self._machine_fields())
         if self._machine_override is not None:
             payload["is_new_favorite_machine_number"] = False
         if self._is_visitor_role():
@@ -454,8 +469,12 @@ class Provider(BaseProvider):
             self._plogger.response_status(response.status)
             if response.status == 400:
                 message = await self._error_message_from_response(response)
+                if message and message.lower() in _SERVICE_UNAVAILABLE_MESSAGES:
+                    raise ServiceUnavailableError(f"Provider error: {message}")
                 if message:
-                    raise ProviderError(message, error_code=ErrorCode.PROVIDER_REJECTED)
+                    raise ProviderError(
+                        f"Provider error: {message}", error_code=ErrorCode.PROVIDER_REJECTED
+                    )
             self._raise_for_status(response)
             if expect_json:
                 try:
@@ -508,7 +527,7 @@ class Provider(BaseProvider):
         data: Any,
         *,
         client_product_id: str,
-        paid_hours: list[PaidHoursBlock] | None = None,
+        paid_hours: list[PaidHoursBlock],
     ) -> Permit:
         if not isinstance(data, dict):
             raise ProviderError("Provider response included invalid permit data.")
@@ -521,63 +540,33 @@ class Provider(BaseProvider):
             )
         if not permit_id:
             permit_id = client_product_id
-        remaining_balance = self._extract_balance(data)
-        if paid_hours is None:
-            paid_hours = self._map_zone_validity(data)
+        remaining_balance, balance_unit = self._extract_balance(data)
         return Permit(
             id=permit_id,
             remaining_balance=remaining_balance,
             paid_hours=paid_hours,
+            balance_unit=balance_unit,
         )
 
-    def _map_zone_validity(self, data: dict[str, Any]) -> list[PaidHoursBlock]:
-        entries: list[tuple[PaidHoursBlock, bool]] = []
-        raw_zone_validity = data.get("zone_validity")
-        if isinstance(raw_zone_validity, list):
-            for item in raw_zone_validity:
-                if not isinstance(item, dict):
-                    continue
-                start_raw = item.get("start_time") or item.get("started_at")
-                end_raw = item.get("end_time") or item.get("ended_at")
-                if not start_raw or not end_raw:
-                    continue
-                try:
-                    start = self._parse_provider_timestamp(str(start_raw))
-                    end = self._parse_provider_timestamp(str(end_raw))
-                except ProviderError as exc:
-                    raise ProviderError("Provider returned invalid paid hours data.") from exc
-                is_free = item.get("is_free") is True
-                entries.append((PaidHoursBlock(start_time=start, end_time=end), not is_free))
-        validity = data.get("validity")
-        if not entries and isinstance(validity, dict):
-            start_raw = validity.get("started_at") or validity.get("start_time")
-            end_raw = validity.get("ended_at") or validity.get("end_time")
-            if start_raw and end_raw:
-                try:
-                    start = self._parse_provider_timestamp(str(start_raw))
-                    end = self._parse_provider_timestamp(str(end_raw))
-                except ProviderError as exc:
-                    raise ProviderError("Provider returned invalid validity data.") from exc
-                entries.append((PaidHoursBlock(start_time=start, end_time=end), True))
-        return self._filter_paid_hours(entries)
-
     async def _build_paid_zone_validity(self, *, days: int) -> list[PaidHoursBlock]:
-        """Fetch paid parking windows for today through the next given days."""
+        """Return paid parking windows for today through the next given days.
+
+        ``time_frame_data`` is a weekly schedule (index 0 is Monday), so one
+        cost calculation covers every day of the range.
+        """
         if days < 0:
             raise ValidationError("Days must be zero or positive.")
-        await self._ensure_parking_context()
-        today = datetime.now(_LOCAL_TZ).date()
+        today = self._now().astimezone(_LOCAL_TZ).date()
+        time_frame_data = await self._fetch_time_frame_data(today)
         entries: list[tuple[PaidHoursBlock, bool]] = []
         for offset in range(days + 1):
             target_date = today + timedelta(days=offset)
-            entries.extend(await self._fetch_paid_zone_validity_for_date(target_date))
+            entries.extend(self._map_time_frame_data_for_date(time_frame_data, target_date))
         return self._filter_paid_hours(entries)
 
-    async def _fetch_paid_zone_validity_for_date(
-        self,
-        target_date: date,
-    ) -> list[tuple[PaidHoursBlock, bool]]:
-        """Return paid parking windows for a specific local date."""
+    async def _fetch_time_frame_data(self, target_date: date) -> Any:
+        """Return the weekly paid parking schedule from a cost calculation for a date."""
+        await self._ensure_parking_context()
         start_local = datetime.combine(target_date, time(0, 0), tzinfo=_LOCAL_TZ)
         end_local = datetime.combine(target_date, time(23, 59), tzinfo=_LOCAL_TZ)
         payload: dict[str, Any] = {
@@ -585,12 +574,12 @@ class Provider(BaseProvider):
             "started_at": self._format_rfc1123(start_local),
             "ended_at": self._format_rfc1123(end_local),
         }
-        if self._machine_number is not None:
-            payload["machine_number"] = self._machine_number
-        elif self._zone_id is not None:
-            payload["zone_id"] = self._zone_id
-        else:
-            raise ProviderError("Provider did not return machine_number or zone_id.")
+        machine_fields = self._machine_fields()
+        # The portal sends only the machine number to the cost calculator.
+        if "machine_number" in machine_fields:
+            payload["machine_number"] = machine_fields["machine_number"]
+        elif "zone_id" in machine_fields:
+            payload["zone_id"] = machine_fields["zone_id"]
         data = await self._request_json(
             "POST",
             PARKING_SESSION_COST_CALCULATOR_ENDPOINT,
@@ -598,8 +587,7 @@ class Provider(BaseProvider):
             allow_reauth=True,
             auth_required=True,
         )
-        time_frame_data = self._extract_time_frame_data(data)
-        return self._map_time_frame_data_for_date(time_frame_data, target_date)
+        return self._extract_time_frame_data(data)
 
     def _extract_time_frame_data(self, data: Any) -> Any:
         if isinstance(data, dict):
@@ -658,19 +646,21 @@ class Provider(BaseProvider):
             return None
         return time(hour, minute)
 
-    def _extract_balance(self, data: dict[str, Any]) -> int:
+    def _extract_balance(self, data: dict[str, Any]) -> tuple[float, str | None]:
+        """Return the main account balance and its unit.
+
+        ``time_balance`` is in seconds and ``money_balance`` in cents; the portal
+        shows whichever is present (``0`` counts as present).
+        """
         ssp = data.get("ssp")
-        if isinstance(ssp, dict):
-            main_account = ssp.get("main_account")
-            if isinstance(main_account, dict):
-                # Balance lives in ssp.main_account.time_balance/money_balance in client_product.
-                for key in ("time_balance", "money_balance", "balance"):
-                    if key in main_account:
-                        return self._parse_int(main_account.get(key))
-        for key in ("time_balance", "money_balance", "balance"):
-            if key in data:
-                return self._parse_int(data.get(key))
-        return 0
+        main_account = ssp.get("main_account") if isinstance(ssp, dict) else None
+        if not isinstance(main_account, dict):
+            return 0, None
+        if main_account.get("time_balance") is not None:
+            return self._parse_int(main_account["time_balance"]) // 60, BALANCE_UNIT_MINUTE
+        if main_account.get("money_balance") is not None:
+            return self._parse_int(main_account["money_balance"]) / 100, BALANCE_UNIT_EURO
+        return 0, None
 
     def _parse_machine_number(self, value: str | None) -> int | None:
         """Validate the optional machine number override supplied at login."""
@@ -712,18 +702,19 @@ class Provider(BaseProvider):
         self._zone_id = zone_id
 
     def _cache_parking_context(self, data: Any) -> None:
-        if not isinstance(data, dict) or self._machine_override is not None:
+        if not isinstance(data, dict):
             return
-        # client_product.ssp.favorite_machine_number is required when starting a session.
-        machine_number = self._extract_machine_number(data)
-        if machine_number is not None:
-            self._machine_number = machine_number
-        zone_id = self._extract_zone_id(data)
-        if zone_id is not None:
-            self._zone_id = zone_id
+        config = data.get("config")
+        self._can_select_zone = isinstance(config, dict) and config.get("can_select_zone") is True
+        self._parking_context_loaded = True
+        if self._machine_override is not None:
+            return
+        # The permit's default machine is client_product.ssp.favorite_machine_number.
+        self._machine_number = self._extract_machine_number(data)
+        self._zone_id = self._extract_zone_id(data)
 
     async def _ensure_parking_context(self) -> None:
-        if self._machine_number is not None or self._zone_id is not None:
+        if self._parking_context_loaded:
             return
         client_product_id = self._require_client_product_id()
         data = await self._request_json(
@@ -733,8 +724,26 @@ class Provider(BaseProvider):
             auth_required=True,
         )
         self._cache_parking_context(data)
-        if self._machine_number is None and self._zone_id is None:
-            raise ProviderError("Provider did not return machine_number or zone_id.")
+
+    def _machine_fields(self) -> dict[str, Any]:
+        """Return the parking machine fields for session requests.
+
+        Like the portal, a machine is only sent for permits with
+        ``config.can_select_zone``; an explicit ``machine_number`` override is
+        always sent.
+        """
+        if self._machine_override is None and not self._can_select_zone:
+            return {}
+        fields: dict[str, Any] = {}
+        if self._machine_number is not None:
+            fields["machine_number"] = self._machine_number
+        if self._zone_id is not None:
+            fields["zone_id"] = self._zone_id
+        if not fields:
+            raise ProviderError(
+                "Permit requires a parking machine but has no default; supply machine_number."
+            )
+        return fields
 
     def _extract_machine_number(self, data: dict[str, Any]) -> int | str | None:
         ssp = data.get("ssp")
@@ -1143,5 +1152,5 @@ class Provider(BaseProvider):
             if isinstance(message, str):
                 trimmed = message.strip()
                 if trimmed:
-                    return f"Provider error: {trimmed}"
+                    return trimmed
         return None

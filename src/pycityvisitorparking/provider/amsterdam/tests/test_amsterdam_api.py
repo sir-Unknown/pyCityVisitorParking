@@ -7,7 +7,14 @@ from typing import Any
 
 import pytest
 
-from pycityvisitorparking.exceptions import AuthError, ErrorCode, ProviderError, ValidationError
+from pycityvisitorparking.exceptions import (
+    AuthError,
+    ErrorCode,
+    ProviderError,
+    ServiceUnavailableError,
+    ValidationError,
+)
+from pycityvisitorparking.models import BALANCE_UNIT_MINUTE
 from pycityvisitorparking.provider.amsterdam.api import Provider
 from pycityvisitorparking.provider.loader import ProviderManifest
 
@@ -23,11 +30,8 @@ def _token(payload: dict[str, Any]) -> str:
 LOGIN_RESPONSE = {"token": _token({"client_product_id": 42, "roles": ["ROLE_SSP"]})}
 CLIENT_PRODUCT = {
     "client_product_id": 42,
+    "config": {"can_select_zone": True},
     "ssp": {"favorite_machine_number": 1111, "main_account": {"time_balance": 600}},
-    "validity": {
-        "started_at": "2024-01-01T08:00:00+01:00",
-        "ended_at": "2024-01-01T18:00:00+01:00",
-    },
 }
 STARTED_SESSION = {
     "parking_session_id": 9,
@@ -124,6 +128,34 @@ async def test_start_reservation_uses_favorite_machine_by_default() -> None:
     assert "is_new_favorite_machine_number" not in payload
 
 
+async def test_permit_without_zone_selection_sends_no_machine() -> None:
+    product = {"client_product_id": 42, "config": {"can_select_zone": False}, "ssp": {}}
+    session = _RoutedSession(_routes(**{"GET|/api/v1/client_product/42": [_FakeResponse(product)]}))
+    provider = _provider(session)
+    await provider.login({"username": "u", "password": "p"})
+
+    await provider.get_permit()
+    await provider.start_reservation("ab-12-cd", *_times())
+
+    start_payload = session.calls_to("/parking_session/start")[0]["kwargs"]["json"]
+    cost_payload = session.calls_to("/parking_session/cost_calculator")[0]["kwargs"]["json"]
+    for payload in (start_payload, cost_payload):
+        assert "machine_number" not in payload
+        assert "zone_id" not in payload
+
+
+async def test_get_permit_reports_minutes_and_uses_one_cost_calculation() -> None:
+    session = _RoutedSession(_routes())
+    provider = _provider(session)
+    await provider.login({"username": "u", "password": "p"})
+
+    permit = await provider.get_permit()
+
+    assert permit.remaining_balance == 10
+    assert permit.balance_unit == BALANCE_UNIT_MINUTE
+    assert len(session.calls_to("/parking_session/cost_calculator")) == 1
+
+
 async def test_machine_number_override_resolves_zone_and_survives_permit_refresh() -> None:
     session = _RoutedSession(
         _routes(
@@ -187,7 +219,7 @@ async def test_other_provider_error_for_machine_lookup_is_not_masked() -> None:
         _routes(
             **{
                 "POST|/get_by_machine_number": [
-                    _FakeResponse({"message": "NPR is unavailable."}, status=400)
+                    _FakeResponse({"message": "Something went wrong."}, status=400)
                 ]
             }
         )
@@ -199,6 +231,24 @@ async def test_other_provider_error_for_machine_lookup_is_not_masked() -> None:
 
     assert not isinstance(exc_info.value, ValidationError)
     assert exc_info.value.error_code == ErrorCode.PROVIDER_REJECTED
+
+
+async def test_unavailable_parking_register_is_service_unavailable() -> None:
+    session = _RoutedSession(
+        _routes(
+            **{
+                "POST|/get_by_machine_number": [
+                    _FakeResponse({"message": "NPR is unavailable."}, status=400)
+                ]
+            }
+        )
+    )
+    provider = _provider(session)
+
+    with pytest.raises(ServiceUnavailableError) as exc_info:
+        await provider.login({"username": "u", "password": "p", "machine_number": "2222"})
+
+    assert exc_info.value.error_code == ErrorCode.SERVICE_UNAVAILABLE
 
 
 async def test_expired_token_reauthenticates_once_and_keeps_machine_override() -> None:

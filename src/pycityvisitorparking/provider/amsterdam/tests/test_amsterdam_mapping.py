@@ -4,7 +4,14 @@ import aiohttp
 import pytest
 
 from pycityvisitorparking.exceptions import ProviderError, ValidationError
-from pycityvisitorparking.models import Favorite, PaidHoursBlock, Permit, Reservation
+from pycityvisitorparking.models import (
+    BALANCE_UNIT_EURO,
+    BALANCE_UNIT_MINUTE,
+    Favorite,
+    PaidHoursBlock,
+    Permit,
+    Reservation,
+)
 from pycityvisitorparking.provider.amsterdam import api as amsterdam_api
 from pycityvisitorparking.provider.amsterdam.api import Provider
 from pycityvisitorparking.provider.amsterdam.const import DEFAULT_API_URI
@@ -18,29 +25,9 @@ ACCOUNT_SAMPLE = {
     "client_product_id": 42,
     "ssp": {
         "main_account": {
-            "time_balance": 7200,
+            "time_balance": 7230,
         }
     },
-    "validity": {
-        "started_at": "2024-01-01T08:00:00+01:00",
-        "ended_at": "2024-01-01T18:00:00+01:00",
-    },
-}
-
-ZONE_VALIDITY_SAMPLE = {
-    "client_product_id": 7,
-    "zone_validity": [
-        {
-            "is_free": True,
-            "start_time": "2024-01-02T09:00:00+01:00",
-            "end_time": "2024-01-02T18:00:00+01:00",
-        },
-        {
-            "is_free": False,
-            "start_time": "2024-01-03T09:00:00+01:00",
-            "end_time": "2024-01-03T18:00:00+01:00",
-        },
-    ],
 }
 
 RESERVATION_SAMPLE = {
@@ -65,7 +52,18 @@ def assert_utc_timestamp(value: str) -> None:
 
 
 @pytest.mark.asyncio
-async def test_map_permit_uses_validity_and_balance():
+@pytest.mark.parametrize(
+    ("main_account", "expected_balance", "expected_unit"),
+    [
+        ({"time_balance": 7230}, 120, BALANCE_UNIT_MINUTE),
+        ({"time_balance": 0, "money_balance": 500}, 0, BALANCE_UNIT_MINUTE),
+        ({"time_balance": None, "money_balance": 1250}, 12.5, BALANCE_UNIT_EURO),
+        ({}, 0, None),
+    ],
+)
+async def test_map_permit_balance_uses_portal_units(
+    main_account: dict[str, object], expected_balance: float, expected_unit: str | None
+) -> None:
     async with aiohttp.ClientSession() as session:
         provider = Provider(
             session,
@@ -77,43 +75,16 @@ async def test_map_permit_uses_validity_and_balance():
             ),
             base_url="https://example",
         )
-        permit = provider._map_permit(ACCOUNT_SAMPLE, client_product_id="42")
+        permit = provider._map_permit(
+            {"client_product_id": 42, "ssp": {"main_account": main_account}},
+            client_product_id="42",
+            paid_hours=[],
+        )
 
     assert isinstance(permit, Permit)
     assert permit.id == "42"
-    assert permit.remaining_balance == 7200
-    assert permit.paid_hours == [
-        PaidHoursBlock(
-            start_time="2024-01-01T07:00:00Z",
-            end_time="2024-01-01T17:00:00Z",
-        )
-    ]
-    for block in permit.paid_hours:
-        assert_utc_timestamp(block.start_time)
-        assert_utc_timestamp(block.end_time)
-
-
-@pytest.mark.asyncio
-async def test_map_permit_filters_free_zone_validity():
-    async with aiohttp.ClientSession() as session:
-        provider = Provider(
-            session,
-            ProviderManifest(
-                id="amsterdam",
-                name="Amsterdam",
-                favorite_update_fields=(),
-                reservation_update_fields=("end_time",),
-            ),
-            base_url="https://example",
-        )
-        permit = provider._map_permit(ZONE_VALIDITY_SAMPLE, client_product_id="7")
-
-    assert permit.paid_hours == [
-        PaidHoursBlock(
-            start_time="2024-01-03T08:00:00Z",
-            end_time="2024-01-03T17:00:00Z",
-        )
-    ]
+    assert permit.remaining_balance == expected_balance
+    assert permit.balance_unit == expected_unit
 
 
 @pytest.mark.asyncio
@@ -265,12 +236,13 @@ def test_default_api_uri():
 
 
 @pytest.mark.asyncio
-async def test_fetch_paid_zone_validity_for_date_maps_time_frame_data(
+async def test_paid_hours_repeat_the_weekly_schedule_from_one_calculation(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    target_date = date(2026, 1, 19)
+    monday = date(2026, 1, 19)
     time_frame_data = [[] for _ in range(7)]
-    time_frame_data[target_date.weekday()] = [{"startTime": "0900", "endTime": "1900"}]
+    time_frame_data[monday.weekday()] = [{"startTime": "0900", "endTime": "1900"}]
+    calls: list[object] = []
 
     async def fake_request_json(
         method: str,
@@ -282,7 +254,7 @@ async def test_fetch_paid_zone_validity_for_date_maps_time_frame_data(
         auth_required: bool,
     ) -> object:
         assert method == "POST"
-        assert isinstance(json, dict)
+        calls.append(json)
         return {"time_frame_data": time_frame_data}
 
     async with aiohttp.ClientSession() as session:
@@ -299,20 +271,32 @@ async def test_fetch_paid_zone_validity_for_date_maps_time_frame_data(
         provider._client_product_id = "123"
         provider._auth_header_value = "Bearer token"
         provider._logged_in = True
+        provider._parking_context_loaded = True
+        provider._can_select_zone = True
         provider._machine_number = 18773
         monkeypatch.setattr(provider, "_request_json", fake_request_json)
+        monkeypatch.setattr(
+            provider,
+            "_now",
+            lambda: datetime.combine(monday, time(12), tzinfo=amsterdam_api._LOCAL_TZ),
+        )
 
-        blocks = await provider._fetch_paid_zone_validity_for_date(target_date)
+        blocks = await provider._build_paid_zone_validity(days=7)
 
-    assert len(blocks) == 1
-    block, is_chargeable = blocks[0]
-    start = parse_timestamp(block.start_time)
-    end = parse_timestamp(block.end_time)
-    expected_start = datetime.combine(target_date, time(9, 0), tzinfo=amsterdam_api._LOCAL_TZ)
-    expected_end = datetime.combine(target_date, time(19, 0), tzinfo=amsterdam_api._LOCAL_TZ)
-    assert start == expected_start.astimezone(UTC).replace(microsecond=0)
-    assert end == expected_end.astimezone(UTC).replace(microsecond=0)
-    assert is_chargeable is True
+    assert len(calls) == 1
+    assert isinstance(calls[0], dict)
+    assert calls[0]["machine_number"] == 18773
+    expected = []
+    for day in (monday, date(2026, 1, 26)):
+        start = datetime.combine(day, time(9, 0), tzinfo=amsterdam_api._LOCAL_TZ)
+        end = datetime.combine(day, time(19, 0), tzinfo=amsterdam_api._LOCAL_TZ)
+        expected.append(
+            PaidHoursBlock(
+                start_time=format_utc_timestamp(start.astimezone(UTC)),
+                end_time=format_utc_timestamp(end.astimezone(UTC)),
+            )
+        )
+    assert blocks == expected
 
 
 @pytest.mark.asyncio
@@ -350,6 +334,8 @@ async def test_start_reservation_includes_machine_number(monkeypatch: pytest.Mon
         provider._client_product_id = "123"
         provider._auth_header_value = "Bearer token"
         provider._logged_in = True
+        provider._parking_context_loaded = True
+        provider._can_select_zone = True
         provider._machine_number = 18773
         monkeypatch.setattr(provider, "_request_json", fake_request_json)
         monkeypatch.setattr(provider, "_now", lambda: NOW)
@@ -402,6 +388,8 @@ async def test_start_reservation_start_now_uses_the_current_time(
         provider._client_product_id = "123"
         provider._auth_header_value = "Bearer token"
         provider._logged_in = True
+        provider._parking_context_loaded = True
+        provider._can_select_zone = True
         provider._machine_number = 18773
         monkeypatch.setattr(provider, "_request_json", fake_request_json)
         monkeypatch.setattr(provider, "_now", lambda: NOW)
@@ -454,6 +442,8 @@ async def test_start_reservation_uses_zone_id_when_machine_missing(
         provider._client_product_id = "123"
         provider._auth_header_value = "Bearer token"
         provider._logged_in = True
+        provider._parking_context_loaded = True
+        provider._can_select_zone = True
         provider._zone_id = "Z-1"
         monkeypatch.setattr(provider, "_request_json", fake_request_json)
         monkeypatch.setattr(provider, "_now", lambda: NOW)
@@ -494,6 +484,7 @@ async def test_start_reservation_requires_machine_or_zone(
         provider._client_product_id = "123"
         provider._auth_header_value = "Bearer token"
         provider._logged_in = True
+        provider._can_select_zone = True
         provider._machine_number = None
         provider._zone_id = None
         monkeypatch.setattr(provider, "_request_json", fake_request_json)

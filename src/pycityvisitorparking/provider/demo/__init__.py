@@ -49,6 +49,11 @@ _FAVORITES_BY_CITY: dict[str, list[dict[str, str]]] = {
         {"id": "r3", "name": "Bram Koster", "license_plate": "KX-73-PL"},
         {"id": "r4", "name": "Ilse Verbeek", "license_plate": "HB-904-S"},
     ],
+    "amsterdam": [
+        {"id": "a1", "name": "Lotte de Graaf", "license_plate": "GV-381-T"},
+        {"id": "a2", "name": "Mehmet Yildiz", "license_plate": "PK-27-ZD"},
+        {"id": "a3", "name": "Noor Visser", "license_plate": "TS-640-N"},
+    ],
     "default": [
         {"id": "d1", "name": "Demo Gebruiker", "license_plate": "XX-000-X"},
     ],
@@ -66,6 +71,10 @@ _ROTTERDAM_ZONES: tuple[tuple[str, _WeekSchedule], ...] = (
     ("630", ((time(9), time(21)),) * 6 + ((time(13), time(18)),)),
     ("632", ((time(8), time(18)),) * 5 + ((time(10), time(17)), None)),
 )
+# The Amsterdam demo permit books at its default parking machine, the only target
+# (the real provider lists the default machine too). Paid until midnight, Sunday from noon.
+_AMSTERDAM_MACHINE = "19850"
+_AMSTERDAM_SCHEDULE: _WeekSchedule = ((time(9), time(0)),) * 6 + ((time(12), time(0)),)
 
 _RESERVATIONS: list[dict[str, str]] = [
     {
@@ -142,6 +151,14 @@ class Provider(BaseProvider):
                 "zone_start": "2026-04-15T07:30:00Z",
                 "zone_end": "2026-04-15T18:30:00Z",
             }
+        if self._is_amsterdam():
+            # Windows come from the default parking machine (see ``list_reservation_targets``).
+            return {
+                "remaining_balance": 2700,
+                "balance_unit": "MINUTE",
+                "zone_start": "",
+                "zone_end": "",
+            }
         if self._is_rotterdam():
             # Windows come from the zones (see ``_zones``).
             return {
@@ -174,21 +191,32 @@ class Provider(BaseProvider):
     def _is_rotterdam(self) -> bool:
         return "rotterdam" in (self._request_context_name or "").lower()
 
+    def _is_amsterdam(self) -> bool:
+        return "amsterdam" in (self._request_context_name or "").lower()
+
     async def list_reservation_targets(self) -> list[ReservationTarget]:
-        """Return the demo targets; only the Rotterdam demo permit has any."""
+        """Return the demo targets; only the Rotterdam and Amsterdam demo permits have any."""
+        if self._is_amsterdam():
+            return [
+                ReservationTarget(
+                    id=_AMSTERDAM_MACHINE,
+                    name=_AMSTERDAM_MACHINE,
+                    paid_hours=self._week_windows(_AMSTERDAM_SCHEDULE),
+                )
+            ]
         if not self._is_rotterdam():
             return []
         return [
             ReservationTarget(
                 id=zone_id,
                 name=zone_id,
-                paid_hours=self._rotterdam_windows(schedule),
+                paid_hours=self._week_windows(schedule),
             )
             for zone_id, schedule in _ROTTERDAM_ZONES
         ]
 
-    def _rotterdam_windows(self, schedule: _WeekSchedule) -> list[PaidHoursBlock]:
-        """Return the upcoming paid windows of a Rotterdam demo zone for one week.
+    def _week_windows(self, schedule: _WeekSchedule) -> list[PaidHoursBlock]:
+        """Return the upcoming paid windows of a demo target for one week.
 
         ``schedule`` holds the paid hours per weekday (Monday first) in
         Europe/Amsterdam; an end at or before the start ends on the next day.
@@ -217,7 +245,27 @@ class Provider(BaseProvider):
     def _get_reservations(self) -> list[dict[str, str | None]]:
         """Lazy-initialize reservations so the city context is available."""
         if self._reservations is None:
-            if self._is_rotterdam():
+            if self._is_amsterdam():
+                now = self._now().replace(second=0, microsecond=0)
+                self._reservations = [
+                    {
+                        "id": "ams-1",
+                        "name": "Lotte de Graaf",
+                        "license_plate": "GV381T",
+                        "start_time": self._format_utc_timestamp(now - timedelta(minutes=45)),
+                        "end_time": self._format_utc_timestamp(now + timedelta(hours=1)),
+                        "reservation_target_id": _AMSTERDAM_MACHINE,
+                    },
+                    {
+                        "id": "ams-2",
+                        "name": "Noor Visser",
+                        "license_plate": "TS640N",
+                        "start_time": self._format_utc_timestamp(now + timedelta(days=2)),
+                        "end_time": self._format_utc_timestamp(now + timedelta(days=2, hours=4)),
+                        "reservation_target_id": _AMSTERDAM_MACHINE,
+                    },
+                ]
+            elif self._is_rotterdam():
                 now = self._now().replace(second=0, microsecond=0)
                 self._reservations = [
                     {

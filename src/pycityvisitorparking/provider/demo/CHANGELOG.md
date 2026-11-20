@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Add an Amsterdam demo permit ("Amsterdam Demo"): balance in minutes, one reservation target (default parking machine `19850`) whose paid hours (Monday–Saturday 09:00–24:00, Sunday 12:00–24:00) are also the permit's.
+
 ## 0.6.0
 
 - A `start_reservation` start in the past ("start now") starts at the current time.

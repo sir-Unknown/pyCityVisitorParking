@@ -106,6 +106,27 @@ async def test_start_reservation_start_now_starts_at_the_current_time(
 
 
 @pytest.mark.asyncio
+async def test_amsterdam_demo_books_at_its_default_parking_machine() -> None:
+    provider = _provider("Amsterdam Demo")
+
+    targets = await provider.list_reservation_targets()
+    permit = await provider.get_permit()
+    reservation = await provider.start_reservation(
+        "AB12CD", NOW + timedelta(hours=1), NOW + timedelta(hours=2)
+    )
+
+    assert [target.id for target in targets] == ["19850"]
+    assert permit.balance_unit == "MINUTE"
+    assert permit.paid_hours == targets[0].paid_hours
+    # Friday paid until midnight; Sunday (15 November) only from noon.
+    assert permit.paid_hours[0].start_time == "2026-11-13T08:00:00Z"
+    assert permit.paid_hours[0].end_time == "2026-11-13T23:00:00Z"
+    assert permit.paid_hours[2].start_time == "2026-11-15T11:00:00Z"
+    assert reservation.reservation_target_id == "19850"
+    assert {r.reservation_target_id for r in await provider.list_reservations()} == {"19850"}
+
+
+@pytest.mark.asyncio
 async def test_other_demo_permits_have_no_targets() -> None:
     provider = _provider("Den Haag Demo")
     assert await provider.list_reservation_targets() == []

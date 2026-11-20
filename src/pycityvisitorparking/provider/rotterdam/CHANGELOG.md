@@ -14,9 +14,9 @@
   `add_favorite`, `update_favorite`, and `remove_favorite`.
 - Resolve microflow operation ids at runtime from the portal's page definitions
   instead of hardcoding them.
-- Permit data and the successful parking-action path are based on the portal's
-  published data model and have not been verified against an account with a
-  permit; see the provider README.
+- Verified with a real six-zone permit against the live portal: permit, balance,
+  paid hours per zone, and start, update, end and cancel of reservations in the
+  default and other zones; see the provider README.
 - Document the deliberate design decisions (zones, first permit, runtime
   operation ids, minute resolution) in the README and mark them in the code.
 - Support zone selection per reservation through the generic reservation target

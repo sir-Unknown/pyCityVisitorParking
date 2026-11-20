@@ -14,7 +14,6 @@ expects credentials with the following keys:
 
 - `username` (string, required): the portal's *meldcode*.
 - `password` (string, required): the portal's *pincode* (4 digits).
-- `machine_number` (string, optional): see [Parking machine](#parking-machine).
 
 The credentials are the ones used on the portal's "Inloggen met meld- en pincode"
 page (`/login-ssp`); the provider logs in through the same `/ssp/login_check`
@@ -39,26 +38,31 @@ Recommended endpoints:
 - `base_url`: `https://api.parkeervergunningen.egisparkingservices.nl`
 - `api_uri`: `api` (defaults to `/api` when omitted)
 
-## Parking machine
+## Parking machine (reservation target)
 
 Permits whose configuration has `config.can_select_zone` set start a session
-for a parking machine number, which determines the zone, tariff and paid
-parking hours. By default the provider uses the permit's default machine
-(`ssp.favorite_machine_number`). Like the portal, the provider sends no machine
-for permits without `can_select_zone`. If a permit has `can_select_zone` but no
-default machine, starting a session raises `ProviderError` until
-`machine_number` is supplied.
+for a parking machine number, which determines the zone and tariff. The
+provider exposes the machine as a reservation target with
+`reservation_target_selection` `free_input`:
 
-Pass `machine_number` at login to use another machine instead, for example
-`--extra machine_number=1234` with the live check script. The provider resolves
-its zone through `paid_parking_zone/get_by_machine_number` and sends both
-`machine_number` and `zone_id` when starting a session; it never marks the
-machine as the new default. Paid parking windows reported in `paid_hours`
-use the selected machine as well. The override is kept across automatic
-re-authentication and is sent even when the permit lacks `can_select_zone`.
-
-A machine that does not exist or lies outside the permit's allowed zones raises
-`ValidationError` at login.
+- `list_reservation_targets()` returns the permit's default machine
+  (`ssp.favorite_machine_number`) as the only target; id and name are the
+  machine number. Permits without `can_select_zone`, or without a default
+  machine, return `[]`.
+- `start_reservation(..., reservation_target_id=None)` uses the default machine.
+  Like the portal, permits without `can_select_zone` send no machine at all.
+- Any other machine number (read from a parking machine) is accepted as
+  `reservation_target_id`. The provider resolves its zone through
+  `paid_parking_zone/get_by_machine_number` and sends `machine_number`,
+  `zone_id` and `is_new_favorite_machine_number: false`, so the default never
+  changes.
+- A target that is not a positive number, a machine that does not exist or lies
+  outside the permit's zones, or any target for a permit without
+  `can_select_zone` raises `ValidationError`; nothing is started.
+- `Reservation.reservation_target_id` is the session's `machine_number` when the
+  session list reports it.
+- `Permit.paid_hours` are those of the default machine; targets carry no
+  `paid_hours` of their own.
 
 ## Supported operations
 

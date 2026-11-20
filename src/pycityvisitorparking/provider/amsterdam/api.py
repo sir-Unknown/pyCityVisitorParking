@@ -26,6 +26,7 @@ from ...models import (
     PaidHoursBlock,
     Permit,
     Reservation,
+    ReservationTarget,
 )
 from ...util import parse_timestamp
 from ..base import BaseProvider
@@ -95,9 +96,8 @@ class Provider(BaseProvider):
         self._client_product_id: str | None = None
         self._roles: tuple[str, ...] = ()
         self._logged_in = False
+        # Default parking machine of the permit (ssp.favorite_machine_number).
         self._machine_number: int | str | None = None
-        self._zone_id: int | str | None = None
-        self._machine_override: int | None = None
         # Whether the permit lets the user pick a parking machine (client_product.config).
         self._can_select_zone = False
         self._parking_context_loaded = False
@@ -113,8 +113,6 @@ class Provider(BaseProvider):
             raise ValidationError("username is required.")
         if not password:
             raise ValidationError("password is required.")
-
-        machine_override = self._parse_machine_number(merged.get("machine_number"))
 
         payload = {"username": username, "password": password}
         data = await self._request_json(
@@ -141,11 +139,7 @@ class Provider(BaseProvider):
             "username": username,
             "password": password,
         }
-        if machine_override is not None:
-            self._credentials["machine_number"] = str(machine_override)
         self._machine_number = None
-        self._zone_id = None
-        self._machine_override = None
         self._can_select_zone = False
         self._parking_context_loaded = False
         self._validity_start = None
@@ -153,8 +147,6 @@ class Provider(BaseProvider):
         if client_product_id is None:
             client_product_id = await self._fetch_client_product_id()
         self._client_product_id = client_product_id
-        if machine_override is not None:
-            await self._select_machine(machine_override)
         self._plogger.operation_completed("login")
 
     async def get_permit(self) -> Permit:
@@ -189,6 +181,18 @@ class Provider(BaseProvider):
         self._plogger.operation_completed("list_reservations", count=len(reservations))
         return reservations
 
+    async def list_reservation_targets(self) -> list[ReservationTarget]:
+        """Return the permit's default parking machine.
+
+        Other machine numbers (read from a parking machine) are accepted as
+        ``reservation_target_id`` too. Permits without zone selection have no targets.
+        """
+        await self._ensure_parking_context()
+        if not self._can_select_zone or self._machine_number is None:
+            return []
+        machine = str(self._machine_number)
+        return [ReservationTarget(id=machine, name=machine)]
+
     async def start_reservation(
         self,
         license_plate: str,
@@ -197,9 +201,13 @@ class Provider(BaseProvider):
         name: str | None = None,
         reservation_target_id: str | None = None,
     ) -> Reservation:
-        """Start a reservation for a license plate."""
+        """Start a reservation, at a parking machine given as ``reservation_target_id``.
+
+        Without a target the permit's default machine is used.
+        """
         self._plogger.operation_started("start_reservation")
-        self._validate_reservation_target_id(reservation_target_id)
+        target_id = self._validate_reservation_target_id(reservation_target_id)
+        target_machine = self._parse_machine_number(target_id) if target_id else None
         start_dt, end_dt = self._validate_reservation_times(
             start_time,
             end_time,
@@ -223,9 +231,7 @@ class Provider(BaseProvider):
             "started_at": self._format_rfc1123(start_dt),
             "ended_at": self._format_rfc1123(end_dt),
         }
-        payload.update(self._machine_fields())
-        if self._machine_override is not None:
-            payload["is_new_favorite_machine_number"] = False
+        payload.update(await self._machine_fields(target_machine))
         if self._is_visitor_role():
             payload["brand"] = "IDEAL"
         data = await self._request_json(
@@ -572,10 +578,11 @@ class Provider(BaseProvider):
             "started_at": self._format_rfc1123(start_local),
             "ended_at": self._format_rfc1123(end_local),
         }
-        # The portal sends only the machine number to the cost calculator.
-        machine_fields = self._machine_fields()
-        if "machine_number" in machine_fields:
-            payload["machine_number"] = machine_fields["machine_number"]
+        # The portal sends only the (default) machine number to the cost calculator.
+        if self._can_select_zone:
+            if self._machine_number is None:
+                raise ProviderError("Permit has no default parking machine.")
+            payload["machine_number"] = self._machine_number
         data = await self._request_json(
             "POST",
             PARKING_SESSION_COST_CALCULATOR_ENDPOINT,
@@ -658,19 +665,15 @@ class Provider(BaseProvider):
             return self._parse_int(main_account["money_balance"]) / 100, BALANCE_UNIT_EURO
         return 0, None
 
-    def _parse_machine_number(self, value: str | None) -> int | None:
-        """Validate the optional machine number override supplied at login."""
-        if value is None:
-            return None
+    def _parse_machine_number(self, value: str) -> int:
+        """Validate a parking machine number given as ``reservation_target_id``."""
         text = value.strip()
-        if not text:
-            return None
         if not text.isascii() or not text.isdigit() or int(text) == 0:
-            raise ValidationError("machine_number must be a positive integer.")
+            raise ValidationError("reservation_target_id must be a parking machine number.")
         return int(text)
 
-    async def _select_machine(self, machine_number: int) -> None:
-        """Resolve the zone for a machine number and use it instead of the default."""
+    async def _resolve_machine_zone(self, machine_number: int) -> int | str | None:
+        """Return the zone of a parking machine, validated against the permit."""
         client_product_id = self._coerce_client_product_id(self._require_client_product_id())
         try:
             data = await self._request_json(
@@ -680,7 +683,7 @@ class Provider(BaseProvider):
                     "client_product_id": client_product_id,
                     "machine_number": machine_number,
                 },
-                allow_reauth=False,
+                allow_reauth=True,
                 auth_required=True,
             )
         except ProviderError as exc:
@@ -689,13 +692,12 @@ class Provider(BaseProvider):
                 exc.error_code == ErrorCode.PROVIDER_REJECTED
                 and upstream in _INVALID_MACHINE_MESSAGES
             ):
-                raise ValidationError("machine_number is not valid for this permit.") from None
+                raise ValidationError(
+                    "reservation_target_id is not a parking machine of this permit."
+                ) from None
             raise
         zone = data.get("zone") if isinstance(data, dict) else None
-        zone_id = self._coerce_optional_id(zone.get("zone_id")) if isinstance(zone, dict) else None
-        self._machine_override = machine_number
-        self._machine_number = machine_number
-        self._zone_id = zone_id
+        return self._coerce_optional_id(zone.get("zone_id")) if isinstance(zone, dict) else None
 
     def _cache_parking_context(self, data: Any) -> None:
         if not isinstance(data, dict):
@@ -705,9 +707,7 @@ class Provider(BaseProvider):
         self._parking_context_loaded = True
         validity = data.get("validity")
         self._validity_start = self._parse_validity_start(validity)
-        if self._machine_override is not None:
-            return
-        # The permit's default machine; the zone is only known for an override.
+        # The permit's default machine; zones are only resolved for other machines.
         ssp = data.get("ssp")
         self._machine_number = (
             self._coerce_optional_id(ssp.get("favorite_machine_number"))
@@ -735,22 +735,28 @@ class Provider(BaseProvider):
         )
         self._cache_parking_context(data)
 
-    def _machine_fields(self) -> dict[str, Any]:
-        """Return the parking machine fields for session requests.
+    async def _machine_fields(self, target_machine: int | None) -> dict[str, Any]:
+        """Return the parking machine fields for a session start.
 
         Like the portal, a machine is only sent for permits with
-        ``config.can_select_zone``; an explicit ``machine_number`` override is
-        always sent.
+        ``config.can_select_zone``. Another machine than the default is
+        resolved to its zone and never becomes the new default.
         """
-        if self._machine_override is None and not self._can_select_zone:
+        if not self._can_select_zone:
+            if target_machine is not None:
+                raise ValidationError("reservation_target_id is not supported for this permit.")
             return {}
-        if self._machine_number is None:
-            raise ProviderError(
-                "Permit requires a parking machine but has no default; supply machine_number."
-            )
-        fields: dict[str, Any] = {"machine_number": self._machine_number}
-        if self._zone_id is not None:
-            fields["zone_id"] = self._zone_id
+        if target_machine is None or target_machine == self._machine_number:
+            if self._machine_number is None:
+                raise ValidationError("Permit has no default parking machine; pass a target.")
+            return {"machine_number": self._machine_number}
+        fields: dict[str, Any] = {
+            "machine_number": target_machine,
+            "is_new_favorite_machine_number": False,
+        }
+        zone_id = await self._resolve_machine_zone(target_machine)
+        if zone_id is not None:
+            fields["zone_id"] = zone_id
         return fields
 
     def _coerce_optional_id(self, value: Any) -> int | str | None:
@@ -845,12 +851,14 @@ class Provider(BaseProvider):
             raise ProviderError("Provider response missing reservation timestamps.")
         start_time = self._parse_provider_timestamp(str(start_raw))
         end_time = self._parse_provider_timestamp(str(end_raw))
+        machine_number = self._coerce_optional_id(item.get("machine_number"))
         return Reservation(
             id=reservation_id,
             name=name_value,
             license_plate=normalized_plate,
             start_time=start_time,
             end_time=end_time,
+            reservation_target_id=str(machine_number) if machine_number is not None else None,
         )
 
     def _select_reservation(

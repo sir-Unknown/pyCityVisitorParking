@@ -3,7 +3,7 @@ from datetime import UTC, date, datetime, time
 import aiohttp
 import pytest
 
-from pycityvisitorparking.exceptions import ProviderError, ValidationError
+from pycityvisitorparking.exceptions import ValidationError
 from pycityvisitorparking.models import (
     BALANCE_UNIT_EURO,
     BALANCE_UNIT_MINUTE,
@@ -406,7 +406,7 @@ async def test_start_reservation_start_now_uses_the_current_time(
 
 
 @pytest.mark.asyncio
-async def test_start_reservation_requires_a_machine_when_zone_is_selectable(
+async def test_start_reservation_without_target_requires_a_default_machine(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     async def fake_request_json(*args: object, **kwargs: object) -> object:
@@ -431,12 +431,11 @@ async def test_start_reservation_requires_a_machine_when_zone_is_selectable(
         provider._logged_in = True
         provider._can_select_zone = True
         provider._machine_number = None
-        provider._zone_id = None
         monkeypatch.setattr(provider, "_request_json", fake_request_json)
         monkeypatch.setattr(provider, "_ensure_parking_context", fake_ensure_context)
         monkeypatch.setattr(provider, "_now", lambda: NOW)
 
-        with pytest.raises(ProviderError):
+        with pytest.raises(ValidationError):
             await provider.start_reservation(
                 "ab-12-cd",
                 start_time=datetime(2026, 1, 24, 1, 0, tzinfo=UTC),

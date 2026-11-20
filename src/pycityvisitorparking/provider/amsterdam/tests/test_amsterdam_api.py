@@ -14,7 +14,7 @@ from pycityvisitorparking.exceptions import (
     ServiceUnavailableError,
     ValidationError,
 )
-from pycityvisitorparking.models import BALANCE_UNIT_MINUTE
+from pycityvisitorparking.models import BALANCE_UNIT_MINUTE, ReservationTarget
 from pycityvisitorparking.provider.amsterdam.api import Provider
 from pycityvisitorparking.provider.loader import ProviderManifest
 
@@ -91,6 +91,8 @@ def _provider(session: _RoutedSession) -> Provider:
             name="Amsterdam",
             favorite_update_fields=(),
             reservation_update_fields=("end_time",),
+            balance_units=("MINUTE", "EURO"),
+            reservation_target_selection="free_input",
         ),
         base_url="https://example",
     )
@@ -199,7 +201,32 @@ async def test_end_reservation_patches_editable_session() -> None:
     assert patch == {"new_ended_at": "2030-01-01T10:30:00+00:00"}
 
 
-async def test_machine_number_override_resolves_zone_and_survives_permit_refresh() -> None:
+async def _start_at(provider: Provider, target: str | None) -> None:
+    await provider.start_reservation("ab-12-cd", *_times(), reservation_target_id=target)
+
+
+async def test_default_machine_is_the_only_listed_target() -> None:
+    session = _RoutedSession(_routes())
+    provider = _provider(session)
+    await provider.login({"username": "u", "password": "p"})
+
+    assert await provider.list_reservation_targets() == [ReservationTarget(id="1111", name="1111")]
+    assert provider.info.reservation_target_selection == "free_input"
+
+
+async def test_permit_without_zone_selection_has_no_targets_and_rejects_one() -> None:
+    product = {"client_product_id": 42, "config": {"can_select_zone": False}, "ssp": {}}
+    session = _RoutedSession(_routes(**{"GET|/api/v1/client_product/42": [_FakeResponse(product)]}))
+    provider = _provider(session)
+    await provider.login({"username": "u", "password": "p"})
+
+    assert await provider.list_reservation_targets() == []
+    with pytest.raises(ValidationError):
+        await _start_at(provider, "2222")
+    assert session.calls_to("/parking_session/start") == []
+
+
+async def test_other_machine_target_resolves_zone_and_keeps_the_default() -> None:
     session = _RoutedSession(
         _routes(
             **{
@@ -210,21 +237,39 @@ async def test_machine_number_override_resolves_zone_and_survives_permit_refresh
         )
     )
     provider = _provider(session)
-    await provider.login({"username": "u", "password": "p", "machine_number": " 2222 "})
+    await provider.login({"username": "u", "password": "p"})
+
+    await _start_at(provider, " 2222 ")
+    await provider.get_permit()
 
     zone_lookup = session.calls_to("/get_by_machine_number")[0]["kwargs"]["json"]
     assert zone_lookup == {"client_product_id": 42, "machine_number": 2222}
-
-    # get_permit re-reads the client product, whose favorite machine must not win.
-    await provider.get_permit()
-    await provider.start_reservation("ab-12-cd", *_times())
-
     start_payload = session.calls_to("/parking_session/start")[0]["kwargs"]["json"]
     assert start_payload["machine_number"] == 2222
     assert start_payload["zone_id"] == 77
     assert start_payload["is_new_favorite_machine_number"] is False
-    for call in session.calls_to("/parking_session/cost_calculator"):
-        assert call["kwargs"]["json"]["machine_number"] == 2222
+    cost_payload = session.calls_to("/parking_session/cost_calculator")[0]["kwargs"]["json"]
+    assert cost_payload["machine_number"] == 1111
+
+
+async def test_default_machine_as_target_needs_no_zone_lookup() -> None:
+    session = _RoutedSession(_routes())
+    provider = _provider(session)
+    await provider.login({"username": "u", "password": "p"})
+
+    await _start_at(provider, "1111")
+
+    payload = session.calls_to("/parking_session/start")[0]["kwargs"]["json"]
+    assert payload["machine_number"] == 1111
+    assert "is_new_favorite_machine_number" not in payload
+
+
+def test_reservation_maps_its_machine_to_the_target() -> None:
+    provider = _provider(_RoutedSession({}))
+
+    reservation = provider._map_reservation({**STARTED_SESSION, "machine_number": 2222})
+
+    assert reservation.reservation_target_id == "2222"
 
 
 @pytest.mark.parametrize(
@@ -234,27 +279,31 @@ async def test_machine_number_override_resolves_zone_and_survives_permit_refresh
         "The chosen parking machine is not within the allowed zones.",
     ],
 )
-async def test_unknown_machine_number_is_validation_error(message: str) -> None:
+async def test_unknown_machine_target_is_validation_error(message: str) -> None:
     session = _RoutedSession(
         _routes(
             **{"POST|/get_by_machine_number": [_FakeResponse({"message": message}, status=400)]}
         )
     )
     provider = _provider(session)
+    await provider.login({"username": "u", "password": "p"})
 
     with pytest.raises(ValidationError):
-        await provider.login({"username": "u", "password": "p", "machine_number": "9999"})
+        await _start_at(provider, "9999")
+    assert session.calls_to("/parking_session/start") == []
 
 
 @pytest.mark.parametrize("value", ["abc", "0", "-5", "12.5", "١٢"])
-async def test_malformed_machine_number_is_rejected_before_any_request(value: str) -> None:
-    session = _RoutedSession({})
+async def test_malformed_machine_target_is_rejected_before_any_request(value: str) -> None:
+    session = _RoutedSession(_routes())
     provider = _provider(session)
+    await provider.login({"username": "u", "password": "p"})
+    calls_after_login = len(session.calls)
 
     with pytest.raises(ValidationError):
-        await provider.login({"username": "u", "password": "p", "machine_number": value})
+        await _start_at(provider, value)
 
-    assert session.calls == []
+    assert len(session.calls) == calls_after_login
 
 
 async def test_other_provider_error_for_machine_lookup_is_not_masked() -> None:
@@ -268,9 +317,10 @@ async def test_other_provider_error_for_machine_lookup_is_not_masked() -> None:
         )
     )
     provider = _provider(session)
+    await provider.login({"username": "u", "password": "p"})
 
     with pytest.raises(ProviderError) as exc_info:
-        await provider.login({"username": "u", "password": "p", "machine_number": "2222"})
+        await _start_at(provider, "2222")
 
     assert not isinstance(exc_info.value, ValidationError)
     assert exc_info.value.error_code == ErrorCode.PROVIDER_REJECTED
@@ -287,14 +337,15 @@ async def test_unavailable_parking_register_is_service_unavailable() -> None:
         )
     )
     provider = _provider(session)
+    await provider.login({"username": "u", "password": "p"})
 
     with pytest.raises(ServiceUnavailableError) as exc_info:
-        await provider.login({"username": "u", "password": "p", "machine_number": "2222"})
+        await _start_at(provider, "2222")
 
     assert exc_info.value.error_code == ErrorCode.SERVICE_UNAVAILABLE
 
 
-async def test_expired_token_reauthenticates_once_and_keeps_machine_override() -> None:
+async def test_expired_token_reauthenticates_once() -> None:
     session = _RoutedSession(
         _routes(
             **{
@@ -302,19 +353,15 @@ async def test_expired_token_reauthenticates_once_and_keeps_machine_override() -
                     _FakeResponse({}, status=401),
                     _FakeResponse(CLIENT_PRODUCT),
                 ],
-                "POST|/get_by_machine_number": [_FakeResponse({"zone": {"zone_id": 77}})],
             }
         )
     )
     provider = _provider(session)
-    await provider.login({"username": "u", "password": "p", "machine_number": "2222"})
+    await provider.login({"username": "u", "password": "p"})
 
     await provider.get_permit()
 
     assert len(session.calls_to("/login_check")) == 2
-    assert len(session.calls_to("/get_by_machine_number")) == 2
-    await provider.start_reservation("ab-12-cd", *_times())
-    assert session.calls_to("/parking_session/start")[0]["kwargs"]["json"]["machine_number"] == 2222
 
 
 async def test_persistent_unauthorized_response_raises_auth_error() -> None:

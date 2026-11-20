@@ -53,10 +53,10 @@ PYTHONPATH=src PROVIDER_ID=dvsportal BASE_URL=https://parkeren.rijswijk.nl \
 USERNAME=... PASSWORD=... LICENSE_PLATE=AB12CD \
 python scripts/provider_live_check.py --run-all --post-create-wait 5
 
-# Same flow for Amsterdam (client_product_id required), using a license plate.
+# Same flow for Amsterdam at a parking machine other than the permit's default.
 PYTHONPATH=src PROVIDER_ID=amsterdam BASE_URL=https://api.parkeervergunningen.egisparkingservices.nl \
-USERNAME=... PASSWORD=... CLIENT_PRODUCT_ID=... LICENSE_PLATE=AB12CD \
-python scripts/provider_live_check.py --run-all --post-create-wait 5
+USERNAME=... PASSWORD=... LICENSE_PLATE=AB12CD \
+python scripts/provider_live_check.py --run-all --post-create-wait 5 --reservation-target 12345
 
 # Run all flows and capture sanitized HTTP payloads/responses to a run file.
 PYTHONPATH=src PROVIDER_ID=amsterdam BASE_URL=https://api.parkeervergunningen.egisparkingservices.nl \
@@ -64,8 +64,8 @@ USERNAME=... PASSWORD=... LICENSE_PLATE=AB12CD \
 python scripts/provider_live_check.py --run-all --dump-json --dump-dir .tmp/http-trace --sanitize-output
 ```
 
-Paid-parking windows (provider support required). This fetches paid windows for
-today and future days via the provider cost calculator (Amsterdam supports this):
+Paid-parking windows. This prints the permit's `paid_hours` per local day for
+today and future days:
 
 ```bash
 PYTHONPATH=src PROVIDER_ID=amsterdam BASE_URL=https://api.parkeervergunningen.egisparkingservices.nl \
@@ -78,12 +78,14 @@ Notes and behavior details:
 - `--start-time` and `--end-time` accept ISO 8601 strings with offset or `Z`.
   If omitted, the script uses next-day 02:00-03:00 in `--timezone`
   (default: `Europe/Amsterdam`).
-- Amsterdam requires `client_product_id` (from the JWT).
+- `--reservation-target` passes a `reservation_target_id` to `start_reservation`
+  (for Amsterdam a parking machine number). The output lists the provider's
+  reservation targets.
 - Extra credentials can be supplied with `--extra key=value`.
 - Credentials can also be supplied via `--credentials-json` or
   `--credentials-file` (or `CREDENTIALS_JSON`/`CREDENTIALS_FILE` env vars).
-- `--check-paid-windows` with `--paid-window-days 14` runs the cost calculator
-  for today + 14 days and prints the paid windows per day.
+- `--check-paid-windows` with `--paid-window-days 14` prints the permit's paid
+  windows for today + 14 days, per local day.
 - The output includes provider capabilities (`favorite_update_fields` and
   `reservation_update_fields`) from `ProviderInfo` so you can confirm supported
   updates before calling mutation methods.

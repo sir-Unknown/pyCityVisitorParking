@@ -36,7 +36,7 @@ Run live reservation/favorite flows (requires LICENSE_PLATE):
     USERNAME=... PASSWORD=... LICENSE_PLATE=AB12CD \
     python scripts/provider_live_check.py --run-all --post-create-wait 5
 
-Run paid-parking window checks (requires provider support):
+Print the permit's paid-parking windows per local day:
   PYTHONPATH=src PROVIDER_ID=amsterdam BASE_URL=... \
     USERNAME=... PASSWORD=... \
     python scripts/provider_live_check.py --check-paid-windows --paid-window-days 14
@@ -72,6 +72,7 @@ from sanitize import sanitize_headers as _sanitize_headers
 from pycityvisitorparking import Client
 from pycityvisitorparking.exceptions import ProviderError, ValidationError
 from pycityvisitorparking.models import Favorite, Reservation
+from pycityvisitorparking.util import parse_timestamp
 
 _LOGGER = logging.getLogger(__name__)
 _TEXT_TRUNCATE = 2000
@@ -582,6 +583,11 @@ def _parse_args() -> argparse.Namespace:
         help="Optional reservation name.",
     )
     parser.add_argument(
+        "--reservation-target",
+        dest="reservation_target",
+        help="Optional reservation target id (e.g. a parking machine number).",
+    )
+    parser.add_argument(
         "--favorite-name",
         dest="favorite_name",
         help="Optional favorite name.",
@@ -773,20 +779,16 @@ def _build_reservation_window(
     return start_dt, end_dt
 
 
-async def _run_paid_window_check(
-    provider: Any,
+def _run_paid_window_check(
+    permit: Any,
     *,
     timezone_name: str,
     days: int,
-    traceback_enabled: bool,
     sanitize_output: bool,
 ) -> None:
+    """Print the permit's paid windows per local day for today and the next days."""
     if days < 0:
         raise ValidationError("paid_window_days must be zero or positive.")
-    fetcher = getattr(provider, "_fetch_paid_zone_validity_for_date", None)
-    if not callable(fetcher):
-        _log_step_abort("Paid window check", "provider does not support cost calculator")
-        return
     try:
         tz = ZoneInfo(timezone_name)
     except ZoneInfoNotFoundError as exc:
@@ -795,23 +797,19 @@ async def _run_paid_window_check(
     today = datetime.now(tz).date()
     for offset in range(days + 1):
         target_date = today + timedelta(days=offset)
-        try:
-            entries = await _run_step(
-                f"Paid windows {target_date.isoformat()}",
-                fetcher(target_date),
-                trace=traceback_enabled,
-            )
-        except Exception:
-            continue
-        block_count = len(entries)
+        blocks = [
+            block
+            for block in permit.paid_hours
+            if parse_timestamp(block.start_time).astimezone(tz).date() == target_date
+        ]
         print(
             _format_action(
                 f"Paid windows {target_date.isoformat()}",
-                str(block_count),
+                str(len(blocks)),
                 color="cyan",
             )
         )
-        for block, _is_chargeable in entries:
+        for block in blocks:
             start = block.start_time
             end = block.end_time
             if sanitize_output:
@@ -826,6 +824,7 @@ async def _run_reservation_flow(
     *,
     license_plate: str,
     reservation_name: str | None,
+    reservation_target: str | None,
     start_time: str | None,
     end_time: str | None,
     extend_minutes: int,
@@ -869,6 +868,7 @@ async def _run_reservation_flow(
                 start_dt,
                 end_dt,
                 name=reservation_name,
+                reservation_target_id=reservation_target,
             ),
             trace=traceback_enabled,
         )
@@ -1134,12 +1134,16 @@ async def main() -> int:
                 provider.list_favorites(),
                 trace=args.traceback,
             )
+            targets = await _run_step(
+                "Reservation target list",
+                provider.list_reservation_targets(),
+                trace=args.traceback,
+            )
             if run_paid_windows:
-                await _run_paid_window_check(
-                    provider,
+                _run_paid_window_check(
+                    permit,
                     timezone_name=args.timezone,
                     days=args.paid_window_days,
-                    traceback_enabled=args.traceback,
                     sanitize_output=args.sanitize_output,
                 )
             if run_reservations:
@@ -1147,6 +1151,7 @@ async def main() -> int:
                     provider,
                     license_plate=license_plate_value,
                     reservation_name=args.reservation_name,
+                    reservation_target=args.reservation_target,
                     start_time=args.start_time,
                     end_time=args.end_time,
                     extend_minutes=args.extend_minutes,
@@ -1185,6 +1190,9 @@ async def main() -> int:
         )
     )
     print(_format_action("Permit", str(permit), color="cyan"))
+    print(_format_action("Reservation targets", str(len(targets)), color="cyan"))
+    for target in targets:
+        print(f"- {target.id} | {target.name}")
     print(_format_action("Reservations", str(len(reservations)), color="cyan"))
     for reservation in reservations:
         print(f"- {_format_reservation(reservation, sanitize=args.sanitize_output)}")

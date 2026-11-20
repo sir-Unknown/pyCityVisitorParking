@@ -27,6 +27,7 @@ from ...models import (
     Permit,
     Reservation,
 )
+from ...util import parse_timestamp
 from ..base import BaseProvider
 from ..loader import ProviderManifest
 from .const import (
@@ -100,6 +101,7 @@ class Provider(BaseProvider):
         # Whether the permit lets the user pick a parking machine (client_product.config).
         self._can_select_zone = False
         self._parking_context_loaded = False
+        self._validity_start: datetime | None = None
 
     async def login(self, credentials: Mapping[str, str] | None = None, **kwargs: str) -> None:
         """Authenticate against the provider."""
@@ -146,6 +148,7 @@ class Provider(BaseProvider):
         self._machine_override = None
         self._can_select_zone = False
         self._parking_context_loaded = False
+        self._validity_start = None
         self._logged_in = True
         if client_product_id is None:
             client_product_id = await self._fetch_client_product_id()
@@ -181,20 +184,8 @@ class Provider(BaseProvider):
     async def list_reservations(self) -> list[Reservation]:
         """Return active reservations."""
         self._plogger.operation_started("list_reservations")
-        client_product_id = self._require_client_product_id()
-        params = {
-            "page": 1,
-            "row_per_page": 250,
-            "filters[client_product_id]": client_product_id,
-        }
-        data = await self._request_json(
-            "GET",
-            PARKING_SESSION_LIST_ENDPOINT,
-            params=params,
-            allow_reauth=True,
-            auth_required=True,
-        )
-        reservations = self._map_reservations(data)
+        items = await self._fetch_session_items()
+        reservations = self._map_reservations(items)
         self._plogger.operation_completed("list_reservations", count=len(reservations))
         return reservations
 
@@ -218,6 +209,12 @@ class Provider(BaseProvider):
         start_dt, end_dt = self._validate_reservation_times(
             self._start_not_before_now(start_dt, whole_minute=False), end_dt, require_both=True
         )
+        await self._ensure_parking_context()
+        # Like the portal, a start before the permit's validity moves to its start.
+        if self._validity_start is not None and start_dt < self._validity_start:
+            start_dt, end_dt = self._validate_reservation_times(
+                self._validity_start, end_dt, require_both=True
+            )
         normalized_plate = self._normalize_license_plate(license_plate)
         client_product_id = self._require_client_product_id()
         payload: dict[str, Any] = {
@@ -226,7 +223,6 @@ class Provider(BaseProvider):
             "started_at": self._format_rfc1123(start_dt),
             "ended_at": self._format_rfc1123(end_dt),
         }
-        await self._ensure_parking_context()
         payload.update(self._machine_fields())
         if self._machine_override is not None:
             payload["is_new_favorite_machine_number"] = False
@@ -272,6 +268,7 @@ class Provider(BaseProvider):
         reservation_id_value = self._require_id(reservation_id, "reservation_id")
         end_dt = self._normalize_datetime(end_time)
         payload = {"new_ended_at": self._format_offset_timestamp(end_dt)}
+        await self._ensure_session_editable(reservation_id_value)
         data = await self._request_json(
             "PATCH",
             PARKING_SESSION_EDIT_ENDPOINT.format(reservation_id=reservation_id_value),
@@ -300,6 +297,7 @@ class Provider(BaseProvider):
         reservation_id_value = self._require_id(reservation_id, "reservation_id")
         end_dt = self._normalize_datetime(end_time)
         payload = {"new_ended_at": self._format_offset_timestamp(end_dt)}
+        await self._ensure_session_editable(reservation_id_value)
         data = await self._request_json(
             "PATCH",
             PARKING_SESSION_EDIT_ENDPOINT.format(reservation_id=reservation_id_value),
@@ -574,12 +572,10 @@ class Provider(BaseProvider):
             "started_at": self._format_rfc1123(start_local),
             "ended_at": self._format_rfc1123(end_local),
         }
-        machine_fields = self._machine_fields()
         # The portal sends only the machine number to the cost calculator.
+        machine_fields = self._machine_fields()
         if "machine_number" in machine_fields:
             payload["machine_number"] = machine_fields["machine_number"]
-        elif "zone_id" in machine_fields:
-            payload["zone_id"] = machine_fields["zone_id"]
         data = await self._request_json(
             "POST",
             PARKING_SESSION_COST_CALCULATOR_ENDPOINT,
@@ -707,11 +703,25 @@ class Provider(BaseProvider):
         config = data.get("config")
         self._can_select_zone = isinstance(config, dict) and config.get("can_select_zone") is True
         self._parking_context_loaded = True
+        validity = data.get("validity")
+        self._validity_start = self._parse_validity_start(validity)
         if self._machine_override is not None:
             return
-        # The permit's default machine is client_product.ssp.favorite_machine_number.
-        self._machine_number = self._extract_machine_number(data)
-        self._zone_id = self._extract_zone_id(data)
+        # The permit's default machine; the zone is only known for an override.
+        ssp = data.get("ssp")
+        self._machine_number = (
+            self._coerce_optional_id(ssp.get("favorite_machine_number"))
+            if isinstance(ssp, dict)
+            else None
+        )
+
+    def _parse_validity_start(self, validity: Any) -> datetime | None:
+        if not isinstance(validity, dict) or not validity.get("started_at"):
+            return None
+        try:
+            return parse_timestamp(self._parse_provider_timestamp(str(validity["started_at"])))
+        except ProviderError:
+            return None
 
     async def _ensure_parking_context(self) -> None:
         if self._parking_context_loaded:
@@ -734,48 +744,14 @@ class Provider(BaseProvider):
         """
         if self._machine_override is None and not self._can_select_zone:
             return {}
-        fields: dict[str, Any] = {}
-        if self._machine_number is not None:
-            fields["machine_number"] = self._machine_number
-        if self._zone_id is not None:
-            fields["zone_id"] = self._zone_id
-        if not fields:
+        if self._machine_number is None:
             raise ProviderError(
                 "Permit requires a parking machine but has no default; supply machine_number."
             )
+        fields: dict[str, Any] = {"machine_number": self._machine_number}
+        if self._zone_id is not None:
+            fields["zone_id"] = self._zone_id
         return fields
-
-    def _extract_machine_number(self, data: dict[str, Any]) -> int | str | None:
-        ssp = data.get("ssp")
-        if isinstance(ssp, dict):
-            for key in ("favorite_machine_number", "machine_number"):
-                value = self._coerce_optional_id(ssp.get(key))
-                if value is not None:
-                    return value
-        permit = data.get("permit")
-        if isinstance(permit, dict):
-            for key in ("favorite_machine_number", "machine_number"):
-                value = self._coerce_optional_id(permit.get(key))
-                if value is not None:
-                    return value
-        for key in ("favorite_machine_number", "machine_number"):
-            value = self._coerce_optional_id(data.get(key))
-            if value is not None:
-                return value
-        return None
-
-    def _extract_zone_id(self, data: dict[str, Any]) -> int | str | None:
-        for key in ("zone_id", "zoneId"):
-            value = self._coerce_optional_id(data.get(key))
-            if value is not None:
-                return value
-        permit = data.get("permit")
-        if isinstance(permit, dict):
-            for key in ("zone_id", "zoneId"):
-                value = self._coerce_optional_id(permit.get(key))
-                if value is not None:
-                    return value
-        return None
 
     def _coerce_optional_id(self, value: Any) -> int | str | None:
         if value is None or isinstance(value, bool):
@@ -798,28 +774,52 @@ class Provider(BaseProvider):
             return number if number != 0 else None
         return text
 
-    def _map_reservations(self, data: Any) -> list[Reservation]:
-        items: list[Any]
+    async def _fetch_session_items(self) -> list[dict[str, Any]]:
+        """Return the raw parking sessions of the permit."""
+        params = {
+            "page": 1,
+            "row_per_page": 250,
+            "filters[client_product_id]": self._require_client_product_id(),
+        }
+        data = await self._request_json(
+            "GET",
+            PARKING_SESSION_LIST_ENDPOINT,
+            params=params,
+            allow_reauth=True,
+            auth_required=True,
+        )
         if isinstance(data, dict):
             raw_items = data.get("data") or data.get("parking_sessions") or data.get("results")
             if raw_items is None:
                 return []
-            if not isinstance(raw_items, list):
-                raise ProviderError("Provider response included invalid reservations.")
-            items = raw_items
-        elif isinstance(data, list):
-            items = data
         else:
+            raw_items = data
+        if not isinstance(raw_items, list):
             raise ProviderError("Provider response included invalid reservations.")
-        reservations: list[Reservation] = []
-        for item in items:
-            if not isinstance(item, dict):
+        return [item for item in raw_items if isinstance(item, dict)]
+
+    def _is_open_session(self, item: dict[str, Any]) -> bool:
+        status = str(item.get("status", "")).upper()
+        return not status or status in {"ACTIVE", "FUTURE"}
+
+    def _map_reservations(self, items: list[dict[str, Any]]) -> list[Reservation]:
+        return [self._map_reservation(item) for item in items if self._is_open_session(item)]
+
+    async def _ensure_session_editable(self, reservation_id: str) -> None:
+        """Reject changes the portal does not offer for this session.
+
+        The portal only edits or stops sessions with ``can_edit`` that are
+        ACTIVE or FUTURE. A session missing from the first page is left to the
+        backend to judge.
+        """
+        for item in await self._fetch_session_items():
+            if str(item.get("parking_session_id")) != reservation_id:
                 continue
-            status = str(item.get("status", "")).upper()
-            if status and status not in {"ACTIVE", "FUTURE"}:
-                continue
-            reservations.append(self._map_reservation(item))
-        return reservations
+            if item.get("can_edit") is False or not self._is_open_session(item):
+                raise ProviderError(
+                    "Reservation cannot be changed.", error_code=ErrorCode.PROVIDER_REJECTED
+                )
+            return
 
     def _map_reservation_response(self, data: Any) -> Reservation | None:
         if isinstance(data, dict):

@@ -13,3 +13,6 @@
 - Report `remaining_balance` with `balance_unit`: `time_balance` seconds as whole minutes (`MINUTE`), otherwise `money_balance` cents as euros (`EURO`).
 - Derive `paid_hours` from the weekly `time_frame_data` of a single cost calculation instead of one call per day; drop the unverified `validity`/`zone_validity` fallback.
 - Raise `ServiceUnavailableError` when the portal reports `NPR is unavailable.`.
+- Reject reservation updates and ends for sessions with `can_edit: false` or that are no longer ACTIVE/FUTURE before sending them, matching the portal.
+- Move a reservation start before the permit's `validity.started_at` to that moment, matching the portal.
+- Read the default parking machine only from `ssp.favorite_machine_number`; drop the unverified `permit`/top-level machine and `zone_id` fallbacks.

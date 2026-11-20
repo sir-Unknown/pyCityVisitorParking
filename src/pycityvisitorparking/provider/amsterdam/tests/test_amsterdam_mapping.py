@@ -406,62 +406,7 @@ async def test_start_reservation_start_now_uses_the_current_time(
 
 
 @pytest.mark.asyncio
-async def test_start_reservation_uses_zone_id_when_machine_missing(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    captured: dict[str, object] = {}
-
-    async def fake_request_json(
-        method: str,
-        path: str,
-        *,
-        json: object | None = None,
-        params: object | None = None,
-        allow_reauth: bool,
-        auth_required: bool,
-    ) -> object:
-        captured["json"] = json
-        return {
-            "parking_session_id": 2,
-            "vrn": "AB12CD",
-            "started_at": "2026-01-24T01:00:00+00:00",
-            "ended_at": "2026-01-24T02:00:00+00:00",
-        }
-
-    async with aiohttp.ClientSession() as session:
-        provider = Provider(
-            session,
-            ProviderManifest(
-                id="amsterdam",
-                name="Amsterdam",
-                favorite_update_fields=(),
-                reservation_update_fields=("end_time",),
-            ),
-            base_url="https://example",
-        )
-        provider._client_product_id = "123"
-        provider._auth_header_value = "Bearer token"
-        provider._logged_in = True
-        provider._parking_context_loaded = True
-        provider._can_select_zone = True
-        provider._zone_id = "Z-1"
-        monkeypatch.setattr(provider, "_request_json", fake_request_json)
-        monkeypatch.setattr(provider, "_now", lambda: NOW)
-
-        await provider.start_reservation(
-            "ab-12-cd",
-            start_time=datetime(2026, 1, 24, 1, 0, tzinfo=UTC),
-            end_time=datetime(2026, 1, 24, 2, 0, tzinfo=UTC),
-        )
-
-    payload = captured["json"]
-    assert isinstance(payload, dict)
-    assert payload["zone_id"] == "Z-1"
-    assert "machine_number" not in payload
-
-
-@pytest.mark.asyncio
-async def test_start_reservation_requires_machine_or_zone(
+async def test_start_reservation_requires_a_machine_when_zone_is_selectable(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     async def fake_request_json(*args: object, **kwargs: object) -> object:

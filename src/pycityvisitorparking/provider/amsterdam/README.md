@@ -86,7 +86,13 @@ A machine that does not exist or lies outside the permit's allowed zones raises
   over today and the next 14 days. Whether public holidays deviate from this
   schedule is unknown. If the calculation fails, `paid_hours` is empty.
 - `start_reservation` sends the parking machine fields described in
-  [Parking machine](#parking-machine).
+  [Parking machine](#parking-machine). Like the portal, a start before the
+  permit's `validity.started_at` is moved to that moment.
+- `update_reservation` and `end_reservation` first read the session list and
+  raise `ProviderError` (`error_code=provider_rejected`) without changing
+  anything when the session has `can_edit: false` or is no longer ACTIVE or
+  FUTURE, matching the actions the portal offers. A session that is not on the
+  first list page is sent to the backend unchecked.
 - Reservations map from `parking_session_id`, `vrn`, `started_at`, and `ended_at`.
 - Favorites map from `favorite_vrn_id`, `vrn`, and `description`.
 
@@ -101,14 +107,15 @@ Mapping table (based on `amsterdam.json` sample):
   - `client_product_id` -> fallback for `Permit.id` when `username` is unavailable.
   - `ssp.main_account.time_balance`/`money_balance` -> `Permit.remaining_balance` and `Permit.balance_unit`.
   - `config.can_select_zone` -> whether a parking machine is sent.
-  - `ssp.favorite_machine_number` -> cached `machine_number` for `start_reservation`.
-  - `permit.zone_id` (if present) -> cached `zone_id` for `start_reservation`.
+  - `ssp.favorite_machine_number` -> default `machine_number` for `start_reservation`.
+  - `validity.started_at` -> earliest reservation start.
 - `parking_session cost_calculator` (`/api/v1/ssp/parking_session/cost_calculator`)
   - `time_frame_data[weekday][].startTime`/`endTime` (`HHmm`, Europe/Amsterdam) -> `Permit.paid_hours`.
 - `parking_session list` (`/api/v1/ssp/parking_session/list`)
   - `parking_session_id` -> `Reservation.id`.
   - `vrn` -> `Reservation.license_plate`.
   - `started_at`/`ended_at` -> `Reservation.start_time`/`Reservation.end_time`.
+  - `status` (ACTIVE/FUTURE kept) and `can_edit` -> whether a session is listed and changeable.
   - `permit_name`/`zone_description` -> `Reservation.name` fallback.
 - `favorite_vrn list` (`/api/v1/ssp/favorite_vrn/list`)
   - `id` -> `Favorite.id`.

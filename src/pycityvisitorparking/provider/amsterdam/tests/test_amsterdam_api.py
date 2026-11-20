@@ -104,6 +104,10 @@ def _routes(**overrides: list[_FakeResponse]) -> dict[tuple[str, str], list[_Fak
         ("POST", "/api/v1/ssp/parking_session/cost_calculator"): [
             _FakeResponse({"time_frame_data": []})
         ],
+        ("GET", "/api/v1/ssp/parking_session/list"): [
+            _FakeResponse({"data": [{**STARTED_SESSION, "status": "ACTIVE", "can_edit": True}]})
+        ],
+        ("PATCH", "/api/v1/ssp/parking_session/9/edit"): [_FakeResponse(STARTED_SESSION)],
     }
     for key, value in overrides.items():
         method, suffix = key.split("|")
@@ -154,6 +158,45 @@ async def test_get_permit_reports_minutes_and_uses_one_cost_calculation() -> Non
     assert permit.remaining_balance == 10
     assert permit.balance_unit == BALANCE_UNIT_MINUTE
     assert len(session.calls_to("/parking_session/cost_calculator")) == 1
+
+
+async def test_start_before_permit_validity_moves_to_validity_start() -> None:
+    product = {**CLIENT_PRODUCT, "validity": {"started_at": "2030-01-01T12:00:00+00:00"}}
+    session = _RoutedSession(_routes(**{"GET|/api/v1/client_product/42": [_FakeResponse(product)]}))
+    provider = _provider(session)
+    await provider.login({"username": "u", "password": "p"})
+
+    start = datetime(2030, 1, 1, 10, tzinfo=UTC)
+    await provider.start_reservation("ab-12-cd", start, start + timedelta(hours=4))
+
+    payload = session.calls_to("/parking_session/start")[0]["kwargs"]["json"]
+    assert payload["started_at"] == "Tue, 01 Jan 2030 12:00:00 GMT"
+
+
+async def test_change_of_session_without_can_edit_is_rejected_before_patch() -> None:
+    locked = {**STARTED_SESSION, "status": "ACTIVE", "can_edit": False}
+    session = _RoutedSession(
+        _routes(**{"GET|/api/v1/ssp/parking_session/list": [_FakeResponse({"data": [locked]})]})
+    )
+    provider = _provider(session)
+    await provider.login({"username": "u", "password": "p"})
+
+    with pytest.raises(ProviderError) as exc_info:
+        await provider.end_reservation("9", datetime(2030, 1, 1, 10, 30, tzinfo=UTC))
+
+    assert exc_info.value.error_code == ErrorCode.PROVIDER_REJECTED
+    assert session.calls_to("/edit") == []
+
+
+async def test_end_reservation_patches_editable_session() -> None:
+    session = _RoutedSession(_routes())
+    provider = _provider(session)
+    await provider.login({"username": "u", "password": "p"})
+
+    await provider.end_reservation("9", datetime(2030, 1, 1, 10, 30, tzinfo=UTC))
+
+    patch = session.calls_to("/parking_session/9/edit")[0]["kwargs"]["json"]
+    assert patch == {"new_ended_at": "2030-01-01T10:30:00+00:00"}
 
 
 async def test_machine_number_override_resolves_zone_and_survives_permit_refresh() -> None:

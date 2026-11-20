@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import json
 from collections.abc import Mapping
@@ -160,11 +161,7 @@ class Provider(BaseProvider):
             auth_required=True,
         )
         self._cache_parking_context(data)
-        paid_hours: list[PaidHoursBlock] = []
-        try:
-            paid_hours = await self._build_paid_zone_validity(days=14)
-        except ProviderError:
-            self._plogger.debug("could not fetch paid hours")
+        paid_hours = await self._paid_hours()
         permit = self._map_permit(
             data,
             client_product_id=client_product_id,
@@ -190,8 +187,32 @@ class Provider(BaseProvider):
         await self._ensure_parking_context()
         if not self._can_select_zone or self._machine_number is None:
             return []
+        return self._default_targets(await self._paid_hours())
+
+    async def fetch_all(
+        self,
+    ) -> tuple[Permit, list[Reservation], list[Favorite], list[ReservationTarget]]:
+        """Return all data, reusing the permit's paid hours for the default target."""
+        permit, reservations, favorites = await asyncio.gather(
+            self.get_permit(),
+            self.list_reservations(),
+            self.list_favorites(),
+        )
+        return permit, reservations, favorites, self._default_targets(permit.paid_hours)
+
+    def _default_targets(self, paid_hours: list[PaidHoursBlock]) -> list[ReservationTarget]:
+        """Return the default machine as the only target; its windows are the permit's."""
+        if not self._can_select_zone or self._machine_number is None:
+            return []
         machine = str(self._machine_number)
-        return [ReservationTarget(id=machine, name=machine)]
+        return [ReservationTarget(id=machine, name=machine, paid_hours=list(paid_hours))]
+
+    async def _paid_hours(self) -> list[PaidHoursBlock]:
+        try:
+            return await self._build_paid_zone_validity(days=14)
+        except ProviderError:
+            self._plogger.debug("could not fetch paid hours")
+            return []
 
     async def start_reservation(
         self,

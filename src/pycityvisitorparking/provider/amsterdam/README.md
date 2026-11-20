@@ -61,8 +61,8 @@ provider exposes the machine as a reservation target with
   `can_select_zone` raises `ValidationError`; nothing is started.
 - `Reservation.reservation_target_id` is the session's `machine_number` when the
   session list reports it.
-- `Permit.paid_hours` are those of the default machine; targets carry no
-  `paid_hours` of their own.
+- The default target carries the same `paid_hours` as `Permit.paid_hours`;
+  `fetch_all()` reuses one cost calculation for both.
 
 ## Supported operations
 

@@ -110,6 +110,7 @@ def _routes(**overrides: list[_FakeResponse]) -> dict[tuple[str, str], list[_Fak
             _FakeResponse({"data": [{**STARTED_SESSION, "status": "ACTIVE", "can_edit": True}]})
         ],
         ("PATCH", "/api/v1/ssp/parking_session/9/edit"): [_FakeResponse(STARTED_SESSION)],
+        ("GET", "/api/v1/ssp/favorite_vrn/list"): [_FakeResponse({"favorite_vrns": []})],
     }
     for key, value in overrides.items():
         method, suffix = key.split("|")
@@ -212,6 +213,22 @@ async def test_default_machine_is_the_only_listed_target() -> None:
 
     assert await provider.list_reservation_targets() == [ReservationTarget(id="1111", name="1111")]
     assert provider.info.reservation_target_selection == "free_input"
+
+
+async def test_fetch_all_gives_the_default_target_the_permit_paid_hours() -> None:
+    weekly = {"time_frame_data": [[{"startTime": "0900", "endTime": "2100"}] for _ in range(7)]}
+    session = _RoutedSession(
+        _routes(**{"POST|/api/v1/ssp/parking_session/cost_calculator": [_FakeResponse(weekly)]})
+    )
+    provider = _provider(session)
+    await provider.login({"username": "u", "password": "p"})
+
+    permit, _reservations, _favorites, targets = await provider.fetch_all()
+
+    assert len(permit.paid_hours) == 15
+    assert [target.id for target in targets] == ["1111"]
+    assert targets[0].paid_hours == permit.paid_hours
+    assert len(session.calls_to("/parking_session/cost_calculator")) == 1
 
 
 async def test_permit_without_zone_selection_has_no_targets_and_rejects_one() -> None:

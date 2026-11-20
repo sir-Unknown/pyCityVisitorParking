@@ -13,7 +13,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 import aiohttp
 
 from ...exceptions import AuthError, ErrorCode, ProviderError, ValidationError
-from ...models import Favorite, Permit, Reservation, ZoneValidityBlock
+from ...models import Favorite, PaidHoursBlock, Permit, Reservation
 from ..base import BaseProvider
 from ..loader import ProviderManifest
 from .const import (
@@ -144,17 +144,15 @@ class Provider(BaseProvider):
             auth_required=True,
         )
         self._cache_parking_context(data)
-        zone_validity = None
+        paid_hours = None
         try:
-            zone_validity = await self._build_paid_zone_validity(days=14)
+            paid_hours = await self._build_paid_zone_validity(days=14)
         except ProviderError:
-            self._plogger.debug(
-                "could not fetch paid zone validity; falling back to permit validity"
-            )
+            self._plogger.debug("could not fetch paid hours; falling back to permit validity")
         permit = self._map_permit(
             data,
             client_product_id=client_product_id,
-            zone_validity=zone_validity,
+            paid_hours=paid_hours,
         )
         self._plogger.operation_completed("get_permit")
         return permit
@@ -185,13 +183,19 @@ class Provider(BaseProvider):
         start_time: datetime,
         end_time: datetime,
         name: str | None = None,
+        reservation_target_id: str | None = None,
     ) -> Reservation:
         """Start a reservation for a license plate."""
         self._plogger.operation_started("start_reservation")
+        self._validate_reservation_target_id(reservation_target_id)
         start_dt, end_dt = self._validate_reservation_times(
             start_time,
             end_time,
             require_both=True,
+        )
+        # A start in the past means "start now"; send the current time instead.
+        start_dt, end_dt = self._validate_reservation_times(
+            self._start_not_before_now(start_dt, whole_minute=False), end_dt, require_both=True
         )
         normalized_plate = self._normalize_license_plate(license_plate)
         client_product_id = self._require_client_product_id()
@@ -504,7 +508,7 @@ class Provider(BaseProvider):
         data: Any,
         *,
         client_product_id: str,
-        zone_validity: list[ZoneValidityBlock] | None = None,
+        paid_hours: list[PaidHoursBlock] | None = None,
     ) -> Permit:
         if not isinstance(data, dict):
             raise ProviderError("Provider response included invalid permit data.")
@@ -518,16 +522,16 @@ class Provider(BaseProvider):
         if not permit_id:
             permit_id = client_product_id
         remaining_balance = self._extract_balance(data)
-        if zone_validity is None:
-            zone_validity = self._map_zone_validity(data)
+        if paid_hours is None:
+            paid_hours = self._map_zone_validity(data)
         return Permit(
             id=permit_id,
             remaining_balance=remaining_balance,
-            zone_validity=zone_validity,
+            paid_hours=paid_hours,
         )
 
-    def _map_zone_validity(self, data: dict[str, Any]) -> list[ZoneValidityBlock]:
-        entries: list[tuple[ZoneValidityBlock, bool]] = []
+    def _map_zone_validity(self, data: dict[str, Any]) -> list[PaidHoursBlock]:
+        entries: list[tuple[PaidHoursBlock, bool]] = []
         raw_zone_validity = data.get("zone_validity")
         if isinstance(raw_zone_validity, list):
             for item in raw_zone_validity:
@@ -541,9 +545,9 @@ class Provider(BaseProvider):
                     start = self._parse_provider_timestamp(str(start_raw))
                     end = self._parse_provider_timestamp(str(end_raw))
                 except ProviderError as exc:
-                    raise ProviderError("Provider returned invalid zone validity data.") from exc
+                    raise ProviderError("Provider returned invalid paid hours data.") from exc
                 is_free = item.get("is_free") is True
-                entries.append((ZoneValidityBlock(start_time=start, end_time=end), not is_free))
+                entries.append((PaidHoursBlock(start_time=start, end_time=end), not is_free))
         validity = data.get("validity")
         if not entries and isinstance(validity, dict):
             start_raw = validity.get("started_at") or validity.get("start_time")
@@ -554,25 +558,25 @@ class Provider(BaseProvider):
                     end = self._parse_provider_timestamp(str(end_raw))
                 except ProviderError as exc:
                     raise ProviderError("Provider returned invalid validity data.") from exc
-                entries.append((ZoneValidityBlock(start_time=start, end_time=end), True))
-        return self._filter_chargeable_zone_validity(entries)
+                entries.append((PaidHoursBlock(start_time=start, end_time=end), True))
+        return self._filter_paid_hours(entries)
 
-    async def _build_paid_zone_validity(self, *, days: int) -> list[ZoneValidityBlock]:
+    async def _build_paid_zone_validity(self, *, days: int) -> list[PaidHoursBlock]:
         """Fetch paid parking windows for today through the next given days."""
         if days < 0:
             raise ValidationError("Days must be zero or positive.")
         await self._ensure_parking_context()
         today = datetime.now(_LOCAL_TZ).date()
-        entries: list[tuple[ZoneValidityBlock, bool]] = []
+        entries: list[tuple[PaidHoursBlock, bool]] = []
         for offset in range(days + 1):
             target_date = today + timedelta(days=offset)
             entries.extend(await self._fetch_paid_zone_validity_for_date(target_date))
-        return self._filter_chargeable_zone_validity(entries)
+        return self._filter_paid_hours(entries)
 
     async def _fetch_paid_zone_validity_for_date(
         self,
         target_date: date,
-    ) -> list[tuple[ZoneValidityBlock, bool]]:
+    ) -> list[tuple[PaidHoursBlock, bool]]:
         """Return paid parking windows for a specific local date."""
         start_local = datetime.combine(target_date, time(0, 0), tzinfo=_LOCAL_TZ)
         end_local = datetime.combine(target_date, time(23, 59), tzinfo=_LOCAL_TZ)
@@ -610,7 +614,7 @@ class Provider(BaseProvider):
         self,
         raw: Any,
         target_date: date,
-    ) -> list[tuple[ZoneValidityBlock, bool]]:
+    ) -> list[tuple[PaidHoursBlock, bool]]:
         if not isinstance(raw, list):
             return []
         weekday = target_date.weekday()
@@ -619,7 +623,7 @@ class Provider(BaseProvider):
         day_blocks = raw[weekday]
         if not isinstance(day_blocks, list):
             return []
-        entries: list[tuple[ZoneValidityBlock, bool]] = []
+        entries: list[tuple[PaidHoursBlock, bool]] = []
         for block in day_blocks:
             if not isinstance(block, dict):
                 continue
@@ -633,7 +637,7 @@ class Provider(BaseProvider):
                 end_local = end_local + timedelta(days=1)
             entries.append(
                 (
-                    ZoneValidityBlock(
+                    PaidHoursBlock(
                         start_time=self._format_utc_timestamp(start_local),
                         end_time=self._format_utc_timestamp(end_local),
                     ),

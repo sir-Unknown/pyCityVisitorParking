@@ -49,7 +49,7 @@ Pass `machine_number` at login to use another machine instead, for example
 `--extra machine_number=1234` with the live check script. The provider resolves
 its zone through `paid_parking_zone/get_by_machine_number` and sends both
 `machine_number` and `zone_id` when starting a session; it never marks the
-machine as the new default. Paid parking windows reported in `zone_validity`
+machine as the new default. Paid parking windows reported in `paid_hours`
 use the selected machine as well. The override is kept across automatic
 re-authentication.
 
@@ -76,7 +76,7 @@ permit configuration has `can_select_zone` set.
   across permit renewals; falls back to `client_product_id` when unavailable.
 - `Permit.remaining_balance` uses `ssp.main_account.time_balance` when present
   (seconds), falling back to `money_balance` or `balance`.
-- `Permit.zone_validity` uses the permit `validity.started_at`/`validity.ended_at`
+- `Permit.paid_hours` uses the permit `validity.started_at`/`validity.ended_at`
   window when available. The API does not expose explicit paid/free windows, so
   the provider treats the validity window as chargeable.
 - If a `zone_validity` list is present, entries with `is_free` set to `true`
@@ -97,7 +97,7 @@ Mapping table (based on `amsterdam.json` sample):
   - `username` (login credential) -> `Permit.id` for stable entity identity.
   - `client_product_id` -> fallback for `Permit.id` when `username` is unavailable.
   - `ssp.main_account.time_balance`/`money_balance` -> `Permit.remaining_balance`.
-  - `validity.started_at`/`validity.ended_at` -> `Permit.zone_validity` fallback.
+  - `validity.started_at`/`validity.ended_at` -> `Permit.paid_hours` fallback.
   - `ssp.favorite_machine_number` -> cached `machine_number` for `start_reservation`.
   - `permit.zone_id` (if present) -> cached `zone_id` for `start_reservation`.
 - `parking_session list` (`/api/v1/ssp/parking_session/list`)

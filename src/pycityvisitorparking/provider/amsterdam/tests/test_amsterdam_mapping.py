@@ -4,12 +4,15 @@ import aiohttp
 import pytest
 
 from pycityvisitorparking.exceptions import ProviderError, ValidationError
-from pycityvisitorparking.models import Favorite, Permit, Reservation, ZoneValidityBlock
+from pycityvisitorparking.models import Favorite, PaidHoursBlock, Permit, Reservation
 from pycityvisitorparking.provider.amsterdam import api as amsterdam_api
 from pycityvisitorparking.provider.amsterdam.api import Provider
 from pycityvisitorparking.provider.amsterdam.const import DEFAULT_API_URI
 from pycityvisitorparking.provider.loader import ProviderManifest
 from pycityvisitorparking.util import format_utc_timestamp, parse_timestamp
+
+# Frozen clock for start_reservation tests; the requested starts lie after it.
+NOW = datetime(2026, 1, 24, 0, 0, tzinfo=UTC)
 
 ACCOUNT_SAMPLE = {
     "client_product_id": 42,
@@ -79,13 +82,13 @@ async def test_map_permit_uses_validity_and_balance():
     assert isinstance(permit, Permit)
     assert permit.id == "42"
     assert permit.remaining_balance == 7200
-    assert permit.zone_validity == [
-        ZoneValidityBlock(
+    assert permit.paid_hours == [
+        PaidHoursBlock(
             start_time="2024-01-01T07:00:00Z",
             end_time="2024-01-01T17:00:00Z",
         )
     ]
-    for block in permit.zone_validity:
+    for block in permit.paid_hours:
         assert_utc_timestamp(block.start_time)
         assert_utc_timestamp(block.end_time)
 
@@ -105,8 +108,8 @@ async def test_map_permit_filters_free_zone_validity():
         )
         permit = provider._map_permit(ZONE_VALIDITY_SAMPLE, client_product_id="7")
 
-    assert permit.zone_validity == [
-        ZoneValidityBlock(
+    assert permit.paid_hours == [
+        PaidHoursBlock(
             start_time="2024-01-03T08:00:00Z",
             end_time="2024-01-03T17:00:00Z",
         )
@@ -349,6 +352,7 @@ async def test_start_reservation_includes_machine_number(monkeypatch: pytest.Mon
         provider._logged_in = True
         provider._machine_number = 18773
         monkeypatch.setattr(provider, "_request_json", fake_request_json)
+        monkeypatch.setattr(provider, "_now", lambda: NOW)
 
         await provider.start_reservation(
             "ab-12-cd",
@@ -359,6 +363,58 @@ async def test_start_reservation_includes_machine_number(monkeypatch: pytest.Mon
     payload = captured["json"]
     assert isinstance(payload, dict)
     assert payload["machine_number"] == 18773
+
+
+@pytest.mark.asyncio
+async def test_start_reservation_start_now_uses_the_current_time(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    async def fake_request_json(
+        method: str,
+        path: str,
+        *,
+        json: object | None = None,
+        params: object | None = None,
+        allow_reauth: bool,
+        auth_required: bool,
+    ) -> object:
+        captured["json"] = json
+        return {
+            "parking_session_id": 1,
+            "vrn": "AB12CD",
+            "started_at": "2026-01-24T00:00:00+00:00",
+            "ended_at": "2026-01-24T02:00:00+00:00",
+        }
+
+    async with aiohttp.ClientSession() as session:
+        provider = Provider(
+            session,
+            ProviderManifest(
+                id="amsterdam",
+                name="Amsterdam",
+                favorite_update_fields=(),
+                reservation_update_fields=("end_time",),
+            ),
+            base_url="https://example",
+        )
+        provider._client_product_id = "123"
+        provider._auth_header_value = "Bearer token"
+        provider._logged_in = True
+        provider._machine_number = 18773
+        monkeypatch.setattr(provider, "_request_json", fake_request_json)
+        monkeypatch.setattr(provider, "_now", lambda: NOW)
+
+        await provider.start_reservation(
+            "ab-12-cd",
+            start_time=datetime(2026, 1, 23, 23, 0, tzinfo=UTC),
+            end_time=datetime(2026, 1, 24, 2, 0, tzinfo=UTC),
+        )
+
+    payload = captured["json"]
+    assert isinstance(payload, dict)
+    assert payload["started_at"] == provider._format_rfc1123(NOW)
 
 
 @pytest.mark.asyncio
@@ -400,6 +456,7 @@ async def test_start_reservation_uses_zone_id_when_machine_missing(
         provider._logged_in = True
         provider._zone_id = "Z-1"
         monkeypatch.setattr(provider, "_request_json", fake_request_json)
+        monkeypatch.setattr(provider, "_now", lambda: NOW)
 
         await provider.start_reservation(
             "ab-12-cd",
@@ -441,6 +498,7 @@ async def test_start_reservation_requires_machine_or_zone(
         provider._zone_id = None
         monkeypatch.setattr(provider, "_request_json", fake_request_json)
         monkeypatch.setattr(provider, "_ensure_parking_context", fake_ensure_context)
+        monkeypatch.setattr(provider, "_now", lambda: NOW)
 
         with pytest.raises(ProviderError):
             await provider.start_reservation(

@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- The "start now" rule of `start_reservation` (a start in the past becomes the current minute) now uses the shared `BaseProvider._start_not_before_now` helper; behavior is unchanged.
 - Breaking: `fetch_all()` now returns `(permit, reservations, favorites, targets)`; the zones are fetched once for both the permit windows and the targets. Unpack four values instead of three.
 - When a created reservation is not echoed by the portal, look it up by permit and match the license plate locally instead of putting the plate in the XPath.
 - Add the Rotterdam provider for the Mendix based visitor parking portal at

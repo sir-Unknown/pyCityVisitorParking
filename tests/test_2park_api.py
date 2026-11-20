@@ -6,7 +6,7 @@ import asyncio
 import importlib
 import json
 import logging
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import pytest
@@ -75,12 +75,18 @@ def _manifest() -> ProviderManifest:
     )
 
 
+# Before the reservation times used in these tests.
+NOW = datetime(2026, 3, 25, 8, 0, 30, tzinfo=UTC)
+
+
 def _provider(session: object) -> Provider:
-    return Provider(
+    provider = Provider(
         session,  # type: ignore[arg-type]
         _manifest(),
         base_url="https://mijn.2park.nl",
     )
+    provider._now = lambda: NOW
+    return provider
 
 
 _AUTH_OK = {"status": {"code": {"major": "OK"}}}
@@ -316,6 +322,31 @@ async def test_start_reservation_returns_action() -> None:
     assert params["TIMESTART"] == "25-03-2026 10:00:00"
     assert params["TIMEEND"] == "25-03-2026 12:00:00"
     assert params["LOCATION"] == "BDA1317"
+
+
+@pytest.mark.parametrize(
+    ("start", "sent_start"),
+    [
+        (NOW - timedelta(minutes=5), "25-03-2026 09:00:00"),
+        (NOW + timedelta(minutes=10), "25-03-2026 09:10:30"),
+    ],
+    ids=["past", "later"],
+)
+async def test_start_reservation_start_now_uses_the_current_minute(
+    start: datetime, sent_start: str
+) -> None:
+    """D1: a start in the past is sent as the current minute; a later one unchanged."""
+    provider, session = await _logged_in_provider(
+        [
+            _FakeResponse(json_data=_AUTH_OK),
+            _FakeResponse(json_data=_CATEGORIES),
+            _FakeResponse(json_data=_START_ACTION_OK),
+        ]
+    )
+    await provider.start_reservation("AB1234", start, NOW + timedelta(hours=2))
+    action = json.loads(session.requests[-1]["kwargs"]["data"]["data"])
+    params = {p["prr_label"]: p["prr_value"] for p in action["action"]["atn_parameters"]}
+    assert params["TIMESTART"] == sent_start
 
 
 async def test_start_reservation_no_location_raises() -> None:

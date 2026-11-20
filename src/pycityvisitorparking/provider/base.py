@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 from abc import ABC, abstractmethod
 from collections.abc import Awaitable, Callable, Iterable, Mapping
-from datetime import datetime
+from datetime import UTC, datetime
 from importlib.metadata import PackageNotFoundError, version
 from typing import Any, Literal, Protocol, TypeVar, overload
 from urllib.parse import urlparse
@@ -246,6 +246,21 @@ class BaseProvider(ABC):
             raise ValidationError("base_url is required to build provider requests.")
         normalized_path = path if path.startswith("/") else f"/{path}"
         return f"{self._base_url}{self._api_uri}{normalized_path}"
+
+    def _now(self) -> datetime:
+        """Return the current time in UTC; tests override this to freeze the clock."""
+        return datetime.now(UTC)
+
+    def _start_not_before_now(self, start: datetime, *, whole_minute: bool) -> datetime:
+        """Return ``start``, moved to now when it is earlier ("start now").
+
+        With ``whole_minute`` now is floored to the minute, for backends that work
+        with whole minutes; see ``start_reservation``.
+        """
+        now = self._now()
+        if whole_minute:
+            now = now.replace(second=0, microsecond=0)
+        return max(start, now)
 
     @overload
     def _validate_reservation_times(
@@ -568,6 +583,13 @@ class BaseProvider(ABC):
         ``reservation_target_id`` selects where the reservation is booked (see
         ``list_reservation_targets``); ``None`` uses the default target. Providers validate
         it with ``_validate_reservation_target_id`` before any request.
+
+        A ``start_time`` at or before the current time means "start now": the reservation
+        starts now, without a lead (``_start_not_before_now``; providers whose backend works
+        with whole minutes start at the current minute). A start in the future is sent
+        unchanged, apart from the rounding the provider already applies. A backend that
+        rejects the start raises ``ProviderError``; it never fails silently. Callers pass
+        the requested start as is.
         """
 
     async def list_reservation_targets(self) -> list[ReservationTarget]:

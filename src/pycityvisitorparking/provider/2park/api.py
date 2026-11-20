@@ -169,6 +169,11 @@ class Provider(BaseProvider):
         self._validate_reservation_target_id(reservation_target_id)
         await self._ensure_authenticated()
         start_dt, end_dt = self._validate_reservation_times(start_time, end_time, require_both=True)
+        # DESIGN DECISION D1 (see README "Design decisions"): a start in the past ("start
+        # now") is sent as the current minute, like the official web app.
+        start_dt, end_dt = self._validate_reservation_times(
+            self._start_not_before_now(start_dt, whole_minute=True), end_dt, require_both=True
+        )
         normalized_plate = self._normalize_license_plate(license_plate)
         location = self._product_location
         if not location:

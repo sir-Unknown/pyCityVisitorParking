@@ -142,6 +142,11 @@ class Provider(BaseProvider):
             end_time,
             require_both=True,
         )
+        # DESIGN DECISION D1 (see README "Design decisions"): a start in the past ("start
+        # now") is sent as the current time; the API rejects a start it refuses (pv74).
+        start_dt, end_dt = self._validate_reservation_times(
+            self._start_not_before_now(start_dt, whole_minute=False), end_dt, require_both=True
+        )
         start_time_value = self._format_utc_timestamp(start_dt)
         end_time_value = self._format_utc_timestamp(end_dt)
         normalized_plate = self._normalize_license_plate(license_plate)

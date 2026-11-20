@@ -96,6 +96,32 @@ milliseconds and an explicit offset (for example,
 - Favorite updates are not supported.
 - `login/info`, `upgrade`, and history endpoints are not implemented in this
   provider variant.
+- A "start now" reservation is sent with the current minute (D1); this matches
+  the official web app but is not verified against the live backend.
+
+## Design decisions
+
+These are deliberate choices, marked in the code with `DESIGN DECISION Dn`. If
+one must change, change the code at the marked place, the tests named here, and
+this section together, and add a line to `CHANGELOG.md`.
+
+### D1: "Start now" starts in the current minute, and a rejection is an error
+
+- **Behavior**: a `start_reservation` start in the past ("start now") is sent as
+  the current minute (seconds dropped); a later start is sent unchanged. When the
+  create response carries `ErrorMessage`, `start_reservation` raises
+  `ProviderError` with `error_code="provider_rejected"` at once, without the base
+  refetch. The message text can contain the license plate, so it stays out of
+  the exception; `detail` only holds the `Result` code (for example `Result 3`).
+- **Why**: the official web app defaults the start to
+  `moment().seconds(0).milliseconds(0)` and sends it as `DateFrom` with no lead,
+  and it treats `ErrorMessage`/`Result` as a rejection. Not verified against the
+  live backend; if the portal refuses the start, the rejection surfaces as a
+  provider error, never silently.
+- **Where**: `Provider.start_reservation` in `api.py`
+  (`_start_not_before_now(..., whole_minute=True)` and the `ErrorMessage` check).
+- **Tests**: `provider/dvsportal/tests/test_provider.py::test_start_reservation_start_now_uses_the_current_minute`,
+  `provider/dvsportal/tests/test_provider.py::test_start_reservation_error_message_raises_provider_rejected`.
 
 ## Links
 

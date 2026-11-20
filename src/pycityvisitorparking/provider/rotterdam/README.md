@@ -227,9 +227,11 @@ marked place, the tests named here, and this section together, and add a line to
 - **Why**: the portal's own client trims to minutes and refuses starts in the
   past, and for a parking action that is already running it only offers
   changing the end (whether the server would reject a new start was not tried).
-- **Where**: `Provider._reservation_window`, `Provider.update_reservation`, and
-  `Provider.end_reservation` in `api.py`.
+- **Where**: `Provider._reservation_window` (through the shared
+  `BaseProvider._start_not_before_now` with `whole_minute=True`),
+  `Provider.update_reservation`, and `Provider.end_reservation` in `api.py`.
 - **Tests**: `test_start_reservation_prices_then_saves_like_the_web_client`,
+  `test_start_reservation_start_now_uses_the_current_minute`,
   `test_update_reservation_cannot_move_the_start_of_a_running_reservation`,
   `test_update_reservation_extends_the_end_and_rereads`,
   `test_end_reservation_stops_a_running_reservation_at_the_current_time`.

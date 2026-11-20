@@ -1,13 +1,5 @@
 # Rotterdam
 
-> [!WARNING]
-> **Not yet tested with a real permit.** This provider was developed without
-> access to an account that holds a permit. Login and saved license plates
-> (favorites) were verified against the live portal. Permit, balance, zone
-> validity, and every successful reservation action (start, update, end, cancel)
-> are based on the portal's published data model and are only covered by tests
-> with mocked portal responses. See "Verification status" below.
-
 Rotterdam provider for visitor parking using the reverse engineered visitor
 parking portal of the municipality of Rotterdam.
 
@@ -131,11 +123,23 @@ rejected with `ValidationError`.
 
 Login, saved plates (add, update, remove, list), operation resolution, the
 rejection path of a parking action, and session renewal were verified against
-the live portal. The development account had no permit, so permit data, zone
-validity, and the successful parking-action path (start, update, end, cancel)
-were implemented from the portal's published data model and client definitions
-and are covered by tests with mocked portal responses only. Please report
-differences seen on accounts that hold a permit.
+the live portal during development.
+
+A user with a real permit covering six zones tested the 0.6.0 pre-releases
+against the live portal and checked every step in the Rotterdam app
+([ha_City-Visitor-Parking#195](https://github.com/sir-Unknown/ha_City-Visitor-Parking/issues/195)):
+
+- permit, balance, saved plates, and reservations match the app;
+- the paid hours of each zone match the app, including a zone whose Friday and
+  Saturday window runs past midnight;
+- planned reservations were created, extended, and cancelled, and running
+  reservations were started, extended, and ended, in the default zone and in
+  another zone;
+- on 0.6.0b8, a reservation started and ended through the generic reservation
+  target contract in a zone other than the default landed in that zone.
+
+Please report differences seen on other accounts, for example permits with a
+business-hours balance or several permits.
 
 ## Design decisions
 

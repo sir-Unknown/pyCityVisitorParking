@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Add Amsterdam provider (meldcode and pincode login), based on the reverse engineered Parkeervergunningen Amsterdam API ([#1](https://github.com/sir-Unknown/pyCityVisitorParking/issues/1)). The parking machine is a `free_input` reservation target: the permit's default machine is listed and any other machine number can be passed as `reservation_target_id` ([#64](https://github.com/sir-Unknown/pyCityVisitorParking/issues/64)).
+- Restore `scripts/provider_live_check.py` and `scripts/sanitize.py` for provider live checks, as referenced by `docs/provider-development/README.md`. The live check takes `--reservation-target` and prints the provider's reservation targets; `--check-paid-windows` prints the permit's `paid_hours`.
+- `scripts/sanitize.py` now sanitizes browser HAR recordings, so a session recorded in the provider's web portal can be shared safely. The provider development guide describes how to record one.
+- Add `get_reservation_target(reservation_target_id)` to providers: it returns one target with its `paid_hours`. The base implementation looks the id up in `list_reservation_targets()`; `free_input` providers also resolve other ids, so callers can show the paid hours of a typed id before starting.
+
 ## 0.6.0
 
 - "Start now" is a provider-owned rule: a `start_reservation` `start_time` at or before the current time means "start now", and the reservation starts now, without a lead, through the shared `BaseProvider._start_not_before_now(start, *, whole_minute)` helper (clock in the overridable `BaseProvider._now()`). DVS Portal, 2park and Rotterdam send the current minute (the official DVS and 2park web apps do the same), The Hague and the demo provider send the current time. A later start is sent unchanged. A backend that rejects the start raises `ProviderError` with `error_code="provider_rejected"`; DVS Portal now does so as soon as the create response carries `ErrorMessage`, instead of ending with "Reservation was not returned by the provider.", and keeps the message text (which can contain the license plate) out of the exception. Integrations pass the requested start unchanged ([ha_City-Visitor-Parking#195](https://github.com/sir-Unknown/ha_City-Visitor-Parking/issues/195)).

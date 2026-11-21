@@ -50,6 +50,7 @@ Currently bundled providers:
 - The Hague
 - 2park
 - Rotterdam
+- Amsterdam (meldcode and pincode login)
 
 Provider manifests are discovered from `src/pycityvisitorparking/provider/` without importing all providers up front.
 
@@ -59,6 +60,7 @@ Provider-specific documentation:
 - [The Hague](https://github.com/sir-Unknown/pyCityVisitorParking/blob/main/src/pycityvisitorparking/provider/the_hague/README.md)
 - [2park](https://github.com/sir-Unknown/pyCityVisitorParking/blob/main/src/pycityvisitorparking/provider/2park/README.md)
 - [Rotterdam](https://github.com/sir-Unknown/pyCityVisitorParking/blob/main/src/pycityvisitorparking/provider/rotterdam/README.md)
+- [Amsterdam](https://github.com/sir-Unknown/pyCityVisitorParking/blob/main/src/pycityvisitorparking/provider/amsterdam/README.md)
 
 ---
 
@@ -70,6 +72,7 @@ For the exact `base_url`, `api_uri`, and provider-specific notes, see the provid
 - **The Hague**: The Hague
 - **2park**: Amstelveen, Assen, Bergen op Zoom, Breda, Deventer, Dordrecht, Eindhoven, Emmen, Etten-Leur, Gorinchem, Hardenberg, Harderwijk, Maastricht, Oosterhout, Oss, Roosendaal, Sluis, Terneuzen, Tiel, Veenendaal, Vlaardingen
 - **Rotterdam**: Rotterdam
+- **Amsterdam**: Amsterdam
 
 ---
 
@@ -177,6 +180,9 @@ active permit has nothing to choose. Pass the chosen id as
 `Permit.paid_hours` holds the windows of the default target, and
 `ReservationTarget.paid_hours` those of each listed target. The booked target is
 returned as `Reservation.reservation_target_id`; updating a reservation never changes it.
+`await provider.get_reservation_target(target_id)` returns one target with its
+`paid_hours`, for example to show the paid hours of a typed `free_input` id before
+starting; an id the provider cannot resolve raises `ValidationError`.
 `fetch_all()` returns `(permit, reservations, favorites, targets)`, so a refresh gets the targets without a second round of requests.
 Target ids are opaque strings; provider-native values stay inside the provider.
 

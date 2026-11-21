@@ -242,8 +242,12 @@ class Provider(BaseProvider):
         for machine in sorted(others):
             try:
                 paid_hours = await self._machine_paid_hours_for(machine)
-            except ProviderError:
-                self._plogger.debug("could not fetch paid hours of another parking machine")
+            except ProviderError as exc:
+                self._plogger.debug(
+                    "could not fetch paid hours of another parking machine: %s: %s",
+                    type(exc).__name__,
+                    exc.detail,
+                )
                 continue
             targets.append(self._target(machine, paid_hours))
         return targets
@@ -255,8 +259,10 @@ class Provider(BaseProvider):
         """Return the paid hours of the default machine; empty when they cannot be fetched."""
         try:
             return await self._build_paid_zone_validity(days=14)
-        except ProviderError:
-            self._plogger.debug("could not fetch paid hours")
+        except ProviderError as exc:
+            self._plogger.debug(
+                "could not fetch paid hours: %s: %s", type(exc).__name__, exc.detail
+            )
             return []
 
     async def _machine_paid_hours_for(self, machine: int) -> list[PaidHoursBlock]:
@@ -605,15 +611,8 @@ class Provider(BaseProvider):
     ) -> Permit:
         if not isinstance(data, dict):
             raise ProviderError("Provider response included invalid permit data.")
-        # Use username as the stable permit id for Home Assistant entity identity.
-        username = self._credentials.get("username") if self._credentials else None
-        permit_id = self._coerce_id(username)
-        if not permit_id:
-            permit_id = self._coerce_id(
-                data.get("client_product_id") or data.get("id") or client_product_id
-            )
-        if not permit_id:
-            permit_id = client_product_id
+        # The meldcode (login username) is a credential, so it never becomes the id.
+        permit_id = client_product_id
         remaining_balance, balance_unit = self._extract_balance(data)
         return Permit(
             id=permit_id,
@@ -634,22 +633,30 @@ class Provider(BaseProvider):
         if days < 0:
             raise ValidationError("Days must be zero or positive.")
         today = self._now().astimezone(_LOCAL_TZ).date()
-        time_frame_data = await self._fetch_time_frame_data(today, machine_number)
+        time_frame_data = await self._fetch_time_frame_data(machine_number)
+        if not isinstance(time_frame_data, list):
+            self._plogger.debug("cost calculation returned no weekly paid parking schedule")
         entries: list[tuple[PaidHoursBlock, bool]] = []
         for offset in range(days + 1):
             target_date = today + timedelta(days=offset)
             entries.extend(self._map_time_frame_data_for_date(time_frame_data, target_date))
         return self._filter_paid_hours(entries)
 
-    async def _fetch_time_frame_data(self, target_date: date, machine_number: int | None) -> Any:
-        """Return the weekly paid parking schedule from a cost calculation for a date."""
+    async def _fetch_time_frame_data(self, machine_number: int | None) -> Any:
+        """Return the weekly paid parking schedule from a cost calculation.
+
+        ``time_frame_data`` is a weekly schedule, so the calculated period only
+        has to be one the portal accepts: a session that starts now (or at the
+        permit's validity start) and lasts an hour, never one in the past.
+        """
         await self._ensure_parking_context()
-        start_local = datetime.combine(target_date, time(0, 0), tzinfo=_LOCAL_TZ)
-        end_local = datetime.combine(target_date, time(23, 59), tzinfo=_LOCAL_TZ)
+        start = self._now()
+        if self._validity_start is not None and start < self._validity_start:
+            start = self._validity_start
         payload: dict[str, Any] = {
             "client_product_id": self._coerce_client_product_id(self._require_client_product_id()),
-            "started_at": self._format_rfc1123(start_local),
-            "ended_at": self._format_rfc1123(end_local),
+            "started_at": self._format_rfc1123(start),
+            "ended_at": self._format_rfc1123(start + timedelta(hours=1)),
         }
         # The portal sends only the machine number to the cost calculator.
         if machine_number is not None:

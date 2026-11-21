@@ -75,6 +75,8 @@ async def test_map_permit_balance_uses_portal_units(
             ),
             base_url="https://example",
         )
+        # The meldcode is a credential and must not become the permit id.
+        provider._credentials = {"username": "12345678", "password": "1234"}
         permit = provider._map_permit(
             {"client_product_id": 42, "ssp": {"main_account": main_account}},
             client_product_id="42",
@@ -275,17 +277,17 @@ async def test_paid_hours_repeat_the_weekly_schedule_from_one_calculation(
         provider._can_select_zone = True
         provider._machine_number = 18773
         monkeypatch.setattr(provider, "_request_json", fake_request_json)
-        monkeypatch.setattr(
-            provider,
-            "_now",
-            lambda: datetime.combine(monday, time(12), tzinfo=amsterdam_api._LOCAL_TZ),
-        )
+        now = datetime.combine(monday, time(12, 30, 15), tzinfo=amsterdam_api._LOCAL_TZ)
+        monkeypatch.setattr(provider, "_now", lambda: now)
 
         blocks = await provider._build_paid_zone_validity(days=7)
 
     assert len(calls) == 1
     assert isinstance(calls[0], dict)
     assert calls[0]["machine_number"] == 18773
+    # A period in the past may be refused, so the calculation starts now.
+    assert calls[0]["started_at"] == "Mon, 19 Jan 2026 11:30:15 GMT"
+    assert calls[0]["ended_at"] == "Mon, 19 Jan 2026 12:30:15 GMT"
     expected = []
     for day in (monday, date(2026, 1, 26)):
         start = datetime.combine(day, time(9, 0), tzinfo=amsterdam_api._LOCAL_TZ)

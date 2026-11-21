@@ -82,17 +82,20 @@ provider exposes the machine as a reservation target with
 
 ## Mapping notes
 
-- `Permit.id` uses the login `username` to keep Home Assistant entity identity stable
-  across permit renewals; falls back to `client_product_id` when unavailable.
+- `Permit.id` is the `client_product_id`. The login `username` (meldcode) is a
+  credential and is never used as an id.
 - `Permit.remaining_balance` uses `ssp.main_account.time_balance` (seconds,
   reported in whole minutes with `balance_unit=MINUTE`) when present, otherwise
   `money_balance` (cents, reported in euros with `balance_unit=EURO`). A
   balance of `0` counts as present, as in the portal.
 - `Permit.paid_hours` comes from the `time_frame_data` of one
-  `parking_session/cost_calculator` call for today. `time_frame_data` is a
+  `parking_session/cost_calculator` call for a one-hour period from now (or
+  from the permit's `validity.started_at` when that is later); like the
+  portal, it never calculates a period in the past. `time_frame_data` is a
   weekly schedule (index 0 is Monday, an empty day is free) and is repeated
   over today and the next 14 days. Whether public holidays deviate from this
-  schedule is unknown. If the calculation fails, `paid_hours` is empty.
+  schedule is unknown. If the calculation fails, `paid_hours` is empty and the
+  reason is logged at debug level.
 - `start_reservation` sends the parking machine fields described in
   [Parking machine](#parking-machine). Like the portal, a start before the
   permit's `validity.started_at` is moved to that moment.
@@ -111,8 +114,7 @@ Mapping table (based on `amsterdam.json` sample):
 - `permit overview` (`/api/v1/permit_overview/product_list`)
   - `response.data[].id` or `response.data[].client_product_id` -> fallback source for `client_product_id`.
 - `client_product` (`/api/v1/client_product/{client_product_id}`)
-  - `username` (login credential) -> `Permit.id` for stable entity identity.
-  - `client_product_id` -> fallback for `Permit.id` when `username` is unavailable.
+  - `client_product_id` -> `Permit.id`.
   - `ssp.main_account.time_balance`/`money_balance` -> `Permit.remaining_balance` and `Permit.balance_unit`.
   - `config.can_select_zone` -> whether a parking machine is sent.
   - `ssp.favorite_machine_number` -> default `machine_number` for `start_reservation`.

@@ -19,3 +19,5 @@
 - List the machines of open sessions as reservation targets after the default machine, and resolve any machine through `get_reservation_target()`, each with its own `paid_hours`.
 - Read a started session or added favorite back from the list when the portal's response lacks its license plate; an ended or edited session is returned from the session read before the change. Previously these succeeded upstream but raised `License plate is empty after normalization.`.
 - Request parking sessions newest first (`sort=parking_session_id:desc`), like the portal, so open sessions stay on the first page.
+- Calculate `paid_hours` for a one-hour period from now instead of today from midnight; the portal never calculates a period in the past. Log why the paid hours could not be fetched at debug level.
+- Use `client_product_id` as `Permit.id` instead of the login `username`, which is the meldcode and therefore a credential.

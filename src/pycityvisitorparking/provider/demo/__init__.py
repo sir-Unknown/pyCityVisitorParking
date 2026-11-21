@@ -78,10 +78,17 @@ _ROTTERDAM_ZONES: tuple[tuple[str, _WeekSchedule], ...] = (
     ("630", ((time(9), time(21)),) * 6 + ((time(13), time(18)),)),
     ("632", ((time(8), time(18)),) * 5 + ((time(10), time(17)), None)),
 )
-# The Amsterdam demo permit books at its default parking machine, the only target
-# (the real provider lists the default machine too). Paid until midnight, Sunday from noon.
+# The Amsterdam demo permit books at its default parking machine (the real provider
+# lists the default machine too). Paid until midnight, Sunday from noon. Any other
+# machine number is accepted and paid until 21:00, like a neighbourhood with another tariff.
 _AMSTERDAM_MACHINE = "19850"
 _AMSTERDAM_SCHEDULE: _WeekSchedule = ((time(9), time(0)),) * 6 + ((time(12), time(0)),)
+_AMSTERDAM_OTHER_SCHEDULE: _WeekSchedule = ((time(9), time(21)),) * 6 + ((time(12), time(21)),)
+
+
+def _is_machine_number(value: str) -> bool:
+    return value.isascii() and value.isdigit()
+
 
 _RESERVATIONS: list[dict[str, str]] = [
     {
@@ -209,15 +216,19 @@ class Provider(BaseProvider):
         return super().reservation_target_selection
 
     async def list_reservation_targets(self) -> list[ReservationTarget]:
-        """Return the demo targets; only the Rotterdam and Amsterdam demo permits have any."""
+        """Return the demo targets; only the Rotterdam and Amsterdam demo permits have any.
+
+        The Amsterdam demo lists its default machine, then the machines of its reservations.
+        """
         if self._is_amsterdam():
-            return [
-                ReservationTarget(
-                    id=_AMSTERDAM_MACHINE,
-                    name=_AMSTERDAM_MACHINE,
-                    paid_hours=self._week_windows(_AMSTERDAM_SCHEDULE),
-                )
-            ]
+            others = sorted(
+                {
+                    str(r["reservation_target_id"])
+                    for r in self._get_reservations()
+                    if r["reservation_target_id"] not in (None, _AMSTERDAM_MACHINE)
+                }
+            )
+            return [self._amsterdam_target(machine) for machine in [_AMSTERDAM_MACHINE, *others]]
         if not self._is_rotterdam():
             return []
         return [
@@ -228,6 +239,19 @@ class Provider(BaseProvider):
             )
             for zone_id, schedule in _ROTTERDAM_ZONES
         ]
+
+    async def get_reservation_target(self, reservation_target_id: str) -> ReservationTarget:
+        """The Amsterdam demo resolves any parking machine number; others use the list."""
+        target_id = self._validate_reservation_target_id(reservation_target_id)
+        if self._is_amsterdam() and target_id is not None and _is_machine_number(target_id):
+            return self._amsterdam_target(target_id)
+        return await super().get_reservation_target(reservation_target_id)
+
+    def _amsterdam_target(self, machine: str) -> ReservationTarget:
+        schedule = (
+            _AMSTERDAM_SCHEDULE if machine == _AMSTERDAM_MACHINE else _AMSTERDAM_OTHER_SCHEDULE
+        )
+        return ReservationTarget(id=machine, name=machine, paid_hours=self._week_windows(schedule))
 
     def _week_windows(self, schedule: _WeekSchedule) -> list[PaidHoursBlock]:
         """Return the upcoming paid windows of a demo target for one week.
@@ -318,9 +342,7 @@ class Provider(BaseProvider):
         target_ids = [target.id for target in await self.list_reservation_targets()]
         if requested_target is not None and requested_target not in target_ids:
             # The Amsterdam demo accepts any parking machine number (free input).
-            free_input_machine = (
-                self._is_amsterdam() and requested_target.isascii() and requested_target.isdigit()
-            )
+            free_input_machine = self._is_amsterdam() and _is_machine_number(requested_target)
             if not free_input_machine:
                 raise ValidationError("reservation_target_id is not a target of the permit.")
         start_time, end_time = self._validate_reservation_times(

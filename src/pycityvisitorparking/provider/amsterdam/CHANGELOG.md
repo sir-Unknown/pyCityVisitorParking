@@ -16,3 +16,4 @@
 - Reject reservation updates and ends for sessions with `can_edit: false` or that are no longer ACTIVE/FUTURE before sending them, matching the portal.
 - Move a reservation start before the permit's `validity.started_at` to that moment, matching the portal.
 - Read the default parking machine only from `ssp.favorite_machine_number`; drop the unverified `permit`/top-level machine and `zone_id` fallbacks.
+- List the machines of open sessions as reservation targets after the default machine, and resolve any machine through `get_reservation_target()`, each with its own `paid_hours`.

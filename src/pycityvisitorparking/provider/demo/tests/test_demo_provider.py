@@ -144,6 +144,20 @@ async def test_amsterdam_demo_accepts_any_parking_machine_number() -> None:
             reservation_target_id="abc",
         )
     assert _provider("Rotterdam Demo").info.reservation_target_selection == "list"
+    # The machine of the new reservation is listed after the default, with its own hours.
+    targets = await provider.list_reservation_targets()
+    assert [target.id for target in targets] == ["19850", "2222"]
+    assert targets[1] == await provider.get_reservation_target("2222")
+    assert targets[1].paid_hours[0].end_time == "2026-11-13T20:00:00Z"
+
+
+@pytest.mark.asyncio
+async def test_get_reservation_target_looks_up_listed_targets() -> None:
+    provider = _provider("Rotterdam Demo")
+
+    assert (await provider.get_reservation_target("630")).id == "630"
+    with pytest.raises(ValidationError):
+        await provider.get_reservation_target("999")
 
 
 @pytest.mark.asyncio

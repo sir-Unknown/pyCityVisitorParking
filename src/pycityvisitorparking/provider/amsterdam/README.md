@@ -46,9 +46,9 @@ provider exposes the machine as a reservation target with
 `reservation_target_selection` `free_input`:
 
 - `list_reservation_targets()` returns the permit's default machine
-  (`ssp.favorite_machine_number`) as the only target; id and name are the
-  machine number. Permits without `can_select_zone`, or without a default
-  machine, return `[]`.
+  (`ssp.favorite_machine_number`) first, then the other machines of open
+  sessions; id and name are the machine number. Permits without
+  `can_select_zone`, or without a default machine, return `[]`.
 - `start_reservation(..., reservation_target_id=None)` uses the default machine.
   Like the portal, permits without `can_select_zone` send no machine at all.
 - Any other machine number (read from a parking machine) is accepted as
@@ -61,8 +61,12 @@ provider exposes the machine as a reservation target with
   `can_select_zone` raises `ValidationError`; nothing is started.
 - `Reservation.reservation_target_id` is the session's `machine_number` when the
   session list reports it.
-- The default target carries the same `paid_hours` as `Permit.paid_hours`;
-  `fetch_all()` reuses one cost calculation for both.
+- Every target carries its own `paid_hours`, from a cost calculation with that
+  machine number. The default target's are `Permit.paid_hours`; `fetch_all()`
+  reuses one cost calculation for both. Other machines are calculated at most
+  once per day; a machine whose calculation fails is left out of the list.
+- `get_reservation_target(machine_number)` validates any machine of the permit's
+  zones through `get_by_machine_number` and returns it with its paid hours.
 
 ## Supported operations
 

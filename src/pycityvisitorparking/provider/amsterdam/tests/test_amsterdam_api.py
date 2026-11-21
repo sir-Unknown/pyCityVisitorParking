@@ -231,6 +231,82 @@ async def test_fetch_all_gives_the_default_target_the_permit_paid_hours() -> Non
     assert len(session.calls_to("/parking_session/cost_calculator")) == 1
 
 
+def _weekly(start: str, end: str) -> _FakeResponse:
+    return _FakeResponse({"time_frame_data": [[{"startTime": start, "endTime": end}]] * 7})
+
+
+async def test_another_machine_target_has_its_own_paid_hours() -> None:
+    session = _RoutedSession(
+        _routes(
+            **{
+                "POST|/get_by_machine_number": [_FakeResponse({"zone": {"zone_id": 77}})],
+                "POST|/api/v1/ssp/parking_session/cost_calculator": [_weekly("0900", "2100")],
+            }
+        )
+    )
+    provider = _provider(session)
+    await provider.login({"username": "u", "password": "p"})
+
+    target = await provider.get_reservation_target(" 2222 ")
+
+    assert target.id == "2222"
+    assert len(target.paid_hours) == 15
+    assert session.calls_to("/get_by_machine_number")[0]["kwargs"]["json"]["machine_number"] == 2222
+    cost_payload = session.calls_to("/parking_session/cost_calculator")[0]["kwargs"]["json"]
+    assert cost_payload["machine_number"] == 2222
+
+
+async def test_unknown_machine_cannot_be_resolved_as_target() -> None:
+    session = _RoutedSession(
+        _routes(
+            **{
+                "POST|/get_by_machine_number": [
+                    _FakeResponse({"message": "This parking machine does not exist."}, status=400)
+                ]
+            }
+        )
+    )
+    provider = _provider(session)
+    await provider.login({"username": "u", "password": "p"})
+
+    with pytest.raises(ValidationError):
+        await provider.get_reservation_target("9999")
+    assert session.calls_to("/parking_session/cost_calculator") == []
+
+
+async def test_machines_of_open_sessions_are_listed_with_their_paid_hours() -> None:
+    at_other_machine = {**STARTED_SESSION, "status": "ACTIVE", "machine_number": 2222}
+    session = _RoutedSession(
+        _routes(
+            **{
+                "GET|/api/v1/ssp/parking_session/list": [
+                    _FakeResponse({"data": [at_other_machine]})
+                ],
+                # Default machine first, then machine 2222; later calls reuse the last.
+                "POST|/api/v1/ssp/parking_session/cost_calculator": [
+                    _weekly("0900", "0000"),
+                    _weekly("0900", "2100"),
+                ],
+            }
+        )
+    )
+    provider = _provider(session)
+    await provider.login({"username": "u", "password": "p"})
+
+    permit, _reservations, _favorites, targets = await provider.fetch_all()
+    await provider.fetch_all()
+
+    assert [target.id for target in targets] == ["1111", "2222"]
+    assert targets[0].paid_hours == permit.paid_hours
+    assert targets[1].paid_hours != permit.paid_hours
+    machines = [
+        call["kwargs"]["json"]["machine_number"]
+        for call in session.calls_to("/parking_session/cost_calculator")
+    ]
+    # Machine 2222 is fetched once per day; the default machine on every refresh.
+    assert machines == [1111, 2222, 1111]
+
+
 async def test_permit_without_zone_selection_has_no_targets_and_rejects_one() -> None:
     product = {"client_product_id": 42, "config": {"can_select_zone": False}, "ssp": {}}
     session = _RoutedSession(_routes(**{"GET|/api/v1/client_product/42": [_FakeResponse(product)]}))

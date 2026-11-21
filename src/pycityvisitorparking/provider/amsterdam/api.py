@@ -103,6 +103,8 @@ class Provider(BaseProvider):
         self._can_select_zone = False
         self._parking_context_loaded = False
         self._validity_start: datetime | None = None
+        # Paid hours of other parking machines per machine, with the local date fetched.
+        self._machine_paid_hours: dict[int, tuple[date, list[PaidHoursBlock]]] = {}
 
     async def login(self, credentials: Mapping[str, str] | None = None, **kwargs: str) -> None:
         """Authenticate against the provider."""
@@ -144,6 +146,7 @@ class Provider(BaseProvider):
         self._can_select_zone = False
         self._parking_context_loaded = False
         self._validity_start = None
+        self._machine_paid_hours = {}
         self._logged_in = True
         if client_product_id is None:
             client_product_id = await self._fetch_client_product_id()
@@ -179,7 +182,7 @@ class Provider(BaseProvider):
         return reservations
 
     async def list_reservation_targets(self) -> list[ReservationTarget]:
-        """Return the permit's default parking machine.
+        """Return the permit's default parking machine, then the machines of open sessions.
 
         Other machine numbers (read from a parking machine) are accepted as
         ``reservation_target_id`` too. Permits without zone selection have no targets.
@@ -187,7 +190,22 @@ class Provider(BaseProvider):
         await self._ensure_parking_context()
         if not self._can_select_zone or self._machine_number is None:
             return []
-        return self._default_targets(await self._paid_hours())
+        reservations = self._map_reservations(await self._fetch_session_items())
+        return await self._targets(await self._paid_hours(), reservations)
+
+    async def get_reservation_target(self, reservation_target_id: str) -> ReservationTarget:
+        """Return a parking machine of the permit's zones as target, with its paid hours."""
+        target_id = self._validate_reservation_target_id(reservation_target_id)
+        if target_id is None:
+            raise ValidationError("reservation_target_id is required.")
+        machine = self._parse_machine_number(target_id)
+        await self._ensure_parking_context()
+        if not self._can_select_zone:
+            raise ValidationError("reservation_target_id is not supported for this permit.")
+        if machine == self._machine_number:
+            return self._target(machine, await self._paid_hours())
+        await self._resolve_machine_zone(machine)
+        return self._target(machine, await self._machine_paid_hours_for(machine))
 
     async def fetch_all(
         self,
@@ -198,21 +216,57 @@ class Provider(BaseProvider):
             self.list_reservations(),
             self.list_favorites(),
         )
-        return permit, reservations, favorites, self._default_targets(permit.paid_hours)
+        targets = await self._targets(permit.paid_hours, reservations)
+        return permit, reservations, favorites, targets
 
-    def _default_targets(self, paid_hours: list[PaidHoursBlock]) -> list[ReservationTarget]:
-        """Return the default machine as the only target; its windows are the permit's."""
+    async def _targets(
+        self, default_paid_hours: list[PaidHoursBlock], reservations: list[Reservation]
+    ) -> list[ReservationTarget]:
+        """Return the default machine (with the permit's windows), then open-session machines.
+
+        A machine whose paid hours cannot be fetched is left out, so reservations
+        there fall back to the default machine's windows.
+        """
         if not self._can_select_zone or self._machine_number is None:
             return []
-        machine = str(self._machine_number)
-        return [ReservationTarget(id=machine, name=machine, paid_hours=list(paid_hours))]
+        targets = [self._target(self._machine_number, default_paid_hours)]
+        default_id = str(self._machine_number)
+        others = {
+            int(reservation.reservation_target_id)
+            for reservation in reservations
+            if reservation.reservation_target_id
+            and reservation.reservation_target_id != default_id
+            and reservation.reservation_target_id.isdigit()
+        }
+        for machine in sorted(others):
+            try:
+                paid_hours = await self._machine_paid_hours_for(machine)
+            except ProviderError:
+                self._plogger.debug("could not fetch paid hours of another parking machine")
+                continue
+            targets.append(self._target(machine, paid_hours))
+        return targets
+
+    def _target(self, machine: int | str, paid_hours: list[PaidHoursBlock]) -> ReservationTarget:
+        return ReservationTarget(id=str(machine), name=str(machine), paid_hours=list(paid_hours))
 
     async def _paid_hours(self) -> list[PaidHoursBlock]:
+        """Return the paid hours of the default machine; empty when they cannot be fetched."""
         try:
             return await self._build_paid_zone_validity(days=14)
         except ProviderError:
             self._plogger.debug("could not fetch paid hours")
             return []
+
+    async def _machine_paid_hours_for(self, machine: int) -> list[PaidHoursBlock]:
+        """Return the paid hours of another machine, fetched at most once per local day."""
+        today = self._now().astimezone(_LOCAL_TZ).date()
+        cached = self._machine_paid_hours.get(machine)
+        if cached is not None and cached[0] == today:
+            return cached[1]
+        paid_hours = await self._build_paid_zone_validity(days=14, machine_number=machine)
+        self._machine_paid_hours[machine] = (today, paid_hours)
+        return paid_hours
 
     async def start_reservation(
         self,
@@ -573,23 +627,26 @@ class Provider(BaseProvider):
             balance_unit=balance_unit,
         )
 
-    async def _build_paid_zone_validity(self, *, days: int) -> list[PaidHoursBlock]:
+    async def _build_paid_zone_validity(
+        self, *, days: int, machine_number: int | None = None
+    ) -> list[PaidHoursBlock]:
         """Return paid parking windows for today through the next given days.
 
         ``time_frame_data`` is a weekly schedule (index 0 is Monday), so one
-        cost calculation covers every day of the range.
+        cost calculation covers every day of the range. Without ``machine_number``
+        the default machine is used.
         """
         if days < 0:
             raise ValidationError("Days must be zero or positive.")
         today = self._now().astimezone(_LOCAL_TZ).date()
-        time_frame_data = await self._fetch_time_frame_data(today)
+        time_frame_data = await self._fetch_time_frame_data(today, machine_number)
         entries: list[tuple[PaidHoursBlock, bool]] = []
         for offset in range(days + 1):
             target_date = today + timedelta(days=offset)
             entries.extend(self._map_time_frame_data_for_date(time_frame_data, target_date))
         return self._filter_paid_hours(entries)
 
-    async def _fetch_time_frame_data(self, target_date: date) -> Any:
+    async def _fetch_time_frame_data(self, target_date: date, machine_number: int | None) -> Any:
         """Return the weekly paid parking schedule from a cost calculation for a date."""
         await self._ensure_parking_context()
         start_local = datetime.combine(target_date, time(0, 0), tzinfo=_LOCAL_TZ)
@@ -599,8 +656,10 @@ class Provider(BaseProvider):
             "started_at": self._format_rfc1123(start_local),
             "ended_at": self._format_rfc1123(end_local),
         }
-        # The portal sends only the (default) machine number to the cost calculator.
-        if self._can_select_zone:
+        # The portal sends only the machine number to the cost calculator.
+        if machine_number is not None:
+            payload["machine_number"] = machine_number
+        elif self._can_select_zone:
             if self._machine_number is None:
                 raise ProviderError("Permit has no default parking machine.")
             payload["machine_number"] = self._machine_number

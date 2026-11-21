@@ -602,6 +602,22 @@ class BaseProvider(ABC):
         """
         return []
 
+    async def get_reservation_target(self, reservation_target_id: str) -> ReservationTarget:
+        """Return one reservation target with its paid hours.
+
+        The default looks the id up in ``list_reservation_targets``. Providers with the
+        ``free_input`` capability override it to resolve other ids too, such as a number
+        read from a parking machine. An id the provider cannot resolve raises
+        ``ValidationError``.
+        """
+        target_id = self._validate_reservation_target_id(reservation_target_id)
+        if target_id is None:
+            raise ValidationError("reservation_target_id is required.")
+        for target in await self.list_reservation_targets():
+            if target.id == target_id:
+                return target
+        raise ValidationError("reservation_target_id is not a target of the permit.")
+
     @abstractmethod
     async def update_reservation(
         self,

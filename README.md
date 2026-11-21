@@ -180,6 +180,9 @@ active permit has nothing to choose. Pass the chosen id as
 `Permit.paid_hours` holds the windows of the default target, and
 `ReservationTarget.paid_hours` those of each listed target. The booked target is
 returned as `Reservation.reservation_target_id`; updating a reservation never changes it.
+`await provider.get_reservation_target(target_id)` returns one target with its
+`paid_hours`, for example to show the paid hours of a typed `free_input` id before
+starting; an id the provider cannot resolve raises `ValidationError`.
 `fetch_all()` returns `(permit, reservations, favorites, targets)`, so a refresh gets the targets without a second round of requests.
 Target ids are opaque strings; provider-native values stay inside the provider.
 

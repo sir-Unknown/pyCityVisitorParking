@@ -8,7 +8,14 @@ from datetime import datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
 from ...exceptions import ProviderError, ValidationError
-from ...models import Favorite, PaidHoursBlock, Permit, Reservation, ReservationTarget
+from ...models import (
+    RESERVATION_TARGET_SELECTION_FREE_INPUT,
+    Favorite,
+    PaidHoursBlock,
+    Permit,
+    Reservation,
+    ReservationTarget,
+)
 from ...util import parse_timestamp
 from ..base import BaseProvider
 
@@ -194,6 +201,13 @@ class Provider(BaseProvider):
     def _is_amsterdam(self) -> bool:
         return "amsterdam" in (self._request_context_name or "").lower()
 
+    @property
+    def reservation_target_selection(self) -> str | None:
+        """Like the real provider, the Amsterdam demo accepts any parking machine number."""
+        if self._is_amsterdam():
+            return RESERVATION_TARGET_SELECTION_FREE_INPUT
+        return super().reservation_target_selection
+
     async def list_reservation_targets(self) -> list[ReservationTarget]:
         """Return the demo targets; only the Rotterdam and Amsterdam demo permits have any."""
         if self._is_amsterdam():
@@ -303,7 +317,12 @@ class Provider(BaseProvider):
         requested_target = self._validate_reservation_target_id(reservation_target_id)
         target_ids = [target.id for target in await self.list_reservation_targets()]
         if requested_target is not None and requested_target not in target_ids:
-            raise ValidationError("reservation_target_id is not a target of the permit.")
+            # The Amsterdam demo accepts any parking machine number (free input).
+            free_input_machine = (
+                self._is_amsterdam() and requested_target.isascii() and requested_target.isdigit()
+            )
+            if not free_input_machine:
+                raise ValidationError("reservation_target_id is not a target of the permit.")
         start_time, end_time = self._validate_reservation_times(
             start_time, end_time, require_both=True
         )

@@ -127,6 +127,26 @@ async def test_amsterdam_demo_books_at_its_default_parking_machine() -> None:
 
 
 @pytest.mark.asyncio
+async def test_amsterdam_demo_accepts_any_parking_machine_number() -> None:
+    provider = _provider("Amsterdam Demo")
+
+    reservation = await provider.start_reservation(
+        "AB12CD", NOW + timedelta(hours=1), NOW + timedelta(hours=2), reservation_target_id="2222"
+    )
+
+    assert provider.info.reservation_target_selection == "free_input"
+    assert reservation.reservation_target_id == "2222"
+    with pytest.raises(ValidationError):
+        await provider.start_reservation(
+            "AB12CD",
+            NOW + timedelta(hours=1),
+            NOW + timedelta(hours=2),
+            reservation_target_id="abc",
+        )
+    assert _provider("Rotterdam Demo").info.reservation_target_selection == "list"
+
+
+@pytest.mark.asyncio
 async def test_other_demo_permits_have_no_targets() -> None:
     provider = _provider("Den Haag Demo")
     assert await provider.list_reservation_targets() == []

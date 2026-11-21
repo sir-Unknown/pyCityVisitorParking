@@ -222,7 +222,7 @@ class BaseProvider(ABC):
             id=self._manifest.id,
             favorite_update_fields=self._manifest.favorite_update_fields,
             reservation_update_fields=self._manifest.reservation_update_fields,
-            reservation_target_selection=self._manifest.reservation_target_selection,
+            reservation_target_selection=self.reservation_target_selection,
         )
 
     def _normalize_license_plate(self, plate: str) -> str:

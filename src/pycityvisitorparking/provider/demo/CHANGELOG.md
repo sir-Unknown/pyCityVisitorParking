@@ -2,7 +2,8 @@
 
 ## Unreleased
 
-- Add an Amsterdam demo permit ("Amsterdam Demo"): balance in minutes, one reservation target (default parking machine `19850`) whose paid hours (Monday–Saturday 09:00–24:00, Sunday 12:00–24:00) are also the permit's.
+- Add an Amsterdam demo permit ("Amsterdam Demo"): balance in minutes, default parking machine `19850` as the listed reservation target with paid hours (Monday–Saturday 09:00–24:00, Sunday 12:00–24:00) that are also the permit's. Like the real provider it uses `free_input`: any other parking machine number is accepted as `reservation_target_id`.
+- `ProviderInfo.reservation_target_selection` from `BaseProvider.info` follows the provider's `reservation_target_selection` property.
 
 ## 0.6.0
 

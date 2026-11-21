@@ -202,6 +202,55 @@ async def test_end_reservation_patches_editable_session() -> None:
     assert patch == {"new_ended_at": "2030-01-01T10:30:00+00:00"}
 
 
+@pytest.mark.parametrize("response", [{"parking_session_id": 9}, {"code": 201}])
+async def test_start_reservation_reads_back_a_session_missing_from_the_response(
+    response: dict[str, Any],
+) -> None:
+    session = _RoutedSession(
+        _routes(**{"POST|/api/v1/ssp/parking_session/start": [_FakeResponse(response)]})
+    )
+    provider = _provider(session)
+    await provider.login({"username": "u", "password": "p"})
+
+    reservation = await provider.start_reservation("ab-12-cd", *_times())
+
+    assert reservation.id == "9"
+    assert reservation.license_plate == "AB12CD"
+    assert reservation.end_time == "2030-01-01T11:00:00Z"
+
+
+async def test_end_reservation_without_session_in_response_keeps_the_read_session() -> None:
+    session = _RoutedSession(
+        _routes(**{"PATCH|/api/v1/ssp/parking_session/9/edit": [_FakeResponse({"code": 200})]})
+    )
+    provider = _provider(session)
+    await provider.login({"username": "u", "password": "p"})
+
+    reservation = await provider.end_reservation("9", datetime(2030, 1, 1, 10, 30, tzinfo=UTC))
+
+    assert reservation.id == "9"
+    assert reservation.license_plate == "AB12CD"
+    assert reservation.end_time == "2030-01-01T10:30:00Z"
+
+
+async def test_add_favorite_reads_back_a_favorite_missing_from_the_response() -> None:
+    listed = {"favorite_vrns": [{"id": 17, "vrn": "AB12CD", "description": "Family"}]}
+    session = _RoutedSession(
+        _routes(
+            **{
+                "POST|/api/v1/ssp/favorite_vrn/add": [_FakeResponse({"code": 201, "id": 17})],
+                "GET|/api/v1/ssp/favorite_vrn/list": [_FakeResponse(listed)],
+            }
+        )
+    )
+    provider = _provider(session)
+    await provider.login({"username": "u", "password": "p"})
+
+    favorite = await provider.add_favorite("ab-12-cd", "Family")
+
+    assert (favorite.id, favorite.license_plate, favorite.name) == ("17", "AB12CD", "Family")
+
+
 async def _start_at(provider: Provider, target: str | None) -> None:
     await provider.start_reservation("ab-12-cd", *_times(), reservation_target_id=target)
 

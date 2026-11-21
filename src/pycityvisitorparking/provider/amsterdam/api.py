@@ -6,6 +6,7 @@ import asyncio
 import base64
 import json
 from collections.abc import Mapping
+from dataclasses import replace
 from datetime import UTC, date, datetime, time, timedelta
 from email.utils import format_datetime, parsedate_to_datetime
 from typing import Any
@@ -316,12 +317,15 @@ class Provider(BaseProvider):
             allow_reauth=True,
             auth_required=True,
         )
-        reservation = self._map_reservation_response(data)
-        if reservation is None:
+        # Write responses are undocumented; without a complete session, read it back.
+        session = self._complete_session(data)
+        if session is not None:
+            reservation = self._map_reservation(session)
+        else:
             reservation = self._select_reservation(
                 await self.list_reservations(),
+                reservation_id=self._response_session_id(data),
                 license_plate=normalized_plate,
-                start_time=self._format_utc_timestamp(start_dt),
                 end_time=self._format_utc_timestamp(end_dt),
             )
         if reservation is None:
@@ -349,7 +353,7 @@ class Provider(BaseProvider):
         reservation_id_value = self._require_id(reservation_id, "reservation_id")
         end_dt = self._normalize_datetime(end_time)
         payload = {"new_ended_at": self._format_offset_timestamp(end_dt)}
-        await self._ensure_session_editable(reservation_id_value)
+        current = await self._ensure_session_editable(reservation_id_value)
         data = await self._request_json(
             "PATCH",
             PARKING_SESSION_EDIT_ENDPOINT.format(reservation_id=reservation_id_value),
@@ -357,14 +361,9 @@ class Provider(BaseProvider):
             allow_reauth=True,
             auth_required=True,
         )
-        reservation = self._map_reservation_response(data)
-        if reservation is None:
-            reservation = self._select_reservation(
-                await self.list_reservations(),
-                reservation_id=reservation_id_value,
-            )
-        if reservation is None:
-            raise ProviderError("Reservation was not returned by the provider.")
+        reservation = await self._reservation_after_edit(
+            data, current, reservation_id_value, end_dt
+        )
         self._plogger.operation_completed("update_reservation")
         return reservation
 
@@ -378,7 +377,7 @@ class Provider(BaseProvider):
         reservation_id_value = self._require_id(reservation_id, "reservation_id")
         end_dt = self._normalize_datetime(end_time)
         payload = {"new_ended_at": self._format_offset_timestamp(end_dt)}
-        await self._ensure_session_editable(reservation_id_value)
+        current = await self._ensure_session_editable(reservation_id_value)
         data = await self._request_json(
             "PATCH",
             PARKING_SESSION_EDIT_ENDPOINT.format(reservation_id=reservation_id_value),
@@ -386,14 +385,9 @@ class Provider(BaseProvider):
             allow_reauth=True,
             auth_required=True,
         )
-        reservation = self._map_reservation_response(data)
-        if reservation is None:
-            reservation = self._select_reservation(
-                await self.list_reservations(),
-                reservation_id=reservation_id_value,
-            )
-        if reservation is None:
-            raise ProviderError("Reservation was not returned by the provider.")
+        reservation = await self._reservation_after_edit(
+            data, current, reservation_id_value, end_dt
+        )
         self._plogger.operation_completed("end_reservation")
         return reservation
 
@@ -425,7 +419,8 @@ class Provider(BaseProvider):
             allow_reauth=True,
             auth_required=True,
         )
-        favorite = self._map_favorite_response(data)
+        # The portal checks only `code: 201` and re-reads the list; so do we.
+        favorite = self._complete_favorite(data)
         if favorite is None:
             favorite = self._select_favorite(
                 await self.list_favorites(),
@@ -862,9 +857,11 @@ class Provider(BaseProvider):
 
     async def _fetch_session_items(self) -> list[dict[str, Any]]:
         """Return the raw parking sessions of the permit."""
+        # Newest first, like the portal, so open sessions stay on the first page.
         params = {
             "page": 1,
             "row_per_page": 250,
+            "sort": "parking_session_id:desc",
             "filters[client_product_id]": self._require_client_product_id(),
         }
         data = await self._request_json(
@@ -891,8 +888,8 @@ class Provider(BaseProvider):
     def _map_reservations(self, items: list[dict[str, Any]]) -> list[Reservation]:
         return [self._map_reservation(item) for item in items if self._is_open_session(item)]
 
-    async def _ensure_session_editable(self, reservation_id: str) -> None:
-        """Reject changes the portal does not offer for this session.
+    async def _ensure_session_editable(self, reservation_id: str) -> dict[str, Any] | None:
+        """Reject changes the portal does not offer for this session; return the session.
 
         The portal only edits or stops sessions with ``can_edit`` that are
         ACTIVE or FUTURE. A session missing from the first page is left to the
@@ -905,15 +902,61 @@ class Provider(BaseProvider):
                 raise ProviderError(
                     "Reservation cannot be changed.", error_code=ErrorCode.PROVIDER_REJECTED
                 )
-            return
-
-    def _map_reservation_response(self, data: Any) -> Reservation | None:
-        if isinstance(data, dict):
-            if isinstance(data.get("parking_session"), dict):
-                return self._map_reservation(data["parking_session"])
-            if "parking_session_id" in data or "id" in data:
-                return self._map_reservation(data)
+            return item
         return None
+
+    async def _reservation_after_edit(
+        self,
+        data: Any,
+        current: dict[str, Any] | None,
+        reservation_id: str,
+        end_dt: datetime,
+    ) -> Reservation:
+        """Return the edited session: from the response, else the session read before the edit.
+
+        An ended session is no longer open, so it cannot be read back from the list.
+        """
+        session = self._complete_session(data)
+        if session is not None:
+            return self._map_reservation(session)
+        if current is not None:
+            return replace(
+                self._map_reservation(current), end_time=self._format_utc_timestamp(end_dt)
+            )
+        reservation = self._select_reservation(
+            await self.list_reservations(), reservation_id=reservation_id
+        )
+        if reservation is None:
+            raise ProviderError("Reservation was not returned by the provider.")
+        return reservation
+
+    def _response_session(self, data: Any) -> dict[str, Any] | None:
+        if not isinstance(data, dict):
+            return None
+        nested = data.get("parking_session")
+        return nested if isinstance(nested, dict) else data
+
+    def _complete_session(self, data: Any) -> dict[str, Any] | None:
+        """Return the session of a write response only when it has every mapped field."""
+        item = self._response_session(data)
+        if (
+            item is not None
+            and (item.get("parking_session_id") or item.get("id"))
+            and (item.get("vrn") or item.get("license_plate"))
+            and (item.get("started_at") or item.get("start_time"))
+            and (item.get("ended_at") or item.get("end_time"))
+        ):
+            return item
+        return None
+
+    def _response_session_id(self, data: Any) -> str | None:
+        item = self._response_session(data)
+        if item is None:
+            return None
+        value = item.get("parking_session_id") or item.get("id")
+        if value is None:
+            return None
+        return str(value).strip() or None
 
     def _map_reservation(self, item: dict[str, Any]) -> Reservation:
         reservation_id = self._coerce_response_id(
@@ -947,15 +990,17 @@ class Provider(BaseProvider):
         *,
         reservation_id: str | None = None,
         license_plate: str | None = None,
-        start_time: str | None = None,
         end_time: str | None = None,
     ) -> Reservation | None:
+        """Find by id; with a plate, fall back to the plate and end time."""
         if reservation_id:
-            return self._find_by_id(reservations, reservation_id)
+            found = self._find_by_id(reservations, reservation_id)
+            if found is not None or license_plate is None:
+                return found
+        if license_plate is None:
+            return None
         for reservation in reservations:
-            if license_plate and reservation.license_plate != license_plate:
-                continue
-            if start_time and reservation.start_time != start_time:
+            if reservation.license_plate != license_plate:
                 continue
             if end_time and reservation.end_time != end_time:
                 continue
@@ -981,12 +1026,16 @@ class Provider(BaseProvider):
             favorites.append(self._map_favorite(item))
         return favorites
 
-    def _map_favorite_response(self, data: Any) -> Favorite | None:
-        if isinstance(data, dict):
-            if isinstance(data.get("favorite_vrn"), dict):
-                return self._map_favorite(data["favorite_vrn"])
-            if "favorite_vrn_id" in data or "id" in data:
-                return self._map_favorite(data)
+    def _complete_favorite(self, data: Any) -> Favorite | None:
+        """Return the favorite of a write response only when it has an id and a plate."""
+        if not isinstance(data, dict):
+            return None
+        nested = data.get("favorite_vrn")
+        item = nested if isinstance(nested, dict) else data
+        if (item.get("favorite_vrn_id") or item.get("id")) and (
+            item.get("vrn") or item.get("license_plate")
+        ):
+            return self._map_favorite(item)
         return None
 
     def _map_favorite(self, item: dict[str, Any]) -> Favorite:

@@ -16,6 +16,8 @@ credentials with the following keys:
 
 - `username` (string, required): the e-mail address of the portal account
 - `password` (string, required)
+- `permit_id` (string, optional): a `Permit.id` from `list_permits` that selects
+  the permit when the account holds several (see D2)
 
 Example credential shape:
 
@@ -23,6 +25,7 @@ Example credential shape:
 {
     "username": "user@example.com",
     "password": "secret",
+    "permit_id": "123456",
 }
 ```
 
@@ -38,6 +41,7 @@ A session with a dummy cookie jar cannot sign in.
 
 - `login`
 - `get_permit`
+- `list_permits` (every usable permit of the account, with its name)
 - `list_reservations`
 - `start_reservation` (requires `start_time` and `end_time`; optional `reservation_target_id`)
 - `list_reservation_targets` (the permit's zones, default first)
@@ -50,10 +54,12 @@ A session with a dummy cookie jar cannot sign in.
 
 ## Mapping notes
 
-- `Permit.id` is the id of the account's authorization for the permit.
+- `Permit.id` is the id of the account's authorization for the permit, and
+  `Permit.name` its description.
 - Only authorizations that are active, not removed by the user, and not revoked
-  are considered. When an account has several, the first one ordered by
-  description and id is used (see Limitations).
+  are considered. `list_permits` returns all of them, ordered by description and
+  id; the other operations act on the one selected with `permit_id`, or on the
+  first one without it (see D2).
 - `Permit.remaining_balance` is the current balance in minutes
   (`balance_unit` is `MINUTE`). The portal stores balances in units; the length
   of a unit is read from the portal's published configuration (10 minutes at the
@@ -138,8 +144,11 @@ against the live portal and checked every step in the Rotterdam app
 - on 0.6.0b8, a reservation started and ended through the generic reservation
   target contract in a zone other than the default landed in that zone.
 
+Selecting one of several permits (`list_permits` and `login(permit_id=...)`) has
+not been verified against the live portal yet.
+
 Please report differences seen on other accounts, for example permits with a
-business-hours balance or several permits.
+business-hours balance.
 
 ## Design decisions
 
@@ -179,22 +188,31 @@ marked place, the tests named here, and this section together, and add a line to
   Switching `ReservationTarget.id` to the zone's object id requires mapping `ZoneNaam` of
   parking actions back to that id.
 
-### D2: With several usable permits the first one is used
+### D2: The permit is chosen at login, and the first one is the default
 
-- **Behavior**: `get_permit`, `list_reservations`, `fetch_all`, and
-  `start_reservation` all act on one permit: the first usable authorization
-  (active, not removed by the user, not revoked) ordered by its description and
-  then its id. No error is raised when more exist.
-- **Why**: the public contract returns a single `Permit`. The order is stable, so
-  every operation of one account uses the same permit.
-- **Where**: `Provider._load_authorizations` (ordering) and
-  `Provider._select_authorization` (choice) in `api.py`.
-- **Tests**: no test pins the ordering of several permits.
-- **If this changes**: add a way to choose the permit (for example a login
-  keyword, which would then have to be a generic concept), or return one `Permit`
-  per authorization. Note that `update_reservation` and `end_reservation` already
-  look up the permit a reservation belongs to (`Provider._authorization_for`)
-  and do not depend on this choice.
+- **Behavior**: `get_permit`, `list_reservations`, `list_reservation_targets`,
+  `fetch_all`, and `start_reservation` all act on one permit: the usable
+  authorization (active, not removed by the user, not revoked) whose id was
+  passed as `login(permit_id=...)`. Without `permit_id` it is the first usable
+  authorization ordered by its description and then its id. A selected permit
+  that is no longer usable raises `NotFoundError` with
+  `error_code="permit_not_found"`; the provider never falls back to another
+  permit. `list_permits` returns every usable authorization in that order,
+  regardless of the selection.
+- **Why**: an account can hold its own permit and permits it was authorized on
+  (for example with a contract code), each with its own balance and zones. A new
+  authorization can sort before an existing one, so only an explicit choice keeps
+  a caller on the same permit (reported on a real account,
+  [ha_City-Visitor-Parking#261](https://github.com/sir-Unknown/ha_City-Visitor-Parking/issues/261)).
+- **Where**: `Provider.login` (stores `permit_id`), `Provider._load_authorizations`
+  (ordering), `Provider._select_authorization` (choice), and
+  `Provider.list_permits` in `api.py`.
+- **Tests**: `test_list_permits_returns_every_usable_permit_with_its_name`,
+  `test_login_permit_id_selects_that_permit_for_every_operation`,
+  `test_selected_permit_that_is_no_longer_usable_is_never_replaced`.
+- **If this changes**: `update_reservation` and `end_reservation` look up the
+  permit a reservation belongs to (`Provider._authorization_for`) and do not
+  depend on this choice.
 
 ### D3: Microflow operation ids are resolved at runtime
 
@@ -246,7 +264,7 @@ marked place, the tests named here, and this section together, and add a line to
 
 ## Limitations
 
-- Only one permit is used when an account has several.
+- Without `permit_id`, an account with several permits uses the first one (see D2).
 - The target of a reservation cannot be changed after it was started.
 - A target's `paid_hours` stays empty when the portal has not stored parking
   times for it.

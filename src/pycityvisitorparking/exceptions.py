@@ -22,6 +22,7 @@ class ErrorCode(StrEnum):
     NOT_FOUND = "not_found"
     NOT_SUPPORTED = "not_supported"
     PROVIDER_REJECTED = "provider_rejected"
+    PERMIT_NOT_FOUND = "permit_not_found"
 
 
 class PyCityVisitorParkingError(Exception):

@@ -144,8 +144,15 @@ against the live portal and checked every step in the Rotterdam app
 - on 0.6.0b8, a reservation started and ended through the generic reservation
   target contract in a zone other than the default landed in that zone.
 
-Selecting one of several permits (`list_permits` and `login(permit_id=...)`) has
-not been verified against the live portal yet.
+On 0.6.1b1 and 0.6.1b2, a user with two permits on one account (an own permit
+with six zones and a shared permit with two zones) tested permit selection
+against the live portal and checked every step in the Rotterdam app
+([ha_City-Visitor-Parking#261](https://github.com/sir-Unknown/ha_City-Visitor-Parking/issues/261)):
+
+- each integration entry, logged in with its own `permit_id`, shows that
+  permit's zones, balance, and reservations;
+- reservations were started, extended, and stopped on both permits and landed on
+  the right permit and zone.
 
 Please report differences seen on other accounts, for example permits with a
 business-hours balance.

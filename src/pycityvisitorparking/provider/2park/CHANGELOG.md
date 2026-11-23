@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.6.1
+
 - The login debug log no longer contains the product id and parking location. It says whether the product was given (`permit_id` or cached) or detected, and whether a location was found.
 
 ## 0.6.0

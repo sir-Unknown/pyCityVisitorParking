@@ -2,8 +2,12 @@
 
 ## Unreleased
 
+## 0.6.1
+
 - Add `BaseProvider.list_permits()`, the optional `Permit.name`, and `ErrorCode.PERMIT_NOT_FOUND` so callers can choose one of several permits of an account and pass it as `login(permit_id=...)`. The default `list_permits()` returns the single permit of `get_permit()`.
-- Rotterdam: `login(permit_id=...)` now selects the permit every operation acts on, and `list_permits()` returns every usable permit with its description as `Permit.name`. Before, an account with several permits always used the first one by description, so adding a permit could switch the permit in use ([ha_City-Visitor-Parking#261](https://github.com/sir-Unknown/ha_City-Visitor-Parking/issues/261)).
+- Rotterdam: `login(permit_id=...)` now selects the permit every operation acts on, and `list_permits()` returns every usable permit with its description as `Permit.name`. Before, an account with several permits always used the first one by description, so adding a permit could switch the permit in use ([ha_City-Visitor-Parking#261](https://github.com/sir-Unknown/ha_City-Visitor-Parking/issues/261)). The selection is logged at debug level without ids. Verified with a real account holding two permits.
+- 2park: the login debug log no longer contains the product id and parking location.
+- Demo: the Rotterdam demo account has a second permit, so permit selection can be tried without a real account.
 
 ## 0.6.0
 

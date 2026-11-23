@@ -396,20 +396,26 @@ class Provider(BaseProvider):
         # ``_load_authorizations``.
         found = await self._load_authorizations()
         if self._permit_id is None:
-            if not found:
-                raise NotFoundError(
-                    "No active permit found for this account.",
-                    error_code=ErrorCode.PERMIT_NOT_FOUND,
-                )
-            return found[0]
-        for authorization in found:
-            if authorization.text("_Id") == self._permit_id:
-                return authorization
-        # Never fall back to another permit: that would act on the wrong permit silently.
-        raise NotFoundError(
-            "The selected permit is not active for this account.",
-            error_code=ErrorCode.PERMIT_NOT_FOUND,
-        )
+            source = "default"
+            selected = found[0] if found else None
+        else:
+            source = "requested"
+            selected = next((item for item in found if item.text("_Id") == self._permit_id), None)
+        # Logged without ids, so a log shows whether the requested permit was used.
+        if selected is None:
+            self._plogger.operation_failed(
+                "select_permit", "permit not usable", source=source, usable=len(found)
+            )
+            # Never fall back to another permit: that would act on the wrong permit
+            # silently.
+            raise NotFoundError(
+                "No active permit found for this account."
+                if self._permit_id is None
+                else "The selected permit is not active for this account.",
+                error_code=ErrorCode.PERMIT_NOT_FOUND,
+            )
+        self._plogger.operation_completed("select_permit", source=source, usable=len(found))
+        return selected
 
     def _permit_guid(self, authorization: MendixObject) -> str:
         return xpath_guid(authorization.text(ASSOC_AUTHORIZATION_PERMIT), "permit reference")

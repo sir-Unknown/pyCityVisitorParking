@@ -198,7 +198,9 @@ marked place, the tests named here, and this section together, and add a line to
   that is no longer usable raises `NotFoundError` with
   `error_code="permit_not_found"`; the provider never falls back to another
   permit. `list_permits` returns every usable authorization in that order,
-  regardless of the selection.
+  regardless of the selection. Each selection is logged at debug level as
+  `select_permit` with `source=requested` or `source=default` and the number of
+  usable permits, without ids.
 - **Why**: an account can hold its own permit and permits it was authorized on
   (for example with a contract code), each with its own balance and zones. A new
   authorization can sort before an existing one, so only an explicit choice keeps

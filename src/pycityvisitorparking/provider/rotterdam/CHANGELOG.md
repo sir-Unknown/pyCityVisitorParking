@@ -4,6 +4,7 @@
 
 - `login()` accepts an optional `permit_id` that selects the permit for `get_permit`, `list_reservations`, `list_reservation_targets`, `fetch_all`, and `start_reservation`. A selected permit that is no longer usable raises `NotFoundError` with `error_code="permit_not_found"` instead of falling back to another permit; without `permit_id` the first permit is used as before (D2). An account without a usable permit now also carries `error_code="permit_not_found"`.
 - Add `list_permits()`: every usable permit of the account, with the authorization description as `Permit.name`.
+- Log the permit selection at debug level (`select_permit source=requested|default usable=N`, without ids), so a log shows whether the requested permit was used.
 
 ## 0.6.0
 

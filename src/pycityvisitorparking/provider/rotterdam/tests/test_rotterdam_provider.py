@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import html
 import json
+import logging
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -436,7 +437,9 @@ async def test_list_permits_returns_every_usable_permit_with_its_name() -> None:
 
 
 @pytest.mark.asyncio
-async def test_login_permit_id_selects_that_permit_for_every_operation() -> None:
+async def test_login_permit_id_selects_that_permit_for_every_operation(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
     portal = _two_permit_portal()
     portal.operations = {"OP_COST": _cost, "OP_SAVE": _accepted({"objects": []})}
     created = _action("new", "AB12CD", NOW.replace(second=0), NOW + timedelta(hours=1))
@@ -446,7 +449,11 @@ async def test_login_permit_id_selects_that_permit_for_every_operation() -> None
     await provider.login(
         {"username": "user@example.com", "password": "secret", "permit_id": "auth-100"}
     )
+    caplog.set_level(logging.DEBUG, logger="pycityvisitorparking.provider")
     permit, _reservations, _favorites, _targets = await provider.fetch_all()
+    # The log shows that the requested permit was used, without its id.
+    assert "select_permit completed source=requested usable=2" in caplog.text
+    assert "auth-100" not in caplog.text
     assert (permit.id, permit.name) == ("auth-100", "Shared")
     assert (await provider.get_permit()).id == "auth-100"
     await provider.start_reservation("AB12CD", NOW, NOW + timedelta(hours=1))
@@ -458,14 +465,19 @@ async def test_login_permit_id_selects_that_permit_for_every_operation() -> None
 
 
 @pytest.mark.asyncio
-async def test_selected_permit_that_is_no_longer_usable_is_never_replaced() -> None:
+async def test_selected_permit_that_is_no_longer_usable_is_never_replaced(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
     provider = _provider(_two_permit_portal())
     await provider.login(
         {"username": "user@example.com", "password": "secret", "permit_id": "auth-999"}
     )
+    caplog.set_level(logging.DEBUG, logger="pycityvisitorparking.provider")
     with pytest.raises(NotFoundError) as err:
         await provider.fetch_all()
     assert err.value.error_code == ErrorCode.PERMIT_NOT_FOUND
+    assert "select_permit failed: permit not usable source=requested usable=2" in caplog.text
+    assert "auth-999" not in caplog.text
     # Listing the permits does not depend on the selection.
     assert [permit.id for permit in await provider.list_permits()] == ["auth-101", "auth-100"]
 

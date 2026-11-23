@@ -206,7 +206,9 @@ async def test_login_missing_password() -> None:
         await provider.login(credentials={"username": "u@e.com"})
 
 
-async def test_login_resolves_location_internally_for_explicit_permit_id() -> None:
+async def test_login_resolves_location_internally_for_explicit_permit_id(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
     session = _SequenceSession(
         [
             _FakeResponse(json_data=_AUTH_OK),
@@ -214,6 +216,7 @@ async def test_login_resolves_location_internally_for_explicit_permit_id() -> No
         ]
     )
     provider = _provider(session)
+    caplog.set_level(logging.DEBUG, logger="pycityvisitorparking.provider")
     await provider.login(
         credentials={
             "username": "u@e.com",
@@ -224,6 +227,10 @@ async def test_login_resolves_location_internally_for_explicit_permit_id() -> No
     )
     assert provider._product_id == "BDABZRG_1317$abc"
     assert provider._product_location == "BDA1317"
+    # The log says how the product was chosen, without its id or location.
+    assert "login completed product=given location_found=True" in caplog.text
+    assert "BDABZRG_1317" not in caplog.text
+    assert "BDA1317" not in caplog.text
 
 
 async def test_login_no_products_raises() -> None:

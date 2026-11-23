@@ -45,6 +45,9 @@ class Permit:
     remaining_balance: float
     paid_hours: list[PaidHoursBlock]
     balance_unit: str | None = None
+    # Display name of the permit, for telling several permits apart; None when the
+    # provider has none.
+    name: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

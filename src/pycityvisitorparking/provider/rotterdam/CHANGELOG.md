@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## 0.6.1
+
+- `login()` accepts an optional `permit_id` that selects the permit for `get_permit`, `list_reservations`, `list_reservation_targets`, `fetch_all`, and `start_reservation`. A selected permit that is no longer usable raises `NotFoundError` with `error_code="permit_not_found"` instead of falling back to another permit; without `permit_id` the first permit is used as before (D2). An account without a usable permit now also carries `error_code="permit_not_found"`.
+- Add `list_permits()`: every usable permit of the account, with the authorization description as `Permit.name`.
+- Log the permit selection at debug level (`select_permit source=requested|default usable=N`, without ids), so a log shows whether the requested permit was used.
+- Verified with a real account holding two permits: each permit, its balance, zones and reservations, and start, extend and stop on both permits; see the README.
+
 ## 0.6.0
 
 - The "start now" rule of `start_reservation` (a start in the past becomes the current minute) now uses the shared `BaseProvider._start_not_before_now` helper; behavior is unchanged.

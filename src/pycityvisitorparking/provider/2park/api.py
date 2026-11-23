@@ -121,6 +121,8 @@ class Provider(BaseProvider):
         if major != "OK":
             raise AuthError("Authentication failed.")
 
+        # Given: passed as ``permit_id`` or cached from an earlier login.
+        product_source = "detected" if product_id is None else "given"
         if product_id is None or location is None:
             detected_id, detected_location = await self._detect_product(product_id)
             product_id = product_id or detected_id
@@ -133,7 +135,10 @@ class Provider(BaseProvider):
             self._credentials["permit_id"] = product_id
         if location:
             self._credentials["location"] = location
-        self._plogger.operation_completed("login", product_id=product_id, location=location)
+        # Ids stay out of the log, like ``permit_id`` in request payloads.
+        self._plogger.operation_completed(
+            "login", product=product_source, location_found=bool(location)
+        )
         self._session_generation += 1
 
     async def get_permit(self) -> Permit:

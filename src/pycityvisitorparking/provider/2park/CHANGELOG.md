@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.6.1
+
+- The login debug log no longer contains the product id and parking location. It says whether the product was given (`permit_id` or cached) or detected, and whether a location was found.
+
 ## 0.6.0
 
 - A `start_reservation` start in the past ("start now") is sent as the current minute, like the official web app; a later start is sent unchanged. See README design decision D1.

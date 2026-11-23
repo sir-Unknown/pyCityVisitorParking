@@ -76,4 +76,5 @@ def test_documented_error_codes_are_stable() -> None:
         "not_found",
         "not_supported",
         "provider_rejected",
+        "permit_not_found",
     }

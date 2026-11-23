@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## 0.6.1
+
+- Add `BaseProvider.list_permits()`, the optional `Permit.name`, and `ErrorCode.PERMIT_NOT_FOUND` so callers can choose one of several permits of an account and pass it as `login(permit_id=...)`. The default `list_permits()` returns the single permit of `get_permit()`.
+- Rotterdam: `login(permit_id=...)` now selects the permit every operation acts on, and `list_permits()` returns every usable permit with its description as `Permit.name`. Before, an account with several permits always used the first one by description, so adding a permit could switch the permit in use ([ha_City-Visitor-Parking#261](https://github.com/sir-Unknown/ha_City-Visitor-Parking/issues/261)). The selection is logged at debug level without ids. Verified with a real account holding two permits.
+- 2park: the login debug log no longer contains the product id and parking location.
+- Demo: the Rotterdam demo account has a second permit, so permit selection can be tried without a real account.
+
 ## 0.6.0
 
 - "Start now" is a provider-owned rule: a `start_reservation` `start_time` at or before the current time means "start now", and the reservation starts now, without a lead, through the shared `BaseProvider._start_not_before_now(start, *, whole_minute)` helper (clock in the overridable `BaseProvider._now()`). DVS Portal, 2park and Rotterdam send the current minute (the official DVS and 2park web apps do the same), The Hague and the demo provider send the current time. A later start is sent unchanged. A backend that rejects the start raises `ProviderError` with `error_code="provider_rejected"`; DVS Portal now does so as soon as the create response carries `ErrorMessage`, instead of ending with "Reservation was not returned by the provider.", and keeps the message text (which can contain the license plate) out of the exception. Integrations pass the requested start unchanged ([ha_City-Visitor-Parking#195](https://github.com/sir-Unknown/ha_City-Visitor-Parking/issues/195)).

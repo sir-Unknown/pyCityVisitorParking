@@ -12,7 +12,7 @@ from pycityvisitorparking.exceptions import (
     ProviderError,
     ServiceUnavailableError,
 )
-from pycityvisitorparking.models import PaidHoursBlock, Reservation
+from pycityvisitorparking.models import Balance, PaidHoursBlock, Reservation
 from pycityvisitorparking.provider.dvsportal.api import Provider
 from pycityvisitorparking.provider.dvsportal.const import (
     DEFAULT_API_URI,
@@ -171,7 +171,7 @@ async def test_map_permit_filters_free_blocks_and_converts_utc() -> None:
         permit = provider._map_permit(PERMIT_SAMPLE)
 
     assert permit.id == "CARD-1"
-    assert permit.remaining_balance == 120
+    assert permit.balances == [Balance(120, "MINUTE")]
     assert permit.paid_hours == [
         PaidHoursBlock(
             start_time="2024-01-02T08:00:00Z",
@@ -1363,7 +1363,7 @@ async def test_fetch_all_uses_single_request(
 
     assert fetch_base_calls["count"] == 1
     assert permit.id == "CARD-1"
-    assert permit.remaining_balance == 120
+    assert permit.balances == [Balance(120, "MINUTE")]
     assert len(reservations) == 1
     assert reservations[0].id == "123"
     assert len(favorites) == 1

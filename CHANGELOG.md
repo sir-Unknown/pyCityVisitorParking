@@ -6,6 +6,15 @@
 - Restore `scripts/provider_live_check.py` and `scripts/sanitize.py` for provider live checks, as referenced by `docs/provider-development/README.md`. The live check takes `--reservation-target` and prints the provider's reservation targets; `--check-paid-windows` prints the permit's `paid_hours`.
 - `scripts/sanitize.py` now sanitizes browser HAR recordings, so a session recorded in the provider's web portal can be shared safely. The provider development guide describes how to record one.
 - Add `get_reservation_target(reservation_target_id)` to providers: it returns one target with its `paid_hours`. The base implementation looks the id up in `list_reservation_targets()`; `free_input` providers also resolve other ids, so callers can show the paid hours of a typed id before starting.
+- Breaking: a permit can report several balances (for example a time balance and a money balance). `Permit.remaining_balance` and `Permit.balance_unit` are replaced by `Permit.balances`, a list of the new `Balance` model (`amount`, `unit`) with at most one balance per unit, the primary balance first, and an empty list when the provider reports none. Every provider returns its single balance as a one-item list with unchanged amount and unit (2park keeps `unit=None` for an unknown currency). There is no alias for the old fields.
+- Demo: the Amsterdam demo permit has a `MINUTE` and a `EURO` balance, so the two-balance case can be tried without a real account.
+
+## 0.6.1
+
+- Add `BaseProvider.list_permits()`, the optional `Permit.name`, and `ErrorCode.PERMIT_NOT_FOUND` so callers can choose one of several permits of an account and pass it as `login(permit_id=...)`. The default `list_permits()` returns the single permit of `get_permit()`.
+- Rotterdam: `login(permit_id=...)` now selects the permit every operation acts on, and `list_permits()` returns every usable permit with its description as `Permit.name`. Before, an account with several permits always used the first one by description, so adding a permit could switch the permit in use ([ha_City-Visitor-Parking#261](https://github.com/sir-Unknown/ha_City-Visitor-Parking/issues/261)). The selection is logged at debug level without ids. Verified with a real account holding two permits.
+- 2park: the login debug log no longer contains the product id and parking location.
+- Demo: the Rotterdam demo account has a second permit, so permit selection can be tried without a real account.
 
 ## 0.6.0
 

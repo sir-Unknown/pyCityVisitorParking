@@ -12,6 +12,7 @@ from typing import Any
 import pytest
 
 from pycityvisitorparking.exceptions import AuthError, ProviderError, ValidationError
+from pycityvisitorparking.models import Balance
 from pycityvisitorparking.provider.loader import ProviderManifest
 
 _mod = importlib.import_module("pycityvisitorparking.provider.2park.api")
@@ -206,7 +207,9 @@ async def test_login_missing_password() -> None:
         await provider.login(credentials={"username": "u@e.com"})
 
 
-async def test_login_resolves_location_internally_for_explicit_permit_id() -> None:
+async def test_login_resolves_location_internally_for_explicit_permit_id(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
     session = _SequenceSession(
         [
             _FakeResponse(json_data=_AUTH_OK),
@@ -214,6 +217,7 @@ async def test_login_resolves_location_internally_for_explicit_permit_id() -> No
         ]
     )
     provider = _provider(session)
+    caplog.set_level(logging.DEBUG, logger="pycityvisitorparking.provider")
     await provider.login(
         credentials={
             "username": "u@e.com",
@@ -224,6 +228,10 @@ async def test_login_resolves_location_internally_for_explicit_permit_id() -> No
     )
     assert provider._product_id == "BDABZRG_1317$abc"
     assert provider._product_location == "BDA1317"
+    # The log says how the product was chosen, without its id or location.
+    assert "login completed product=given location_found=True" in caplog.text
+    assert "BDABZRG_1317" not in caplog.text
+    assert "BDA1317" not in caplog.text
 
 
 async def test_login_no_products_raises() -> None:
@@ -258,9 +266,8 @@ async def test_get_permit_returns_balance() -> None:
     )
     permit = await provider.get_permit()
     assert permit.id == "BDABZRG_1317$abc"
-    assert permit.remaining_balance == 120
+    assert permit.balances == [Balance(120, "MINUTE")]
     assert permit.paid_hours == []
-    assert permit.balance_unit == "MINUTE"
 
 
 # --- list_reservations ---
@@ -615,7 +622,7 @@ async def test_http_401_triggers_reauth_and_retries() -> None:
         ]
     )
     permit = await provider.get_permit()
-    assert permit.remaining_balance == 120
+    assert permit.balances[0].amount == 120
 
 
 _SESSION_TIMEOUT = {
@@ -635,7 +642,7 @@ async def test_session_timeout_triggers_reauth_and_retries() -> None:
         ]
     )
     permit = await provider.get_permit()
-    assert permit.remaining_balance == 120
+    assert permit.balances[0].amount == 120
 
 
 async def test_session_timeout_persisting_raises_auth_error() -> None:
@@ -668,7 +675,7 @@ async def test_fetch_all_session_timeout_reauths_once_and_retries() -> None:
     assert session.calls == 7
     auth_calls = [r for r in session.requests if r["url"].endswith("/check_credentials.json")]
     assert len(auth_calls) == 2  # initial login + one reauth
-    assert permit.remaining_balance == 120
+    assert permit.balances[0].amount == 120
     assert len(reservations) == 1
     assert len(favorites) == 1
 
@@ -748,8 +755,8 @@ async def test_concurrent_requests_share_one_reauth() -> None:
     )
 
     assert session.logins == 2  # initial login + a single reauth for all of them
-    assert permit_all.remaining_balance == 120
-    assert permit.remaining_balance == 120
+    assert permit_all.balances[0].amount == 120
+    assert permit.balances[0].amount == 120
 
 
 async def test_session_timeout_reauth_does_not_log_warnings(
@@ -796,7 +803,7 @@ async def test_fetch_all_uses_two_parallel_requests() -> None:
     permit, reservations, _favorites, _targets = await provider.fetch_all()
     # Two HTTP requests: BALANCE_ENDPOINT + PRODUCT_DETAILS_ENDPOINT
     assert session.calls == 4  # 2 login + 2 fetch_all
-    assert permit.remaining_balance == 120
+    assert permit.balances[0].amount == 120
     assert len(reservations) == 1
     assert reservations[0].license_plate == "AB1234"
 
@@ -811,7 +818,7 @@ async def test_fetch_all_empty_details() -> None:
         ]
     )
     permit, reservations, favorites, _targets = await provider.fetch_all()
-    assert permit.balance_unit == "MINUTE"
+    assert [balance.unit for balance in permit.balances] == ["MINUTE"]
     assert reservations == []
     assert favorites == []
 
@@ -887,9 +894,8 @@ def test_map_permit_extracts_amount() -> None:
     data = {"data": {"balance": {"ble_parameters": [{"prr_label": "AMOUNT", "prr_value": "240"}]}}}
     permit = p._map_permit(data)
     assert permit.id == "BDABZRG_1317$abc"
-    assert permit.remaining_balance == 240
+    assert permit.balances == [Balance(240, None)]
     assert permit.paid_hours == []
-    assert permit.balance_unit is None
 
 
 def test_map_permit_times_balance() -> None:
@@ -906,8 +912,7 @@ def test_map_permit_times_balance() -> None:
         }
     }
     permit = p._map_permit(data)
-    assert permit.remaining_balance == 5
-    assert permit.balance_unit == "TIMES"
+    assert permit.balances == [Balance(5, "TIMES")]
 
 
 def test_map_permit_euro_balance_preserves_precision() -> None:
@@ -924,8 +929,7 @@ def test_map_permit_euro_balance_preserves_precision() -> None:
         }
     }
     permit = p._map_permit(data)
-    assert permit.remaining_balance == 12.5
-    assert permit.balance_unit == "EURO"
+    assert permit.balances == [Balance(12.5, "EURO")]
 
 
 def test_map_reservation_list_skips_non_lpn() -> None:

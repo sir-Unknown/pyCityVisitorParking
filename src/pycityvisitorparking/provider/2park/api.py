@@ -14,7 +14,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 import aiohttp
 
 from ...exceptions import AuthError, ErrorCode, ProviderError, ValidationError
-from ...models import Favorite, Permit, Reservation, ReservationTarget
+from ...models import Balance, Favorite, Permit, Reservation, ReservationTarget
 from ...util import format_utc_timestamp, parse_timestamp
 from ..base import BaseProvider, raise_for_failed_status
 from ..loader import ProviderManifest
@@ -121,6 +121,8 @@ class Provider(BaseProvider):
         if major != "OK":
             raise AuthError("Authentication failed.")
 
+        # Given: passed as ``permit_id`` or cached from an earlier login.
+        product_source = "detected" if product_id is None else "given"
         if product_id is None or location is None:
             detected_id, detected_location = await self._detect_product(product_id)
             product_id = product_id or detected_id
@@ -133,7 +135,10 @@ class Provider(BaseProvider):
             self._credentials["permit_id"] = product_id
         if location:
             self._credentials["location"] = location
-        self._plogger.operation_completed("login", product_id=product_id, location=location)
+        # Ids stay out of the log, like ``permit_id`` in request payloads.
+        self._plogger.operation_completed(
+            "login", product=product_source, location_found=bool(location)
+        )
         self._session_generation += 1
 
     async def get_permit(self) -> Permit:
@@ -480,9 +485,7 @@ class Provider(BaseProvider):
         amount = _parse_balance_amount(balance)
         balance_unit = _parse_balance_currency(balance)
         permit_id = self._coerce_id(self._product_id) or "permit"
-        return Permit(
-            id=permit_id, remaining_balance=amount, paid_hours=[], balance_unit=balance_unit
-        )
+        return Permit(id=permit_id, paid_hours=[], balances=[Balance(amount, balance_unit)])
 
     def _map_reservation_list(self, details: Any) -> list[Reservation]:
         if not isinstance(details, dict):

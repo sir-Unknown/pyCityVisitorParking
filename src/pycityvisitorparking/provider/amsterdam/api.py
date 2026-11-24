@@ -24,6 +24,7 @@ from ...exceptions import (
 from ...models import (
     BALANCE_UNIT_EURO,
     BALANCE_UNIT_MINUTE,
+    Balance,
     Favorite,
     PaidHoursBlock,
     Permit,
@@ -613,12 +614,10 @@ class Provider(BaseProvider):
             raise ProviderError("Provider response included invalid permit data.")
         # The meldcode (login username) is a credential, so it never becomes the id.
         permit_id = client_product_id
-        remaining_balance, balance_unit = self._extract_balance(data)
         return Permit(
             id=permit_id,
-            remaining_balance=remaining_balance,
             paid_hours=paid_hours,
-            balance_unit=balance_unit,
+            balances=self._extract_balances(data),
         )
 
     async def _build_paid_zone_validity(
@@ -760,21 +759,25 @@ class Provider(BaseProvider):
             return None
         return time(hour, minute)
 
-    def _extract_balance(self, data: dict[str, Any]) -> tuple[float, str | None]:
-        """Return the main account balance and its unit.
+    def _extract_balances(self, data: dict[str, Any]) -> list[Balance]:
+        """Return the main account balances: time first, then money.
 
-        ``time_balance`` is in seconds and ``money_balance`` in cents; the portal
-        shows whichever is present (``0`` counts as present).
+        ``time_balance`` is in seconds and ``money_balance`` in cents. A permit
+        can hold both (hours plus money for the reduced parking fee); each one
+        that is present is reported, ``0`` included.
         """
         ssp = data.get("ssp")
         main_account = ssp.get("main_account") if isinstance(ssp, dict) else None
         if not isinstance(main_account, dict):
-            return 0, None
+            return []
+        balances: list[Balance] = []
         if main_account.get("time_balance") is not None:
-            return self._parse_int(main_account["time_balance"]) // 60, BALANCE_UNIT_MINUTE
+            minutes = self._parse_int(main_account["time_balance"]) // 60
+            balances.append(Balance(minutes, BALANCE_UNIT_MINUTE))
         if main_account.get("money_balance") is not None:
-            return self._parse_int(main_account["money_balance"]) / 100, BALANCE_UNIT_EURO
-        return 0, None
+            euros = self._parse_int(main_account["money_balance"]) / 100
+            balances.append(Balance(euros, BALANCE_UNIT_EURO))
+        return balances
 
     def _parse_machine_number(self, value: str) -> int:
         """Validate a parking machine number given as ``reservation_target_id``."""

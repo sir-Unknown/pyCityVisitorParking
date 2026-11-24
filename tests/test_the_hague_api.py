@@ -8,7 +8,7 @@ import aiohttp
 import pytest
 
 from pycityvisitorparking.exceptions import AuthError, NetworkError, ProviderError, ValidationError
-from pycityvisitorparking.models import Favorite
+from pycityvisitorparking.models import Balance, Favorite
 from pycityvisitorparking.provider.loader import ProviderManifest
 from pycityvisitorparking.provider.the_hague.api import Provider
 from pycityvisitorparking.provider.the_hague.const import PERMIT_MEDIA_TYPE_HEADER
@@ -325,7 +325,7 @@ async def test_get_permit_requests_account_endpoint() -> None:
     permit = await provider.get_permit()
 
     assert permit.id == "9"
-    assert permit.remaining_balance == 42
+    assert permit.balances == [Balance(42, "MINUTE")]
     assert permit.paid_hours[0].start_time == "2024-01-02T08:00:00Z"
     assert session.calls[0]["url"].endswith("/api/account/0")
 

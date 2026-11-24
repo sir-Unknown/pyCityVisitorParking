@@ -26,15 +26,15 @@ dependencies = [
 ]
 
 [dependency-groups]
-lint = ["ruff==0.17.4", "pylint==4.1.3"]
+lint = ["ruff==0.17.6", "pylint==4.1.4"]
 security = ["zizmor==1.32.0"]
 test = [
   "pytest==9.2.0",
-  "pytest-asyncio==1.4.1.post1",
+  "pytest-asyncio==1.5.0",
   "pytest-cov==7.1.0",
   "jsonschema==4.26.0",
 ]
-schema = ["jsonschema==4.26.0", "pytest==9.2.0", "pytest-asyncio==1.4.1.post1"]
+schema = ["jsonschema==4.26.0", "pytest==9.2.0", "pytest-asyncio==1.5.0"]
 typecheck = ["pyright==1.1.414", "pytest==9.2.0"]
 dev = [
   "pre-commit==4.7.0",

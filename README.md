@@ -143,7 +143,7 @@ Public data models:
 Model highlights:
 
 - `ProviderInfo` includes `id`, `favorite_update_fields`, `reservation_update_fields`, `balance_units`, and `reservation_target_selection`
-- `Permit` includes `id`, `remaining_balance`, `balance_unit`, and `paid_hours`
+- `Permit` includes `id`, `paid_hours`, `balances`, and an optional display `name`; `balances` is a list of `Balance` (`amount`, `unit`), at most one per unit with the primary balance first, and empty when the provider reports none
 - `PaidHoursBlock` contains UTC ISO 8601 `start_time` and `end_time`
 - `ReservationTarget` includes an opaque `id`, a display `name`, an optional `description`, and its own `paid_hours`
 - `Reservation` includes `id`, `name`, `license_plate`, `start_time`, `end_time`, and `reservation_target_id` (`None` when the provider has no targets)
@@ -159,6 +159,8 @@ Model highlights:
 ### Login and provider state
 
 `login()` takes `username` and `password`, plus the optional keys documented in the provider README (for example a `permit_id` to select a permit).
+
+`list_permits()` returns every permit the account can use, independent of the selected permit. Pass a `Permit.id` from it as `login(permit_id=...)` to act on that permit; without `permit_id` the provider picks one. Providers that cannot list permits return the single permit of `get_permit()`. When the selected permit is no longer available, calls raise `NotFoundError` with `error_code="permit_not_found"` instead of falling back to another permit.
 
 Anything a provider resolves during login (product, location, permit media type, session tokens) stays internal to the provider. It is not part of the public contract and callers do not need to persist or replay it: reauthentication after an expired session reuses that state automatically.
 
@@ -303,6 +305,7 @@ Supported error codes:
 | `not_found`           | `NotFoundError`           | The requested provider resource does not exist                           |
 | `not_supported`       | `ProviderError`           | The operation is not supported by this provider or permit                |
 | `provider_rejected`   | `ProviderError`           | The provider refused the action (for example insufficient balance)       |
+| `permit_not_found`    | `NotFoundError`           | The account has no usable permit, or not the one selected with `permit_id` |
 
 `TimeoutError` is a subclass of `NetworkError`; `RateLimitError`, `ServiceUnavailableError` and `NotFoundError` are subclasses of `ProviderError`; `ConfigError` is a subclass of `ValidationError`.
 

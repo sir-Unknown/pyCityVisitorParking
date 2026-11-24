@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import html
 import json
+import logging
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -12,10 +13,12 @@ import pytest
 
 from pycityvisitorparking.exceptions import (
     AuthError,
+    ErrorCode,
     NotFoundError,
     ProviderError,
     ValidationError,
 )
+from pycityvisitorparking.models import Balance
 from pycityvisitorparking.provider.loader import ProviderManifest
 from pycityvisitorparking.provider.rotterdam.api import Provider
 from pycityvisitorparking.provider.rotterdam.mendix import find_operation_id
@@ -369,8 +372,7 @@ async def test_get_permit_converts_balance_units_to_minutes_and_sorts_windows() 
     provider = await _logged_in(portal)
     permit = await provider.get_permit()
     assert permit.id == "auth-100"
-    assert permit.remaining_balance == 60.0  # 6 units of 10 minutes
-    assert permit.balance_unit == "MINUTE"
+    assert permit.balances == [Balance(60.0, "MINUTE")]  # 6 units of 10 minutes
     # Duplicate windows collapse and the result is chronological, in UTC with a Z suffix.
     assert [(b.start_time, b.end_time) for b in permit.paid_hours] == [
         ("2026-03-15T09:20:45Z", "2026-03-15T11:20:45Z"),
@@ -399,14 +401,85 @@ async def test_missing_balance_row_reports_zero() -> None:
     portal = _permit_portal()
     portal.xpath_results = [item for item in portal.xpath_results if item[0] != "Parkeren.Saldo"]
     provider = await _logged_in(portal)
-    assert (await provider.get_permit()).remaining_balance == 0.0
+    assert (await provider.get_permit()).balances == [Balance(0.0, "MINUTE")]
 
 
 @pytest.mark.asyncio
-async def test_get_permit_without_active_permit_raises_not_found() -> None:
+async def test_get_permit_without_active_permit_raises_permit_not_found() -> None:
     provider = await _logged_in(_Portal())
-    with pytest.raises(NotFoundError):
+    with pytest.raises(NotFoundError) as err:
         await provider.get_permit()
+    assert err.value.error_code == ErrorCode.PERMIT_NOT_FOUND
+
+
+def _two_permit_portal() -> _Portal:
+    """Return a portal whose account holds two permits; "Own" sorts first."""
+    portal = _permit_portal()
+    portal.xpath_results[0] = (
+        "Parkeren.Machtiging",
+        [
+            _authorization("100", permit_guid="200", description="Shared"),
+            _authorization("101", permit_guid="201", description="Own"),
+        ],
+    )
+    return portal
+
+
+@pytest.mark.asyncio
+async def test_list_permits_returns_every_usable_permit_with_its_name() -> None:
+    provider = await _logged_in(_two_permit_portal())
+    permits = await provider.list_permits()
+    assert [(permit.id, permit.name) for permit in permits] == [
+        ("auth-101", "Own"),
+        ("auth-100", "Shared"),
+    ]
+    assert all(permit.balances == [Balance(60.0, "MINUTE")] for permit in permits)
+
+
+@pytest.mark.asyncio
+async def test_login_permit_id_selects_that_permit_for_every_operation(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    portal = _two_permit_portal()
+    portal.operations = {"OP_COST": _cost, "OP_SAVE": _accepted({"objects": []})}
+    created = _action("new", "AB12CD", NOW.replace(second=0), NOW + timedelta(hours=1))
+    portal.xpath_results.append(("Parkeren.Parkeeractie", [created]))
+    provider = _provider(portal)
+    # The second permit in the stable order, so the default choice would differ.
+    await provider.login(
+        {"username": "user@example.com", "password": "secret", "permit_id": "auth-100"}
+    )
+    caplog.set_level(logging.DEBUG, logger="pycityvisitorparking.provider")
+    permit, _reservations, _favorites, _targets = await provider.fetch_all()
+    # The log shows that the requested permit was used, without its id.
+    assert "select_permit completed source=requested usable=2" in caplog.text
+    assert "auth-100" not in caplog.text
+    assert (permit.id, permit.name) == ("auth-100", "Shared")
+    assert (await provider.get_permit()).id == "auth-100"
+    await provider.start_reservation("AB12CD", NOW, NOW + timedelta(hours=1))
+    (save_call,) = portal.operation_calls("OP_SAVE")
+    assert save_call["params"]["MachtigingId"] == {"value": "auth-100"}
+    action_xpaths = [x for x in portal.xpaths if "Parkeren.Parkeeractie_Vergunning" in x]
+    assert action_xpaths
+    assert all("Parkeren.Parkeeractie_Vergunning = '200'" in x for x in action_xpaths)
+
+
+@pytest.mark.asyncio
+async def test_selected_permit_that_is_no_longer_usable_is_never_replaced(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    provider = _provider(_two_permit_portal())
+    await provider.login(
+        {"username": "user@example.com", "password": "secret", "permit_id": "auth-999"}
+    )
+    caplog.set_level(logging.DEBUG, logger="pycityvisitorparking.provider")
+    with pytest.raises(NotFoundError) as err:
+        await provider.fetch_all()
+    assert err.value.error_code == ErrorCode.PERMIT_NOT_FOUND
+    assert "select_permit failed: permit not usable source=requested usable=2" in caplog.text
+    assert "auth-999" not in caplog.text
+    # Listing the permits does not depend on the selection.
+    assert [permit.id for permit in await provider.list_permits()] == ["auth-101", "auth-100"]
 
 
 @pytest.mark.asyncio

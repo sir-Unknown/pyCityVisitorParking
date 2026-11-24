@@ -7,6 +7,7 @@ from pycityvisitorparking.exceptions import ValidationError
 from pycityvisitorparking.models import (
     BALANCE_UNIT_EURO,
     BALANCE_UNIT_MINUTE,
+    Balance,
     Favorite,
     PaidHoursBlock,
     Permit,
@@ -53,16 +54,19 @@ def assert_utc_timestamp(value: str) -> None:
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    ("main_account", "expected_balance", "expected_unit"),
+    ("main_account", "expected_balances"),
     [
-        ({"time_balance": 7230}, 120, BALANCE_UNIT_MINUTE),
-        ({"time_balance": 0, "money_balance": 500}, 0, BALANCE_UNIT_MINUTE),
-        ({"time_balance": None, "money_balance": 1250}, 12.5, BALANCE_UNIT_EURO),
-        ({}, 0, None),
+        ({"time_balance": 7230}, [Balance(120, BALANCE_UNIT_MINUTE)]),
+        (
+            {"time_balance": 0, "money_balance": 579},
+            [Balance(0, BALANCE_UNIT_MINUTE), Balance(5.79, BALANCE_UNIT_EURO)],
+        ),
+        ({"time_balance": None, "money_balance": 1250}, [Balance(12.5, BALANCE_UNIT_EURO)]),
+        ({}, []),
     ],
 )
-async def test_map_permit_balance_uses_portal_units(
-    main_account: dict[str, object], expected_balance: float, expected_unit: str | None
+async def test_map_permit_balances_use_portal_units(
+    main_account: dict[str, object], expected_balances: list[Balance]
 ) -> None:
     async with aiohttp.ClientSession() as session:
         provider = Provider(
@@ -85,8 +89,7 @@ async def test_map_permit_balance_uses_portal_units(
 
     assert isinstance(permit, Permit)
     assert permit.id == "42"
-    assert permit.remaining_balance == expected_balance
-    assert permit.balance_unit == expected_unit
+    assert permit.balances == expected_balances
 
 
 @pytest.mark.asyncio

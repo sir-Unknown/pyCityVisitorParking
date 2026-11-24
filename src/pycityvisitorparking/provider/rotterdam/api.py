@@ -16,6 +16,7 @@ import aiohttp
 from ...exceptions import AuthError, ErrorCode, NotFoundError, ProviderError, ValidationError
 from ...models import (
     BALANCE_UNIT_MINUTE,
+    Balance,
     Favorite,
     PaidHoursBlock,
     Permit,
@@ -108,6 +109,7 @@ class Provider(BaseProvider):
             retry_count=retry_count,
         )
         self._credentials: dict[str, str] | None = None
+        self._permit_id: str | None = None
         self._csrf_token: str | None = None
         self._constants: dict[str, str] = {}
         self._cache_bust: str | None = None
@@ -125,7 +127,11 @@ class Provider(BaseProvider):
         credentials: Mapping[str, object] | None = None,
         **kwargs: object,
     ) -> None:
-        """Authenticate against the provider."""
+        """Authenticate against the provider.
+
+        An optional ``permit_id`` (a ``Permit.id`` from ``list_permits``) selects the
+        permit; without it the first usable permit is used (see D2).
+        """
         self._plogger.operation_started("login")
         merged = self._merge_credentials(credentials, **kwargs)
         username = merged.get("username", "").strip()
@@ -134,9 +140,11 @@ class Provider(BaseProvider):
             raise ValidationError("username is required.")
         if not password:
             raise ValidationError("password is required.")
+        permit_id = merged.get("permit_id", "").strip() or None
         async with self._auth_lock:
             await self._authenticate(username, password)
         self._credentials = {"username": username, "password": password}
+        self._permit_id = permit_id
         self._plogger.operation_completed("login")
 
     async def _authenticate(self, username: str, password: str) -> None:
@@ -357,6 +365,17 @@ class Provider(BaseProvider):
         )
         return permit, reservations, favorites, targets
 
+    async def list_permits(self) -> list[Permit]:
+        """Return every usable permit of the account, in the order of D2."""
+        self._plogger.operation_started("list_permits")
+        authorizations = await self._load_authorizations()
+        results = await asyncio.gather(
+            *(self._permit_and_targets(authorization) for authorization in authorizations)
+        )
+        permits = [permit for permit, _targets in results]
+        self._plogger.operation_completed("list_permits", count=len(permits))
+        return permits
+
     async def _load_authorizations(self) -> list[MendixObject]:
         """Return the account's usable permit authorizations in a stable order."""
         found = await self._retrieve(
@@ -373,12 +392,31 @@ class Provider(BaseProvider):
         return found
 
     async def _select_authorization(self) -> MendixObject:
-        # DESIGN DECISION D2 (see README "Design decisions"): with several usable permits
-        # the first one in the stable order of ``_load_authorizations`` is used.
+        # DESIGN DECISION D2 (see README "Design decisions"): the permit chosen with
+        # ``login(permit_id=...)``; without one, the first in the stable order of
+        # ``_load_authorizations``.
         found = await self._load_authorizations()
-        if not found:
-            raise NotFoundError("No active permit found for this account.")
-        return found[0]
+        if self._permit_id is None:
+            source = "default"
+            selected = found[0] if found else None
+        else:
+            source = "requested"
+            selected = next((item for item in found if item.text("_Id") == self._permit_id), None)
+        # Logged without ids, so a log shows whether the requested permit was used.
+        if selected is None:
+            self._plogger.operation_failed(
+                "select_permit", "permit not usable", source=source, usable=len(found)
+            )
+            # Never fall back to another permit: that would act on the wrong permit
+            # silently.
+            raise NotFoundError(
+                "No active permit found for this account."
+                if self._permit_id is None
+                else "The selected permit is not active for this account.",
+                error_code=ErrorCode.PERMIT_NOT_FOUND,
+            )
+        self._plogger.operation_completed("select_permit", source=source, usable=len(found))
+        return selected
 
     def _permit_guid(self, authorization: MendixObject) -> str:
         return xpath_guid(authorization.text(ASSOC_AUTHORIZATION_PERMIT), "permit reference")
@@ -398,11 +436,11 @@ class Provider(BaseProvider):
         targets = await self._targets(zone_objects)
         permit = Permit(
             id=self._authorization_id(authorization),
-            remaining_balance=balance,
             # DESIGN DECISION D1 (see README "Design decisions"): the permit-level windows
             # are those of the default target, the first of ``list_reservation_targets``.
             paid_hours=targets[0].paid_hours if targets else [],
-            balance_unit=BALANCE_UNIT_MINUTE,
+            balances=[Balance(balance, BALANCE_UNIT_MINUTE)],
+            name=authorization.text("Omschrijving"),
         )
         return permit, targets
 

@@ -14,7 +14,7 @@ from pycityvisitorparking.exceptions import (
     ServiceUnavailableError,
     ValidationError,
 )
-from pycityvisitorparking.models import BALANCE_UNIT_MINUTE, ReservationTarget
+from pycityvisitorparking.models import BALANCE_UNIT_MINUTE, Balance, ReservationTarget
 from pycityvisitorparking.provider.amsterdam.api import Provider
 from pycityvisitorparking.provider.loader import ProviderManifest
 
@@ -158,8 +158,7 @@ async def test_get_permit_reports_minutes_and_uses_one_cost_calculation() -> Non
 
     permit = await provider.get_permit()
 
-    assert permit.remaining_balance == 10
-    assert permit.balance_unit == BALANCE_UNIT_MINUTE
+    assert permit.balances == [Balance(10, BALANCE_UNIT_MINUTE)]
     assert len(session.calls_to("/parking_session/cost_calculator")) == 1
 
 

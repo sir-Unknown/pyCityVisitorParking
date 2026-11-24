@@ -559,11 +559,24 @@ class BaseProvider(ABC):
         credentials: Mapping[str, object] | None = None,
         **kwargs: object,
     ) -> None:
-        """Authenticate against the provider."""
+        """Authenticate against the provider.
+
+        Providers that support several permits per account accept an optional
+        ``permit_id`` (an id from ``list_permits``) that selects the permit every other
+        operation acts on.
+        """
 
     @abstractmethod
     async def get_permit(self) -> Permit:
         """Return the active permit for the account."""
+
+    async def list_permits(self) -> list[Permit]:
+        """Return every permit the account can use, independent of the selected permit.
+
+        Each ``Permit.id`` can be passed as ``login(permit_id=...)``. Providers that
+        cannot list permits return the single permit ``get_permit`` returns.
+        """
+        return [await self.get_permit()]
 
     @abstractmethod
     async def list_reservations(self) -> list[Reservation]:

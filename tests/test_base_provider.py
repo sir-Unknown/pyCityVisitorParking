@@ -83,7 +83,7 @@ class _DummyProvider(BaseProvider):
         return None
 
     async def get_permit(self) -> Permit:
-        return Permit(id="permit", remaining_balance=1, paid_hours=[])
+        return Permit(id="permit", paid_hours=[])
 
     async def list_reservations(self) -> list[Reservation]:
         return []

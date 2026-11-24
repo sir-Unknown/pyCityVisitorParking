@@ -7,7 +7,14 @@ from typing import TYPE_CHECKING, Any, TypeGuard
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from ...exceptions import ProviderError, ValidationError
-from ...models import BALANCE_UNIT_MINUTE, Favorite, PaidHoursBlock, Permit, Reservation
+from ...models import (
+    BALANCE_UNIT_MINUTE,
+    Balance,
+    Favorite,
+    PaidHoursBlock,
+    Permit,
+    Reservation,
+)
 from ...util import format_utc_timestamp
 from .const import API_TIMEZONE
 
@@ -85,9 +92,8 @@ class PortalMapper:
         paid_hours = self.map_paid_hours(permit.get("BlockTimes"))
         return Permit(
             id=permit_id,
-            remaining_balance=remaining_balance,
             paid_hours=paid_hours,
-            balance_unit=BALANCE_UNIT_MINUTE,
+            balances=[Balance(remaining_balance, BALANCE_UNIT_MINUTE)],
         )
 
     def map_paid_hours(self, block_times: Any) -> list[PaidHoursBlock]:

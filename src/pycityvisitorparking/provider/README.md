@@ -83,6 +83,16 @@ it through the public API.
 
 Do not log credentials or tokens.
 
+## Several permits per account
+
+When an account can hold more than one permit, override `list_permits()` to
+return all of them (with `Permit.name` set when the provider has a display name)
+and accept an optional `permit_id` key in `login()` that selects the permit every
+other operation acts on. When the selected permit is no longer available, raise
+`NotFoundError` with `error_code=ErrorCode.PERMIT_NOT_FOUND`; never fall back to
+another permit. The default `list_permits()` returns the single permit of
+`get_permit()`.
+
 ## Time handling (UTC required)
 
 All public timestamps must be UTC ISO 8601 with a trailing `Z` and no

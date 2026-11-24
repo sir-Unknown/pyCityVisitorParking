@@ -6,8 +6,8 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from pycityvisitorparking.exceptions import ValidationError
-from pycityvisitorparking.models import ReservationTarget
+from pycityvisitorparking.exceptions import ErrorCode, NotFoundError, ValidationError
+from pycityvisitorparking.models import Balance, ReservationTarget
 from pycityvisitorparking.provider.demo import Provider
 from pycityvisitorparking.provider.loader import ProviderManifest
 
@@ -88,6 +88,37 @@ async def test_rotterdam_demo_books_in_the_requested_or_default_target() -> None
 
 
 @pytest.mark.asyncio
+async def test_rotterdam_demo_account_has_two_permits_selected_by_permit_id() -> None:
+    provider = _provider("Rotterdam Demo")
+    permits = await provider.list_permits()
+    assert [(p.id, p.name) for p in permits] == [
+        ("demo-permit", "Own permit"),
+        ("demo-permit-shared", "Shared permit"),
+    ]
+    # Without permit_id the first permit is used, so existing demo entries keep theirs.
+    assert (await provider.get_permit()).id == "demo-permit"
+
+    await provider.login(username="demo", password="demo", permit_id="demo-permit-shared")
+    permit, reservations, _favorites, targets = await provider.fetch_all()
+    assert (permit.id, permit.balances) == ("demo-permit-shared", [Balance(600, "MINUTE")])
+    assert [target.id for target in targets] == ["700", "701"]
+    assert [reservation.id for reservation in reservations] == ["rot-3"]
+    booked = await provider.start_reservation(
+        "AB12CD", NOW + timedelta(hours=1), NOW + timedelta(hours=2)
+    )
+    assert booked.reservation_target_id == "700"
+
+
+@pytest.mark.asyncio
+async def test_demo_permit_that_does_not_exist_is_not_replaced() -> None:
+    provider = _provider("Rotterdam Demo")
+    await provider.login(username="demo", password="demo", permit_id="gone")
+    with pytest.raises(NotFoundError) as err:
+        await provider.fetch_all()
+    assert err.value.error_code == ErrorCode.PERMIT_NOT_FOUND
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("start", "booked_start"),
     [
@@ -116,7 +147,7 @@ async def test_amsterdam_demo_books_at_its_default_parking_machine() -> None:
     )
 
     assert [target.id for target in targets] == ["19850"]
-    assert permit.balance_unit == "MINUTE"
+    assert permit.balances == [Balance(2700, "MINUTE"), Balance(25.0, "EURO")]
     assert permit.paid_hours == targets[0].paid_hours
     # Friday paid until midnight; Sunday (15 November) only from noon.
     assert permit.paid_hours[0].start_time == "2026-11-13T08:00:00Z"
@@ -172,3 +203,18 @@ async def test_other_demo_permits_have_no_targets() -> None:
             NOW + timedelta(hours=2),
             reservation_target_id="10",
         )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("city", "balances"),
+    [
+        ("Amsterdam Demo", [Balance(2700, "MINUTE"), Balance(25.0, "EURO")]),
+        ("Den Haag Demo", [Balance(480, "MINUTE")]),
+        ("Groningen Demo", [Balance(237.50, "EURO")]),
+        ("Demo", [Balance(100.0, "EURO")]),
+    ],
+)
+async def test_demo_permit_balances(city: str, balances: list[Balance]) -> None:
+    provider = _provider(city)
+    assert (await provider.get_permit()).balances == balances

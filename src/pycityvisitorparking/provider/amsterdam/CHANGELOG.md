@@ -10,7 +10,7 @@
 - Use `/v1` permit endpoints when discovering `client_product_id`.
 - Follow the 0.6.0 provider API: `Permit.paid_hours`, `start_reservation(..., reservation_target_id=None)`, and a start in the past starts the reservation now.
 - Send a parking machine only for permits with `config.can_select_zone`, matching the portal; permits without zone selection no longer fail on a missing machine.
-- Report `remaining_balance` with `balance_unit`: `time_balance` seconds as whole minutes (`MINUTE`), otherwise `money_balance` cents as euros (`EURO`).
+- Report every balance in `Permit.balances`: `time_balance` seconds as whole minutes (`MINUTE`) and `money_balance` cents as euros (`EURO`). A permit with both now reports both; before, the money balance was dropped.
 - Derive `paid_hours` from the weekly `time_frame_data` of a single cost calculation instead of one call per day; drop the unverified `validity`/`zone_validity` fallback.
 - Raise `ServiceUnavailableError` when the portal reports `NPR is unavailable.`.
 - Reject reservation updates and ends for sessions with `can_edit: false` or that are no longer ACTIVE/FUTURE before sending them, matching the portal.
@@ -21,3 +21,4 @@
 - Request parking sessions newest first (`sort=parking_session_id:desc`), like the portal, so open sessions stay on the first page.
 - Calculate `paid_hours` for a one-hour period from now instead of today from midnight; the portal never calculates a period in the past. Log why the paid hours could not be fetched at debug level.
 - Use `client_product_id` as `Permit.id` instead of the login `username`, which is the meldcode and therefore a credential.
+- Log at debug level why `paid_hours` stay empty: the keys of a cost calculation response without `time_frame_data`, or the shape of a weekly schedule without readable blocks (day sizes, block keys, clock times).

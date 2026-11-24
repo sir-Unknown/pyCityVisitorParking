@@ -10,7 +10,14 @@ from typing import Any
 import aiohttp
 
 from ...exceptions import AuthError, ErrorCode, ProviderError, ValidationError
-from ...models import BALANCE_UNIT_MINUTE, Favorite, PaidHoursBlock, Permit, Reservation
+from ...models import (
+    BALANCE_UNIT_MINUTE,
+    Balance,
+    Favorite,
+    PaidHoursBlock,
+    Permit,
+    Reservation,
+)
 from ..base import BaseProvider
 from ..loader import ProviderManifest
 from .const import (
@@ -310,9 +317,8 @@ class Provider(BaseProvider):
         )
         return Permit(
             id=account_id,
-            remaining_balance=remaining_balance,
             paid_hours=paid_hours,
-            balance_unit=BALANCE_UNIT_MINUTE,
+            balances=self._balances(Balance(remaining_balance, BALANCE_UNIT_MINUTE)),
         )
 
     def _map_paid_hours(

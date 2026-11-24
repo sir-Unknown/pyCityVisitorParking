@@ -8,7 +8,7 @@ import aiohttp
 import pytest
 
 from pycityvisitorparking.exceptions import AuthError, NetworkError, ProviderError, ValidationError
-from pycityvisitorparking.models import Favorite
+from pycityvisitorparking.models import Balance, Favorite
 from pycityvisitorparking.provider.loader import ProviderManifest
 from pycityvisitorparking.provider.the_hague.api import Provider
 from pycityvisitorparking.provider.the_hague.const import PERMIT_MEDIA_TYPE_HEADER
@@ -78,6 +78,7 @@ def _provider() -> Provider:
             name="The Hague",
             favorite_update_fields=("license_plate", "name"),
             reservation_update_fields=("end_time",),
+            balance_units=("MINUTE",),
         ),
         base_url="https://example",
     )
@@ -95,6 +96,7 @@ def _provider_with_session(session: object) -> Provider:
             name="The Hague",
             favorite_update_fields=("license_plate", "name"),
             reservation_update_fields=("end_time",),
+            balance_units=("MINUTE",),
         ),
         base_url="https://example",
     )
@@ -128,6 +130,7 @@ async def test_login_429_raises_auth_error() -> None:
             name="The Hague",
             favorite_update_fields=("license_plate", "name"),
             reservation_update_fields=("end_time",),
+            balance_units=("MINUTE",),
         ),
         base_url="https://example",
     )
@@ -325,7 +328,7 @@ async def test_get_permit_requests_account_endpoint() -> None:
     permit = await provider.get_permit()
 
     assert permit.id == "9"
-    assert permit.remaining_balance == 42
+    assert permit.balances == [Balance(42, "MINUTE")]
     assert permit.paid_hours[0].start_time == "2024-01-02T08:00:00Z"
     assert session.calls[0]["url"].endswith("/api/account/0")
 
@@ -435,6 +438,7 @@ async def test_request_json_requires_authentication() -> None:
             name="The Hague",
             favorite_update_fields=("license_plate", "name"),
             reservation_update_fields=("end_time",),
+            balance_units=("MINUTE",),
         ),
         base_url="https://example",
     )

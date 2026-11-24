@@ -50,8 +50,9 @@ A rejected action (status other than `OK`) raises `ProviderError` with
 
 `paid_hours` is not provided by this API and is always an empty list.
 
-`remaining_balance` reflects the raw AMOUNT value from the balance response
-(typically in minutes for visitor parking products).
+`Permit.balances` holds one `Balance` with the raw AMOUNT value from the balance
+response (typically in minutes for visitor parking products) and the unit from
+its currency, or `None` when the currency is unknown.
 
 ## Example
 
@@ -65,7 +66,7 @@ async def main() -> None:
         provider = await client.get_provider("2park")
         await provider.login(credentials={"username": "user@example.com", "password": "secret"})
         permit = await provider.get_permit()
-        print(permit.id, permit.remaining_balance)
+        print(permit.id, permit.balances)
 
 
 asyncio.run(main())

@@ -24,6 +24,7 @@ from ..exceptions import (
 )
 from ..exceptions import TimeoutError as RequestTimeoutError
 from ..models import (
+    Balance,
     Favorite,
     PaidHoursBlock,
     Permit,
@@ -310,6 +311,26 @@ class BaseProvider(ABC):
                 raise ProviderError("Provider returned invalid paid hours data.") from exc
             normalized.append(PaidHoursBlock(start_time=start, end_time=end))
         return normalized
+
+    def _balances(self, *balances: Balance) -> list[Balance]:
+        """Return ``Permit.balances``, checked against the manifest's ``balance_units``.
+
+        Providers build ``Permit.balances`` through this helper, so a unit the
+        manifest does not declare (for example ``"EUR"`` for ``EURO``) or a second
+        balance of one unit fails loudly instead of being dropped by a caller.
+        ``None`` stays allowed: it means the provider reports no unit.
+        """
+        seen: set[str | None] = set()
+        for balance in balances:
+            if balance.unit is not None and balance.unit not in self._manifest.balance_units:
+                raise ProviderError(
+                    f"Provider returned balance unit {balance.unit!r}, "
+                    "which its manifest does not declare."
+                )
+            if balance.unit in seen:
+                raise ProviderError(f"Provider returned two balances with unit {balance.unit!r}.")
+            seen.add(balance.unit)
+        return list(balances)
 
     def _parse_int(self, value: Any) -> int:
         if value is None or isinstance(value, bool):

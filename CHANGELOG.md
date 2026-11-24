@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Breaking: a permit can report several balances (for example a time balance and a money balance). `Permit.remaining_balance` and `Permit.balance_unit` are replaced by `Permit.balances`, a list of the new `Balance` model (`amount`, `unit`) with at most one balance per unit, the primary balance first, and an empty list when the provider reports none. Every provider returns its single balance as a one-item list with unchanged amount and unit (2park keeps `unit=None` when the backend sends no currency code). There is no alias for the old fields.
+- Providers build `Permit.balances` through the new `BaseProvider._balances()`, which raises `ProviderError` for a unit the provider's manifest does not declare in `balance_units` or for two balances with one unit, so a wrong unit (for example `EUR` for `EURO`) fails instead of being dropped by a caller. 2park leaves a balance with a currency code it does not declare out of the permit and logs it at debug level.
+- Demo: the Amsterdam demo permit has a `MINUTE` and a `EURO` balance, so the two-balance case can be tried without a real account.
 - Fix: `BaseProvider.info` now reports the manifest's `balance_units`; it was always empty. `Client.list_providers()` already reported them.
 
 ## 0.6.1

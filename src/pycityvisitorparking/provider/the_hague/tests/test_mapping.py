@@ -4,7 +4,7 @@ import aiohttp
 import pytest
 
 from pycityvisitorparking.exceptions import ValidationError
-from pycityvisitorparking.models import Favorite, PaidHoursBlock, Permit, Reservation
+from pycityvisitorparking.models import Balance, Favorite, PaidHoursBlock, Permit, Reservation
 from pycityvisitorparking.provider.loader import ProviderManifest
 from pycityvisitorparking.provider.the_hague.api import Provider
 from pycityvisitorparking.provider.the_hague.const import (
@@ -75,6 +75,7 @@ async def test_map_permit_filters_free_blocks_and_converts_utc():
                 name="The Hague",
                 favorite_update_fields=("license_plate", "name"),
                 reservation_update_fields=("end_time",),
+                balance_units=("MINUTE",),
             ),
             base_url="https://example",
         )
@@ -82,7 +83,7 @@ async def test_map_permit_filters_free_blocks_and_converts_utc():
 
     assert isinstance(permit, Permit)
     assert permit.id == "42"
-    assert permit.remaining_balance == 90
+    assert permit.balances == [Balance(90, "MINUTE")]
     assert permit.paid_hours == [
         PaidHoursBlock(
             start_time="2024-01-02T08:00:00Z",
@@ -104,6 +105,7 @@ async def test_map_permit_uses_zone_when_paid_hours_missing():
                 name="The Hague",
                 favorite_update_fields=("license_plate", "name"),
                 reservation_update_fields=("end_time",),
+                balance_units=("MINUTE",),
             ),
             base_url="https://example",
         )
@@ -131,6 +133,7 @@ async def test_map_reservation_normalizes_plate_and_utc():
                 name="The Hague",
                 favorite_update_fields=("license_plate", "name"),
                 reservation_update_fields=("end_time",),
+                balance_units=("MINUTE",),
             ),
             base_url="https://example",
         )
@@ -156,6 +159,7 @@ async def test_error_code_mapping():
                 name="The Hague",
                 favorite_update_fields=("license_plate", "name"),
                 reservation_update_fields=("end_time",),
+                balance_units=("MINUTE",),
             ),
             base_url="https://example",
         )
@@ -174,6 +178,7 @@ async def test_error_code_mapping_lowercase_with_zeros():
                 name="The Hague",
                 favorite_update_fields=("license_plate", "name"),
                 reservation_update_fields=("end_time",),
+                balance_units=("MINUTE",),
             ),
             base_url="https://example",
         )
@@ -192,6 +197,7 @@ async def test_error_code_mapping_unknown_code_is_generic():
                 name="The Hague",
                 favorite_update_fields=("license_plate", "name"),
                 reservation_update_fields=("end_time",),
+                balance_units=("MINUTE",),
             ),
             base_url="https://example",
         )
@@ -210,6 +216,7 @@ async def test_map_favorite_normalizes_plate():
                 name="The Hague",
                 favorite_update_fields=("license_plate", "name"),
                 reservation_update_fields=("end_time",),
+                balance_units=("MINUTE",),
             ),
             base_url="https://example",
         )
@@ -232,6 +239,7 @@ async def test_add_favorite_rejects_duplicate_plate(
                 name="The Hague",
                 favorite_update_fields=("license_plate", "name"),
                 reservation_update_fields=("end_time",),
+                balance_units=("MINUTE",),
             ),
             base_url="https://example",
         )
@@ -272,6 +280,7 @@ async def test_request_includes_permit_media_type_header(
                 name="The Hague",
                 favorite_update_fields=("license_plate", "name"),
                 reservation_update_fields=("end_time",),
+                balance_units=("MINUTE",),
             ),
             base_url="https://example",
         )
@@ -303,6 +312,7 @@ async def test_login_requires_username():
                 name="The Hague",
                 favorite_update_fields=("license_plate", "name"),
                 reservation_update_fields=("end_time",),
+                balance_units=("MINUTE",),
             ),
             base_url="https://example",
         )
@@ -321,6 +331,7 @@ async def test_default_api_uri_is_applied():
                 name="The Hague",
                 favorite_update_fields=("license_plate", "name"),
                 reservation_update_fields=("end_time",),
+                balance_units=("MINUTE",),
             ),
             base_url="https://example",
         )

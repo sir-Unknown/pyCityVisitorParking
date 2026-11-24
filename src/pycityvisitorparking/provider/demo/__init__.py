@@ -8,7 +8,7 @@ from datetime import datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
 from ...exceptions import ErrorCode, NotFoundError, ProviderError, ValidationError
-from ...models import Favorite, PaidHoursBlock, Permit, Reservation, ReservationTarget
+from ...models import Balance, Favorite, PaidHoursBlock, Permit, Reservation, ReservationTarget
 from ...util import parse_timestamp
 from ..base import BaseProvider
 
@@ -140,31 +140,34 @@ class Provider(BaseProvider):
     def _demo_permit_config(self) -> dict:
         """Return per-city permit configuration based on municipality name."""
         city = (self._request_context_name or "").lower()
+        if "amsterdam" in city:
+            # Amsterdam permits carry a time and a money balance at once.
+            return {
+                "balances": [Balance(300, "MINUTE"), Balance(25.0, "EURO")],
+                "zone_start": "2026-04-15T08:00:00Z",
+                "zone_end": "2026-04-15T23:00:00Z",
+            }
         if "groningen" in city:
             return {
-                "remaining_balance": 237.50,
-                "balance_unit": "EURO",
+                "balances": [Balance(237.50, "EURO")],
                 "zone_start": "2026-04-15T08:00:00Z",
                 "zone_end": "2026-04-15T20:00:00Z",
             }
         if "den haag" in city or "haag" in city:
             return {
-                "remaining_balance": 480,
-                "balance_unit": "MINUTE",
+                "balances": [Balance(480, "MINUTE")],
                 "zone_start": "2026-04-15T09:00:00Z",
                 "zone_end": "2026-04-15T23:00:00Z",
             }
         if "eindhoven" in city:
             return {
-                "remaining_balance": 12.75,
-                "balance_unit": "EURO",
+                "balances": [Balance(12.75, "EURO")],
                 "zone_start": "2026-04-15T07:30:00Z",
                 "zone_end": "2026-04-15T18:30:00Z",
             }
         # fallback
         return {
-            "remaining_balance": 100.0,
-            "balance_unit": "EURO",
+            "balances": [Balance(100.0, "EURO")],
             "zone_start": "2026-04-15T08:00:00Z",
             "zone_end": "2026-04-15T20:00:00Z",
         }
@@ -200,8 +203,7 @@ class Provider(BaseProvider):
             _id, name, balance, _zones = self._rotterdam_permit(permit_id)
             return Permit(
                 id=permit_id,
-                remaining_balance=balance,
-                balance_unit="MINUTE",
+                balances=self._balances(Balance(balance, "MINUTE")),
                 # The permit-level windows are those of the default target.
                 paid_hours=targets[0].paid_hours,
                 name=name,
@@ -209,8 +211,7 @@ class Provider(BaseProvider):
         cfg = self._demo_permit_config()
         return Permit(
             id=permit_id,
-            remaining_balance=cfg["remaining_balance"],
-            balance_unit=cfg["balance_unit"],
+            balances=self._balances(*cfg["balances"]),
             paid_hours=[PaidHoursBlock(start_time=cfg["zone_start"], end_time=cfg["zone_end"])],
         )
 

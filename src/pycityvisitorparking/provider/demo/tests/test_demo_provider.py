@@ -7,7 +7,7 @@ from datetime import UTC, datetime, timedelta
 import pytest
 
 from pycityvisitorparking.exceptions import ErrorCode, NotFoundError, ValidationError
-from pycityvisitorparking.models import ReservationTarget
+from pycityvisitorparking.models import Balance, ReservationTarget
 from pycityvisitorparking.provider.demo import Provider
 from pycityvisitorparking.provider.loader import ProviderManifest
 
@@ -23,6 +23,7 @@ def _provider(city: str) -> Provider:
             name="Demo",
             favorite_update_fields=("license_plate", "name"),
             reservation_update_fields=("start_time", "end_time"),
+            balance_units=("EURO", "MINUTE"),
             reservation_target_selection="list",
         ),
     )
@@ -100,7 +101,7 @@ async def test_rotterdam_demo_account_has_two_permits_selected_by_permit_id() ->
 
     await provider.login(username="demo", password="demo", permit_id="demo-permit-shared")
     permit, reservations, _favorites, targets = await provider.fetch_all()
-    assert (permit.id, permit.remaining_balance) == ("demo-permit-shared", 600)
+    assert (permit.id, permit.balances) == ("demo-permit-shared", [Balance(600, "MINUTE")])
     assert [target.id for target in targets] == ["700", "701"]
     assert [reservation.id for reservation in reservations] == ["rot-3"]
     booked = await provider.start_reservation(
@@ -148,3 +149,18 @@ async def test_other_demo_permits_have_no_targets() -> None:
             NOW + timedelta(hours=2),
             reservation_target_id="10",
         )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("city", "balances"),
+    [
+        ("Amsterdam Demo", [Balance(300, "MINUTE"), Balance(25.0, "EURO")]),
+        ("Den Haag Demo", [Balance(480, "MINUTE")]),
+        ("Groningen Demo", [Balance(237.50, "EURO")]),
+        ("Demo", [Balance(100.0, "EURO")]),
+    ],
+)
+async def test_demo_permit_balances(city: str, balances: list[Balance]) -> None:
+    provider = _provider(city)
+    assert (await provider.get_permit()).balances == balances

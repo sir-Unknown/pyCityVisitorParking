@@ -203,7 +203,7 @@ class Provider(BaseProvider):
             _id, name, balance, _zones = self._rotterdam_permit(permit_id)
             return Permit(
                 id=permit_id,
-                balances=[Balance(balance, "MINUTE")],
+                balances=self._balances(Balance(balance, "MINUTE")),
                 # The permit-level windows are those of the default target.
                 paid_hours=targets[0].paid_hours,
                 name=name,
@@ -211,7 +211,7 @@ class Provider(BaseProvider):
         cfg = self._demo_permit_config()
         return Permit(
             id=permit_id,
-            balances=list(cfg["balances"]),
+            balances=self._balances(*cfg["balances"]),
             paid_hours=[PaidHoursBlock(start_time=cfg["zone_start"], end_time=cfg["zone_end"])],
         )
 

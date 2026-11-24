@@ -23,6 +23,7 @@ def _provider(city: str) -> Provider:
             name="Demo",
             favorite_update_fields=("license_plate", "name"),
             reservation_update_fields=("start_time", "end_time"),
+            balance_units=("EURO", "MINUTE"),
             reservation_target_selection="list",
         ),
     )

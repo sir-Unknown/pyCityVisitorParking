@@ -439,7 +439,7 @@ class Provider(BaseProvider):
             # DESIGN DECISION D1 (see README "Design decisions"): the permit-level windows
             # are those of the default target, the first of ``list_reservation_targets``.
             paid_hours=targets[0].paid_hours if targets else [],
-            balances=[Balance(balance, BALANCE_UNIT_MINUTE)],
+            balances=self._balances(Balance(balance, BALANCE_UNIT_MINUTE)),
             name=authorization.text("Omschrijving"),
         )
         return permit, targets

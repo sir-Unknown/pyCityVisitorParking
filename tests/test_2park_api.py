@@ -73,6 +73,7 @@ def _manifest() -> ProviderManifest:
         name="2park",
         favorite_update_fields=(),
         reservation_update_fields=("end_time",),
+        balance_units=("TIMES", "MINUTE", "EURO"),
     )
 
 
@@ -930,6 +931,22 @@ def test_map_permit_euro_balance_preserves_precision() -> None:
     }
     permit = p._map_permit(data)
     assert permit.balances == [Balance(12.5, "EURO")]
+
+
+def test_map_permit_leaves_out_an_unknown_currency_code() -> None:
+    p = _bare_provider()
+    p._product_id = "BDABZRG_1317$abc"
+    data = {
+        "data": {
+            "balance": {
+                "ble_parameters": [
+                    {"prr_label": "AMOUNT", "prr_value": "12.50"},
+                    {"prr_label": "CURRENCY_CODE", "prr_value": "EUR"},
+                ]
+            }
+        }
+    }
+    assert p._map_permit(data).balances == []
 
 
 def test_map_reservation_list_skips_non_lpn() -> None:

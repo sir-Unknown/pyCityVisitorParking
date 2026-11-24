@@ -78,6 +78,7 @@ def _provider() -> Provider:
             name="The Hague",
             favorite_update_fields=("license_plate", "name"),
             reservation_update_fields=("end_time",),
+            balance_units=("MINUTE",),
         ),
         base_url="https://example",
     )
@@ -95,6 +96,7 @@ def _provider_with_session(session: object) -> Provider:
             name="The Hague",
             favorite_update_fields=("license_plate", "name"),
             reservation_update_fields=("end_time",),
+            balance_units=("MINUTE",),
         ),
         base_url="https://example",
     )
@@ -128,6 +130,7 @@ async def test_login_429_raises_auth_error() -> None:
             name="The Hague",
             favorite_update_fields=("license_plate", "name"),
             reservation_update_fields=("end_time",),
+            balance_units=("MINUTE",),
         ),
         base_url="https://example",
     )
@@ -435,6 +438,7 @@ async def test_request_json_requires_authentication() -> None:
             name="The Hague",
             favorite_update_fields=("license_plate", "name"),
             reservation_update_fields=("end_time",),
+            balance_units=("MINUTE",),
         ),
         base_url="https://example",
     )

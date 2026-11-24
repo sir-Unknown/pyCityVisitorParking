@@ -318,7 +318,7 @@ class Provider(BaseProvider):
         return Permit(
             id=account_id,
             paid_hours=paid_hours,
-            balances=[Balance(remaining_balance, BALANCE_UNIT_MINUTE)],
+            balances=self._balances(Balance(remaining_balance, BALANCE_UNIT_MINUTE)),
         )
 
     def _map_paid_hours(

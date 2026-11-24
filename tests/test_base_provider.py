@@ -582,3 +582,15 @@ async def test_reservation_targets_default_to_none_and_show_in_info() -> None:
         base_url="https://e.com",
     )
     assert free.info.reservation_target_selection == "free_input"
+
+
+def test_info_reports_the_manifest_balance_units() -> None:
+    manifest = ProviderManifest(
+        id="dummy",
+        name="Dummy",
+        favorite_update_fields=(),
+        reservation_update_fields=(),
+        balance_units=("MINUTE", "EURO"),
+    )
+    provider = _DummyProvider(_SequenceSession([]), manifest, base_url="https://e.com")
+    assert provider.info.balance_units == ("MINUTE", "EURO")

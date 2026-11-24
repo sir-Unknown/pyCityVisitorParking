@@ -222,6 +222,7 @@ class BaseProvider(ABC):
             id=self._manifest.id,
             favorite_update_fields=self._manifest.favorite_update_fields,
             reservation_update_fields=self._manifest.reservation_update_fields,
+            balance_units=self._manifest.balance_units,
             reservation_target_selection=self._manifest.reservation_target_selection,
         )
 

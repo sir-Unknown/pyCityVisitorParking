@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Fix: `BaseProvider.info` now reports the manifest's `balance_units`; it was always empty. `Client.list_providers()` already reported them.
+
 ## 0.6.1
 
 - Add `BaseProvider.list_permits()`, the optional `Permit.name`, and `ErrorCode.PERMIT_NOT_FOUND` so callers can choose one of several permits of an account and pass it as `login(permit_id=...)`. The default `list_permits()` returns the single permit of `get_permit()`.

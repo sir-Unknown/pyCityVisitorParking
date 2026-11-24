@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Breaking: the balance is reported in `Permit.balances` as one `MINUTE` balance instead of `remaining_balance` and `balance_unit`; the amount is unchanged.
+
 ## 0.6.0
 
 - A `start_reservation` start in the past ("start now") is sent as the current minute, like the official web app; a later start is sent unchanged. See README design decision D1.

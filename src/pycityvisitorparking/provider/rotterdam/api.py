@@ -16,6 +16,7 @@ import aiohttp
 from ...exceptions import AuthError, ErrorCode, NotFoundError, ProviderError, ValidationError
 from ...models import (
     BALANCE_UNIT_MINUTE,
+    Balance,
     Favorite,
     PaidHoursBlock,
     Permit,
@@ -435,11 +436,10 @@ class Provider(BaseProvider):
         targets = await self._targets(zone_objects)
         permit = Permit(
             id=self._authorization_id(authorization),
-            remaining_balance=balance,
             # DESIGN DECISION D1 (see README "Design decisions"): the permit-level windows
             # are those of the default target, the first of ``list_reservation_targets``.
             paid_hours=targets[0].paid_hours if targets else [],
-            balance_unit=BALANCE_UNIT_MINUTE,
+            balances=[Balance(balance, BALANCE_UNIT_MINUTE)],
             name=authorization.text("Omschrijving"),
         )
         return permit, targets

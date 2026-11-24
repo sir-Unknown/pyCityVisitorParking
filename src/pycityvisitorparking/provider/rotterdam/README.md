@@ -60,8 +60,8 @@ A session with a dummy cookie jar cannot sign in.
   are considered. `list_permits` returns all of them, ordered by description and
   id; the other operations act on the one selected with `permit_id`, or on the
   first one without it (see D2).
-- `Permit.remaining_balance` is the current balance in minutes
-  (`balance_unit` is `MINUTE`). The portal stores balances in units; the length
+- `Permit.balances` holds one `Balance`: the current balance in minutes
+  (unit `MINUTE`). The portal stores balances in units; the length
   of a unit is read from the portal's published configuration (10 minutes at the
   time of writing). Business-hours permits carry a balance per calendar month,
   other permits per year (Europe/Amsterdam). A missing balance row is reported

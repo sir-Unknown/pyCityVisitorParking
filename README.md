@@ -140,7 +140,7 @@ Public data models:
 Model highlights:
 
 - `ProviderInfo` includes `id`, `favorite_update_fields`, `reservation_update_fields`, `balance_units`, and `reservation_target_selection`
-- `Permit` includes `id`, `remaining_balance`, `balance_unit`, `paid_hours`, and an optional display `name`
+- `Permit` includes `id`, `paid_hours`, `balances`, and an optional display `name`; `balances` is a list of `Balance` (`amount`, `unit`), at most one per unit with the primary balance first, and empty when the provider reports none
 - `PaidHoursBlock` contains UTC ISO 8601 `start_time` and `end_time`
 - `ReservationTarget` includes an opaque `id`, a display `name`, an optional `description`, and its own `paid_hours`
 - `Reservation` includes `id`, `name`, `license_plate`, `start_time`, `end_time`, and `reservation_target_id` (`None` when the provider has no targets)

@@ -4,7 +4,7 @@ import aiohttp
 import pytest
 
 from pycityvisitorparking.exceptions import ValidationError
-from pycityvisitorparking.models import Favorite, PaidHoursBlock, Permit, Reservation
+from pycityvisitorparking.models import Balance, Favorite, PaidHoursBlock, Permit, Reservation
 from pycityvisitorparking.provider.loader import ProviderManifest
 from pycityvisitorparking.provider.the_hague.api import Provider
 from pycityvisitorparking.provider.the_hague.const import (
@@ -82,7 +82,7 @@ async def test_map_permit_filters_free_blocks_and_converts_utc():
 
     assert isinstance(permit, Permit)
     assert permit.id == "42"
-    assert permit.remaining_balance == 90
+    assert permit.balances == [Balance(90, "MINUTE")]
     assert permit.paid_hours == [
         PaidHoursBlock(
             start_time="2024-01-02T08:00:00Z",

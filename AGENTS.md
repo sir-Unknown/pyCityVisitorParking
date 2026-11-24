@@ -155,9 +155,8 @@ Current model expectations:
   - `reservation_target_selection`
 - `Permit` exposes:
   - `id`
-  - `remaining_balance`
   - `paid_hours`
-  - `balance_unit`
+  - `balances` (list of `Balance` with `amount` and `unit`, at most one per unit, primary first)
 - `PaidHoursBlock` exposes:
   - `start_time`
   - `end_time`
@@ -247,8 +246,7 @@ Provider implementations should reuse base helpers instead of duplicating valida
 ### Balance
 
 - Support generic balance reporting through:
-  - `remaining_balance`
-  - `balance_unit`
+  - `Permit.balances` (`Balance.amount`, `Balance.unit`)
   - `balance_units`
 - Restrict balance units to the supported generic set defined by the library.
 

@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Breaking: a permit can report several balances (for example a time balance and a money balance). `Permit.remaining_balance` and `Permit.balance_unit` are replaced by `Permit.balances`, a list of the new `Balance` model (`amount`, `unit`) with at most one balance per unit, the primary balance first, and an empty list when the provider reports none. Every provider returns its single balance as a one-item list with unchanged amount and unit (2park keeps `unit=None` for an unknown currency). There is no alias for the old fields.
+- Demo: the Amsterdam demo permit has a `MINUTE` and a `EURO` balance, so the two-balance case can be tried without a real account.
+
 ## 0.6.1
 
 - Add `BaseProvider.list_permits()`, the optional `Permit.name`, and `ErrorCode.PERMIT_NOT_FOUND` so callers can choose one of several permits of an account and pass it as `login(permit_id=...)`. The default `list_permits()` returns the single permit of `get_permit()`.

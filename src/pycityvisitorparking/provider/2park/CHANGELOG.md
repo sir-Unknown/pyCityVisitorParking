@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Breaking: the balance is reported in `Permit.balances` as one `Balance(amount, unit)` with the `CURRENCY_CODE` unit (`TIMES`, `MINUTE` or `EURO`) instead of `remaining_balance` and `balance_unit`. The unit stays `None` when the backend sends no currency code.
+- A currency code the manifest does not declare is left out of `Permit.balances` and logged at debug level, instead of being passed on unchecked.
+
 ## 0.6.1
 
 - The login debug log no longer contains the product id and parking location. It says whether the product was given (`permit_id` or cached) or detected, and whether a location was found.

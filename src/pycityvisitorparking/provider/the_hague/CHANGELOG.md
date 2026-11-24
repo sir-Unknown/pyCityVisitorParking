@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Breaking: the balance (`debit_minutes`) is reported in `Permit.balances` as one `MINUTE` balance instead of `remaining_balance` and `balance_unit`; the amount is unchanged.
+
 ## 0.6.0
 
 - A `start_reservation` start in the past ("start now") is sent as the current time; a later start is sent unchanged. A refused start (`pv74`) raises `ProviderError` with `error_code="provider_rejected"`. See README design decision D1.

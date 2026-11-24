@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Breaking: the balance is reported in `Permit.balances` as one `MINUTE` balance instead of `remaining_balance` and `balance_unit`; the amount is unchanged.
+
 ## 0.6.1
 
 - `login()` accepts an optional `permit_id` that selects the permit for `get_permit`, `list_reservations`, `list_reservation_targets`, `fetch_all`, and `start_reservation`. A selected permit that is no longer usable raises `NotFoundError` with `error_code="permit_not_found"` instead of falling back to another permit; without `permit_id` the first permit is used as before (D2). An account without a usable permit now also carries `error_code="permit_not_found"`.

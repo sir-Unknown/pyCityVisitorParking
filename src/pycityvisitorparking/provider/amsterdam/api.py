@@ -640,7 +640,29 @@ class Provider(BaseProvider):
         for offset in range(days + 1):
             target_date = today + timedelta(days=offset)
             entries.extend(self._map_time_frame_data_for_date(time_frame_data, target_date))
+        if isinstance(time_frame_data, list) and not entries:
+            # The schedule format is only known from the portal bundle; describe what
+            # arrived so a debug log shows why no block was read.
+            self._plogger.debug(
+                "weekly paid parking schedule has no readable blocks: %s",
+                self._describe_time_frame_data(time_frame_data),
+            )
         return self._filter_paid_hours(entries)
+
+    def _describe_time_frame_data(self, raw: list[Any]) -> str:
+        """Return the shape of a weekly schedule: day types, block keys, time values."""
+        days = [type(day).__name__ if not isinstance(day, list) else len(day) for day in raw]
+        first_block = next(
+            (block for day in raw if isinstance(day, list) for block in day),
+            None,
+        )
+        if not isinstance(first_block, dict):
+            return f"days={days} first_block={type(first_block).__name__}"
+        # Clock times are not personal data; other values are left out.
+        times = {
+            key: first_block.get(key) for key in ("startTime", "endTime") if key in first_block
+        }
+        return f"days={days} first_block_keys={sorted(first_block)} times={times!r}"
 
     async def _fetch_time_frame_data(self, machine_number: int | None) -> Any:
         """Return the weekly paid parking schedule from a cost calculation.
@@ -672,7 +694,14 @@ class Provider(BaseProvider):
             allow_reauth=True,
             auth_required=True,
         )
-        return self._extract_time_frame_data(data)
+        time_frame_data = self._extract_time_frame_data(data)
+        if time_frame_data is None:
+            # Only the key names are logged; the values hold amounts and ids.
+            self._plogger.debug(
+                "cost calculation response has no time_frame_data; keys: %s",
+                sorted(data) if isinstance(data, dict) else type(data).__name__,
+            )
+        return time_frame_data
 
     def _extract_time_frame_data(self, data: Any) -> Any:
         if isinstance(data, dict):

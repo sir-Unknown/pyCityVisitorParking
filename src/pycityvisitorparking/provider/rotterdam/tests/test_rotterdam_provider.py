@@ -18,6 +18,7 @@ from pycityvisitorparking.exceptions import (
     ProviderError,
     ValidationError,
 )
+from pycityvisitorparking.models import Balance
 from pycityvisitorparking.provider.loader import ProviderManifest
 from pycityvisitorparking.provider.rotterdam.api import Provider
 from pycityvisitorparking.provider.rotterdam.mendix import find_operation_id
@@ -244,6 +245,7 @@ def _provider(portal: _Portal) -> Provider:
             name="Rotterdam",
             favorite_update_fields=("license_plate", "name"),
             reservation_update_fields=("start_time", "end_time"),
+            balance_units=("MINUTE",),
             reservation_target_selection="list",
         ),
         base_url="https://portal.example",
@@ -371,8 +373,7 @@ async def test_get_permit_converts_balance_units_to_minutes_and_sorts_windows() 
     provider = await _logged_in(portal)
     permit = await provider.get_permit()
     assert permit.id == "auth-100"
-    assert permit.remaining_balance == 60.0  # 6 units of 10 minutes
-    assert permit.balance_unit == "MINUTE"
+    assert permit.balances == [Balance(60.0, "MINUTE")]  # 6 units of 10 minutes
     # Duplicate windows collapse and the result is chronological, in UTC with a Z suffix.
     assert [(b.start_time, b.end_time) for b in permit.paid_hours] == [
         ("2026-03-15T09:20:45Z", "2026-03-15T11:20:45Z"),
@@ -401,7 +402,7 @@ async def test_missing_balance_row_reports_zero() -> None:
     portal = _permit_portal()
     portal.xpath_results = [item for item in portal.xpath_results if item[0] != "Parkeren.Saldo"]
     provider = await _logged_in(portal)
-    assert (await provider.get_permit()).remaining_balance == 0.0
+    assert (await provider.get_permit()).balances == [Balance(0.0, "MINUTE")]
 
 
 @pytest.mark.asyncio
@@ -433,7 +434,7 @@ async def test_list_permits_returns_every_usable_permit_with_its_name() -> None:
         ("auth-101", "Own"),
         ("auth-100", "Shared"),
     ]
-    assert all(permit.remaining_balance == 60.0 for permit in permits)
+    assert all(permit.balances == [Balance(60.0, "MINUTE")] for permit in permits)
 
 
 @pytest.mark.asyncio

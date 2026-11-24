@@ -24,6 +24,7 @@ from ..exceptions import (
 )
 from ..exceptions import TimeoutError as RequestTimeoutError
 from ..models import (
+    Balance,
     Favorite,
     PaidHoursBlock,
     Permit,
@@ -223,7 +224,7 @@ class BaseProvider(ABC):
             favorite_update_fields=self._manifest.favorite_update_fields,
             reservation_update_fields=self._manifest.reservation_update_fields,
             balance_units=self._manifest.balance_units,
-            reservation_target_selection=self._manifest.reservation_target_selection,
+            reservation_target_selection=self.reservation_target_selection,
         )
 
     def _normalize_license_plate(self, plate: str) -> str:
@@ -310,6 +311,26 @@ class BaseProvider(ABC):
                 raise ProviderError("Provider returned invalid paid hours data.") from exc
             normalized.append(PaidHoursBlock(start_time=start, end_time=end))
         return normalized
+
+    def _balances(self, *balances: Balance) -> list[Balance]:
+        """Return ``Permit.balances``, checked against the manifest's ``balance_units``.
+
+        Providers build ``Permit.balances`` through this helper, so a unit the
+        manifest does not declare (for example ``"EUR"`` for ``EURO``) or a second
+        balance of one unit fails loudly instead of being dropped by a caller.
+        ``None`` stays allowed: it means the provider reports no unit.
+        """
+        seen: set[str | None] = set()
+        for balance in balances:
+            if balance.unit is not None and balance.unit not in self._manifest.balance_units:
+                raise ProviderError(
+                    f"Provider returned balance unit {balance.unit!r}, "
+                    "which its manifest does not declare."
+                )
+            if balance.unit in seen:
+                raise ProviderError(f"Provider returned two balances with unit {balance.unit!r}.")
+            seen.add(balance.unit)
+        return list(balances)
 
     def _parse_int(self, value: Any) -> int:
         if value is None or isinstance(value, bool):
@@ -615,6 +636,22 @@ class BaseProvider(ABC):
         target); other ids the provider can resolve are accepted as well.
         """
         return []
+
+    async def get_reservation_target(self, reservation_target_id: str) -> ReservationTarget:
+        """Return one reservation target with its paid hours.
+
+        The default looks the id up in ``list_reservation_targets``. Providers with the
+        ``free_input`` capability override it to resolve other ids too, such as a number
+        read from a parking machine. An id the provider cannot resolve raises
+        ``ValidationError``.
+        """
+        target_id = self._validate_reservation_target_id(reservation_target_id)
+        if target_id is None:
+            raise ValidationError("reservation_target_id is required.")
+        for target in await self.list_reservation_targets():
+            if target.id == target_id:
+                return target
+        raise ValidationError("reservation_target_id is not a target of the permit.")
 
     @abstractmethod
     async def update_reservation(

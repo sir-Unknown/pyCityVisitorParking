@@ -60,6 +60,33 @@ To share results:
 
 ![Copy dump](images/copy-dump.png)
 
+## 6) Record a browser session (optional)
+
+A recording of the provider's own web portal shows every API call and response
+the portal makes, including steps the live check script does not cover yet.
+
+1) Open the portal in Chrome, Edge, or Firefox and open the developer tools
+   (`F12`), tab **Network**.
+2) Enable **Preserve log** (Chrome/Edge) or **Persist Logs** (Firefox, gear
+   menu), then reload the page.
+3) Log in and perform the steps you want to share, for example start a session,
+   change its end time, stop it, add or remove a favorite.
+4) Export the recording: **Export HAR** (download icon, Chrome/Edge) or
+   **Save All As HAR** (gear menu, Firefox).
+5) Log out of the portal, so the token in the recording stops working.
+6) Drag the `.har` file into the Codespace file explorer and sanitize it:
+
+```bash
+python scripts/sanitize.py session.har --output .tmp/session.sanitized.json
+rm session.har
+```
+
+The raw `.har` file contains your password, login token, and cookies. **Never
+share it.** `sanitize.py` keeps only API calls, masks headers such as
+`Authorization` and `Cookie`, masks IDs in URLs, and sanitizes JSON bodies the
+same way as the live check dumps. HTML pages, scripts, and images are dropped.
+Check the sanitized file as described above before you share it.
+
 ## Tips
 
 - Add `--debug-http` if you need request/response summaries in the terminal.

@@ -18,6 +18,7 @@ from pycityvisitorparking.exceptions import (
     ValidationError,
 )
 from pycityvisitorparking.models import (
+    Balance,
     Favorite,
     PaidHoursBlock,
     Permit,
@@ -83,7 +84,7 @@ class _DummyProvider(BaseProvider):
         return None
 
     async def get_permit(self) -> Permit:
-        return Permit(id="permit", remaining_balance=1, paid_hours=[])
+        return Permit(id="permit", paid_hours=[])
 
     async def list_reservations(self) -> list[Reservation]:
         return []
@@ -200,6 +201,37 @@ def test_filter_paid_hours_invalid() -> None:
     ]
     with pytest.raises(ProviderError):
         provider._filter_paid_hours(blocks)
+
+
+def _balance_provider() -> _DummyProvider:
+    manifest = ProviderManifest(
+        id="dummy",
+        name="Dummy",
+        favorite_update_fields=(),
+        reservation_update_fields=(),
+        balance_units=("MINUTE", "EURO"),
+    )
+    return _DummyProvider(_SequenceSession([]), manifest, base_url="https://example.com")
+
+
+def test_balances_accept_declared_units_and_none() -> None:
+    provider = _balance_provider()
+    balances = (Balance(90, "MINUTE"), Balance(5.79, "EURO"))
+    assert provider._balances(*balances) == list(balances)
+    assert provider._balances(Balance(10)) == [Balance(10)]
+
+
+@pytest.mark.parametrize(
+    "balances",
+    [
+        (Balance(5.79, "EUR"),),
+        (Balance(3, "TIMES"),),
+        (Balance(90, "MINUTE"), Balance(30, "MINUTE")),
+    ],
+)
+def test_balances_reject_undeclared_or_repeated_units(balances: tuple[Balance, ...]) -> None:
+    with pytest.raises(ProviderError):
+        _balance_provider()._balances(*balances)
 
 
 def test_mask_payload_redacts_login_and_license_plate_data() -> None:

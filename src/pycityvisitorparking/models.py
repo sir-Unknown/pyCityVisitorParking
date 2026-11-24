@@ -40,11 +40,20 @@ class ReservationTarget:
 
 
 @dataclass(frozen=True, slots=True)
+class Balance:
+    # Remaining amount in ``unit``: minutes for MINUTE, euros for EURO, uses for TIMES.
+    amount: float
+    # One of the BALANCE_UNIT_* values; None when the provider reports no unit.
+    unit: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class Permit:
     id: str
-    remaining_balance: float
     paid_hours: list[PaidHoursBlock]
-    balance_unit: str | None = None
+    # Every balance of the permit, at most one per unit, the primary one first;
+    # empty when the provider reports none.
+    balances: list[Balance] = field(default_factory=list)
     # Display name of the permit, for telling several permits apart; None when the
     # provider has none.
     name: str | None = None

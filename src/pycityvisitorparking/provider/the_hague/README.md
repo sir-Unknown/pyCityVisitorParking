@@ -48,11 +48,13 @@ Recommended endpoints:
 
 - Since v0.3.0, `Permit.remaining_time` is renamed to `Permit.remaining_balance`
   (minutes). Update integrations that read the permit balance.
+- The balance moved from `Permit.remaining_balance` to `Permit.balances`
+  (one `MINUTE` balance).
 
 ## Mapping notes
 
 - `Permit.id` uses `Account.id`.
-- `Permit.remaining_balance` uses `Account.debit_minutes`.
+- `Permit.balances` holds one `MINUTE` balance from `Account.debit_minutes`.
 - `Permit.paid_hours` is empty because the public API does not expose
   paid hours. When the account has no `zone_validity` list, the provider reads
   `zone.start_time`/`zone.end_time` as the paid hours if available and logs one

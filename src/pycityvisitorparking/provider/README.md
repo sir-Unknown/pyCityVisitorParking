@@ -171,6 +171,11 @@ login key or `start_reservation()` argument. Model it as a reservation target:
   permit has nothing to choose. Fill `ReservationTarget.paid_hours` when targets
   have their own paid hours, and keep `Permit.paid_hours` equal to the
   default target's windows.
+- With `"free_input"`, override `get_reservation_target()` to resolve an unlisted id
+  into a `ReservationTarget` with its `paid_hours`, raising `ValidationError` for an id
+  that cannot be resolved. The base implementation only looks the id up in
+  `list_reservation_targets()`. Listing the targets of open reservations as well lets
+  callers show their paid hours.
 - Call `self._validate_reservation_target_id(reservation_target_id)` at the start of
   `start_reservation()`, use the default target when it is `None`, and raise
   `ValidationError` for an id the provider cannot resolve. Without the capability the

@@ -8,7 +8,15 @@ from datetime import datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
 from ...exceptions import ErrorCode, NotFoundError, ProviderError, ValidationError
-from ...models import Favorite, PaidHoursBlock, Permit, Reservation, ReservationTarget
+from ...models import (
+    RESERVATION_TARGET_SELECTION_FREE_INPUT,
+    Balance,
+    Favorite,
+    PaidHoursBlock,
+    Permit,
+    Reservation,
+    ReservationTarget,
+)
 from ...util import parse_timestamp
 from ..base import BaseProvider
 
@@ -49,6 +57,11 @@ _FAVORITES_BY_CITY: dict[str, list[dict[str, str]]] = {
         {"id": "r3", "name": "Bram Koster", "license_plate": "KX-73-PL"},
         {"id": "r4", "name": "Ilse Verbeek", "license_plate": "HB-904-S"},
     ],
+    "amsterdam": [
+        {"id": "a1", "name": "Lotte de Graaf", "license_plate": "GV-381-T"},
+        {"id": "a2", "name": "Mehmet Yildiz", "license_plate": "PK-27-ZD"},
+        {"id": "a3", "name": "Noor Visser", "license_plate": "TS-640-N"},
+    ],
     "default": [
         {"id": "d1", "name": "Demo Gebruiker", "license_plate": "XX-000-X"},
     ],
@@ -81,6 +94,18 @@ _ROTTERDAM_PERMITS: tuple[tuple[str, str, float, _Zones], ...] = (
     (_DEMO_PERMIT_ID, "Own permit", 10450, _ROTTERDAM_ZONES),
     ("demo-permit-shared", "Shared permit", 600, _ROTTERDAM_SHARED_ZONES),
 )
+
+# The Amsterdam demo permit books at its default parking machine (the real provider
+# lists the default machine too). Paid until midnight, Sunday from noon. Any other
+# machine number is accepted and paid until 21:00, like a neighbourhood with another tariff.
+_AMSTERDAM_MACHINE = "19850"
+_AMSTERDAM_SCHEDULE: _WeekSchedule = ((time(9), time(0)),) * 6 + ((time(12), time(0)),)
+_AMSTERDAM_OTHER_SCHEDULE: _WeekSchedule = ((time(9), time(21)),) * 6 + ((time(12), time(21)),)
+
+
+def _is_machine_number(value: str) -> bool:
+    return value.isascii() and value.isdigit()
+
 
 _RESERVATIONS: list[dict[str, str]] = [
     {
@@ -140,31 +165,35 @@ class Provider(BaseProvider):
     def _demo_permit_config(self) -> dict:
         """Return per-city permit configuration based on municipality name."""
         city = (self._request_context_name or "").lower()
+        if self._is_amsterdam():
+            # A time and a money balance at once, like real Amsterdam permits. The
+            # windows come from the default parking machine (see ``_targets``).
+            return {
+                "balances": [Balance(2700, "MINUTE"), Balance(25.0, "EURO")],
+                "zone_start": "",
+                "zone_end": "",
+            }
         if "groningen" in city:
             return {
-                "remaining_balance": 237.50,
-                "balance_unit": "EURO",
+                "balances": [Balance(237.50, "EURO")],
                 "zone_start": "2026-04-15T08:00:00Z",
                 "zone_end": "2026-04-15T20:00:00Z",
             }
         if "den haag" in city or "haag" in city:
             return {
-                "remaining_balance": 480,
-                "balance_unit": "MINUTE",
+                "balances": [Balance(480, "MINUTE")],
                 "zone_start": "2026-04-15T09:00:00Z",
                 "zone_end": "2026-04-15T23:00:00Z",
             }
         if "eindhoven" in city:
             return {
-                "remaining_balance": 12.75,
-                "balance_unit": "EURO",
+                "balances": [Balance(12.75, "EURO")],
                 "zone_start": "2026-04-15T07:30:00Z",
                 "zone_end": "2026-04-15T18:30:00Z",
             }
         # fallback
         return {
-            "remaining_balance": 100.0,
-            "balance_unit": "EURO",
+            "balances": [Balance(100.0, "EURO")],
             "zone_start": "2026-04-15T08:00:00Z",
             "zone_end": "2026-04-15T20:00:00Z",
         }
@@ -200,8 +229,7 @@ class Provider(BaseProvider):
             _id, name, balance, _zones = self._rotterdam_permit(permit_id)
             return Permit(
                 id=permit_id,
-                remaining_balance=balance,
-                balance_unit="MINUTE",
+                balances=self._balances(Balance(balance, "MINUTE")),
                 # The permit-level windows are those of the default target.
                 paid_hours=targets[0].paid_hours,
                 name=name,
@@ -209,9 +237,11 @@ class Provider(BaseProvider):
         cfg = self._demo_permit_config()
         return Permit(
             id=permit_id,
-            remaining_balance=cfg["remaining_balance"],
-            balance_unit=cfg["balance_unit"],
-            paid_hours=[PaidHoursBlock(start_time=cfg["zone_start"], end_time=cfg["zone_end"])],
+            balances=self._balances(*cfg["balances"]),
+            # With targets, the permit-level windows are those of the default target.
+            paid_hours=targets[0].paid_hours
+            if targets
+            else [PaidHoursBlock(start_time=cfg["zone_start"], end_time=cfg["zone_end"])],
         )
 
     def _rotterdam_permit(self, permit_id: str) -> tuple[str, str, float, _Zones]:
@@ -220,11 +250,31 @@ class Provider(BaseProvider):
     def _is_rotterdam(self) -> bool:
         return "rotterdam" in (self._request_context_name or "").lower()
 
+    def _is_amsterdam(self) -> bool:
+        return "amsterdam" in (self._request_context_name or "").lower()
+
+    @property
+    def reservation_target_selection(self) -> str | None:
+        """Like the real provider, the Amsterdam demo accepts any parking machine number."""
+        if self._is_amsterdam():
+            return RESERVATION_TARGET_SELECTION_FREE_INPUT
+        return super().reservation_target_selection
+
     async def list_reservation_targets(self) -> list[ReservationTarget]:
-        """Return the selected permit's targets; only the Rotterdam demo permits have any."""
+        """Return the selected permit's targets; only Rotterdam and Amsterdam have any."""
         return self._targets(self._selected_permit_id())
 
     def _targets(self, permit_id: str) -> list[ReservationTarget]:
+        if self._is_amsterdam():
+            # The default machine, then the machines of the reservations.
+            others = sorted(
+                {
+                    str(r["reservation_target_id"])
+                    for r in self._get_reservations()
+                    if r["reservation_target_id"] not in (None, _AMSTERDAM_MACHINE)
+                }
+            )
+            return [self._amsterdam_target(machine) for machine in [_AMSTERDAM_MACHINE, *others]]
         if not self._is_rotterdam():
             return []
         _id, _name, _balance, zones = self._rotterdam_permit(permit_id)
@@ -232,13 +282,26 @@ class Provider(BaseProvider):
             ReservationTarget(
                 id=zone_id,
                 name=zone_id,
-                paid_hours=self._rotterdam_windows(schedule),
+                paid_hours=self._week_windows(schedule),
             )
             for zone_id, schedule in zones
         ]
 
-    def _rotterdam_windows(self, schedule: _WeekSchedule) -> list[PaidHoursBlock]:
-        """Return the upcoming paid windows of a Rotterdam demo zone for one week.
+    async def get_reservation_target(self, reservation_target_id: str) -> ReservationTarget:
+        """The Amsterdam demo resolves any parking machine number; others use the list."""
+        target_id = self._validate_reservation_target_id(reservation_target_id)
+        if self._is_amsterdam() and target_id is not None and _is_machine_number(target_id):
+            return self._amsterdam_target(target_id)
+        return await super().get_reservation_target(reservation_target_id)
+
+    def _amsterdam_target(self, machine: str) -> ReservationTarget:
+        schedule = (
+            _AMSTERDAM_SCHEDULE if machine == _AMSTERDAM_MACHINE else _AMSTERDAM_OTHER_SCHEDULE
+        )
+        return ReservationTarget(id=machine, name=machine, paid_hours=self._week_windows(schedule))
+
+    def _week_windows(self, schedule: _WeekSchedule) -> list[PaidHoursBlock]:
+        """Return the upcoming paid windows of a demo target for one week.
 
         ``schedule`` holds the paid hours per weekday (Monday first) in
         Europe/Amsterdam; an end at or before the start ends on the next day.
@@ -272,6 +335,26 @@ class Provider(BaseProvider):
         return self._reservations[permit_id]
 
     def _initial_reservations(self, permit_id: str) -> list[dict[str, str | None]]:
+        if self._is_amsterdam():
+            now = self._now().replace(second=0, microsecond=0)
+            return [
+                {
+                    "id": "ams-1",
+                    "name": "Lotte de Graaf",
+                    "license_plate": "GV381T",
+                    "start_time": self._format_utc_timestamp(now - timedelta(minutes=45)),
+                    "end_time": self._format_utc_timestamp(now + timedelta(hours=1)),
+                    "reservation_target_id": _AMSTERDAM_MACHINE,
+                },
+                {
+                    "id": "ams-2",
+                    "name": "Noor Visser",
+                    "license_plate": "TS640N",
+                    "start_time": self._format_utc_timestamp(now + timedelta(days=2)),
+                    "end_time": self._format_utc_timestamp(now + timedelta(days=2, hours=4)),
+                    "reservation_target_id": _AMSTERDAM_MACHINE,
+                },
+            ]
         if not self._is_rotterdam():
             return [{**r, "reservation_target_id": None} for r in _RESERVATIONS]
         now = self._now().replace(second=0, microsecond=0)
@@ -319,7 +402,10 @@ class Provider(BaseProvider):
         requested_target = self._validate_reservation_target_id(reservation_target_id)
         target_ids = [target.id for target in await self.list_reservation_targets()]
         if requested_target is not None and requested_target not in target_ids:
-            raise ValidationError("reservation_target_id is not a target of the permit.")
+            # The Amsterdam demo accepts any parking machine number (free input).
+            free_input_machine = self._is_amsterdam() and _is_machine_number(requested_target)
+            if not free_input_machine:
+                raise ValidationError("reservation_target_id is not a target of the permit.")
         start_time, end_time = self._validate_reservation_times(
             start_time, end_time, require_both=True
         )

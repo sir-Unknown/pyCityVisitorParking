@@ -76,6 +76,7 @@ async def test_map_permit_balances_use_portal_units(
                 name="Amsterdam",
                 favorite_update_fields=(),
                 reservation_update_fields=("end_time",),
+                balance_units=("MINUTE", "EURO"),
             ),
             base_url="https://example",
         )
@@ -102,6 +103,7 @@ async def test_map_reservation_normalizes_plate_and_time():
                 name="Amsterdam",
                 favorite_update_fields=(),
                 reservation_update_fields=("end_time",),
+                balance_units=("MINUTE", "EURO"),
             ),
             base_url="https://example",
         )
@@ -126,6 +128,7 @@ async def test_map_favorite_normalizes_plate():
                 name="Amsterdam",
                 favorite_update_fields=(),
                 reservation_update_fields=("end_time",),
+                balance_units=("MINUTE", "EURO"),
             ),
             base_url="https://example",
         )
@@ -147,6 +150,7 @@ async def test_parse_provider_timestamp_assumes_local_time():
                 name="Amsterdam",
                 favorite_update_fields=(),
                 reservation_update_fields=("end_time",),
+                balance_units=("MINUTE", "EURO"),
             ),
             base_url="https://example",
         )
@@ -166,6 +170,7 @@ async def test_start_reservation_rejects_naive_datetime():
                 name="Amsterdam",
                 favorite_update_fields=(),
                 reservation_update_fields=("end_time",),
+                balance_units=("MINUTE", "EURO"),
             ),
             base_url="https://example",
         )
@@ -191,6 +196,7 @@ async def test_extract_client_product_id_handles_alternate_shapes():
                 name="Amsterdam",
                 favorite_update_fields=(),
                 reservation_update_fields=("end_time",),
+                balance_units=("MINUTE", "EURO"),
             ),
             base_url="https://example",
         )
@@ -210,6 +216,7 @@ async def test_extract_client_product_id_from_product_list():
                 name="Amsterdam",
                 favorite_update_fields=(),
                 reservation_update_fields=("end_time",),
+                balance_units=("MINUTE", "EURO"),
             ),
             base_url="https://example",
         )
@@ -228,6 +235,7 @@ async def test_extract_client_product_id_from_permit_list():
                 name="Amsterdam",
                 favorite_update_fields=(),
                 reservation_update_fields=("end_time",),
+                balance_units=("MINUTE", "EURO"),
             ),
             base_url="https://example",
         )
@@ -270,6 +278,7 @@ async def test_paid_hours_repeat_the_weekly_schedule_from_one_calculation(
                 name="Amsterdam",
                 favorite_update_fields=(),
                 reservation_update_fields=("end_time",),
+                balance_units=("MINUTE", "EURO"),
             ),
             base_url="https://example",
         )
@@ -333,6 +342,7 @@ async def test_start_reservation_includes_machine_number(monkeypatch: pytest.Mon
                 name="Amsterdam",
                 favorite_update_fields=(),
                 reservation_update_fields=("end_time",),
+                balance_units=("MINUTE", "EURO"),
             ),
             base_url="https://example",
         )
@@ -387,6 +397,7 @@ async def test_start_reservation_start_now_uses_the_current_time(
                 name="Amsterdam",
                 favorite_update_fields=(),
                 reservation_update_fields=("end_time",),
+                balance_units=("MINUTE", "EURO"),
             ),
             base_url="https://example",
         )
@@ -428,6 +439,7 @@ async def test_start_reservation_without_target_requires_a_default_machine(
                 name="Amsterdam",
                 favorite_update_fields=(),
                 reservation_update_fields=("end_time",),
+                balance_units=("MINUTE", "EURO"),
             ),
             base_url="https://example",
         )

@@ -777,7 +777,7 @@ class Provider(BaseProvider):
         if main_account.get("money_balance") is not None:
             euros = self._parse_int(main_account["money_balance"]) / 100
             balances.append(Balance(euros, BALANCE_UNIT_EURO))
-        return balances
+        return self._balances(*balances)
 
     def _parse_machine_number(self, value: str) -> int:
         """Validate a parking machine number given as ``reservation_target_id``."""

@@ -93,7 +93,7 @@ class PortalMapper:
         return Permit(
             id=permit_id,
             paid_hours=paid_hours,
-            balances=[Balance(remaining_balance, BALANCE_UNIT_MINUTE)],
+            balances=self._provider._balances(Balance(remaining_balance, BALANCE_UNIT_MINUTE)),
         )
 
     def map_paid_hours(self, block_times: Any) -> list[PaidHoursBlock]:

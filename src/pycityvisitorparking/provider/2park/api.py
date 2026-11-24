@@ -485,7 +485,14 @@ class Provider(BaseProvider):
         amount = _parse_balance_amount(balance)
         balance_unit = _parse_balance_currency(balance)
         permit_id = self._coerce_id(self._product_id) or "permit"
-        return Permit(id=permit_id, paid_hours=[], balances=[Balance(amount, balance_unit)])
+        if balance_unit is not None and balance_unit not in self._manifest.balance_units:
+            # The currency code comes from the backend; an unknown one is left out
+            # rather than failing the whole permit.
+            self._plogger.debug("unknown balance currency code %r; balance left out", balance_unit)
+            return Permit(id=permit_id, paid_hours=[], balances=[])
+        return Permit(
+            id=permit_id, paid_hours=[], balances=self._balances(Balance(amount, balance_unit))
+        )
 
     def _map_reservation_list(self, details: Any) -> list[Reservation]:
         if not isinstance(details, dict):

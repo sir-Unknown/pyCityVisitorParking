@@ -249,6 +249,7 @@ Provider implementations should reuse base helpers instead of duplicating valida
   - `Permit.balances` (`Balance.amount`, `Balance.unit`)
   - `balance_units`
 - Restrict balance units to the supported generic set defined by the library.
+- Build `Permit.balances` through `BaseProvider._balances()`, which checks every unit against the manifest's `balance_units`. A unit that comes from the backend unchecked must be checked by the provider first, so an unknown value is left out instead of failing the whole permit.
 
 ## 12) Error handling
 

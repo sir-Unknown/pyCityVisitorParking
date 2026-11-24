@@ -113,6 +113,7 @@ def _manifest() -> ProviderManifest:
         name="DVS Portal (Refactored)",
         favorite_update_fields=(),
         reservation_update_fields=("end_time",),
+        balance_units=("MINUTE",),
     )
 
 

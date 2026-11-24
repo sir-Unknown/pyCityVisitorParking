@@ -245,6 +245,7 @@ def _provider(portal: _Portal) -> Provider:
             name="Rotterdam",
             favorite_update_fields=("license_plate", "name"),
             reservation_update_fields=("start_time", "end_time"),
+            balance_units=("MINUTE",),
             reservation_target_selection="list",
         ),
         base_url="https://portal.example",
